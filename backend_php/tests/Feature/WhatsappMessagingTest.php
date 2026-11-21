@@ -216,7 +216,7 @@ class WhatsappMessagingTest extends TestCase
             ->post("/api/app/conversations/{$conversation->id}/messages", [
                 'content_type' => 'image',
                 'content_text' => 'Order photo',
-                'file' => UploadedFile::fake()->image('order.jpg'),
+                'file' => UploadedFile::fake()->create('order.jpg', 10, 'image/jpeg'),
                 'idempotency_key' => 'image-attachment-1',
             ])
             ->assertCreated()
@@ -245,7 +245,7 @@ class WhatsappMessagingTest extends TestCase
             'sender_type' => 'customer',
             'content_type' => 'image',
             'content_text' => 'A picture',
-            'media_url' => 'media-22',
+            'media_url' => '22',
             'media_type' => 'image/jpeg',
             'filename' => 'picture.jpg',
             'status' => 'received',

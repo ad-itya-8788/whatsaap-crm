@@ -107,7 +107,7 @@ class TemplateTest extends TestCase
         $this->actingAs($this->createUser())
             ->post('/api/app/whatsapp/templates/media', [
                 'type' => 'IMAGE',
-                'file' => UploadedFile::fake()->image('header.jpg'),
+                'file' => UploadedFile::fake()->create('header.jpg', 10, 'image/jpeg'),
             ])
             ->assertOk()
             ->assertJsonPath('handle', 'header-handle-1');
