@@ -208,15 +208,17 @@ class WhatsappMessagingTest extends TestCase
     {
         [$user, $conversation] = $this->workspace();
         $conversation->update(['last_inbound_at' => now()]);
-        Http::fakeSequence('graph.facebook.com/*')
-            ->push(['id' => 'media-1'], 200)
-            ->push(['messages' => [['id' => 'wamid.media-1']]], 200);
+        Http::fake([
+            '*' => Http::sequence()
+                ->push(['id' => 'media-1'], 200)
+                ->push(['messages' => [['id' => 'wamid.media-1']]], 200),
+        ]);
 
         $this->actingAs($user)
             ->post("/api/app/conversations/{$conversation->id}/messages", [
                 'content_type' => 'image',
                 'content_text' => 'Order photo',
-                'file' => UploadedFile::fake()->create('order.jpg', 10, 'image/jpeg'),
+                'file' => UploadedFile::fake()->createWithContent('order.jpg', 'image-bytes')->mimeType('image/jpeg'),
                 'idempotency_key' => 'image-attachment-1',
             ])
             ->assertCreated()
