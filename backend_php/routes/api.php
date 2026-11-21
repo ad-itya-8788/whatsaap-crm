@@ -30,6 +30,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/conversations/{conversation}/read', [ConversationController::class, 'markRead']);
         Route::get('/conversations/{conversation}/messages', [MessageController::class, 'index']);
         Route::post('/conversations/{conversation}/messages', [MessageController::class, 'store']);
+        Route::get('/messages/{message}/media', [MessageController::class, 'media']);
 
         Route::get('/whatsapp/config', [WhatsappController::class, 'getConfig']);
         Route::get('/whatsapp/health', [WhatsappController::class, 'health']);
@@ -39,6 +40,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/whatsapp/config', [WhatsappController::class, 'saveConfig']);
             Route::post('/whatsapp/config/disconnect', [WhatsappController::class, 'disconnect']);
             Route::post('/whatsapp/templates/sync', [TemplateController::class, 'sync']);
+            Route::post('/whatsapp/templates/media', [TemplateController::class, 'uploadMedia']);
             Route::post('/whatsapp/templates', [TemplateController::class, 'store']);
             Route::patch('/whatsapp/templates/{message_template}', [TemplateController::class, 'update']);
             Route::delete('/whatsapp/templates/{message_template}', [TemplateController::class, 'destroy']);

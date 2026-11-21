@@ -56,6 +56,8 @@ Prerequisites: PHP 8.2+, Composer, Node.js, npm, and MySQL (for example, the XAM
 
 Keep `.env` private and never commit access tokens, app secrets, or verify tokens. Only message contacts who have opted in. Business-initiated messages require approved templates; free-form replies are subject to Meta's customer-service window and messaging policies.
 
+Message send requests can include an `idempotency_key`. The frontend reuses the same key when a request is retried, so an uncertain provider response cannot cause a second send. If a send is shown as pending after a timeout or provider error, wait for a status webhook or check Meta before submitting a new message.
+
 The WhatsApp Graph API host and version are configurable with `WHATSAPP_BASE_HOST` and `WHATSAPP_API_VERSION`. Update the version when upgrading Meta Graph API versions.
 
 ## Required environment variable names

@@ -9,6 +9,7 @@ use App\Models\WhatsappConfig;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 class TemplateTest extends TestCase
@@ -94,6 +95,54 @@ class TemplateTest extends TestCase
             'header_content' => 'Order update',
         ]);
         $this->assertNotNull(MessageTemplate::firstOrFail()->last_synced_at);
+    }
+
+    public function test_template_media_upload_returns_meta_header_handle(): void
+    {
+        config(['services.whatsapp.app_id' => 'app-123']);
+        Http::fakeSequence('graph.facebook.com/*')
+            ->push(['id' => 'upload:session-1'], 200)
+            ->push(['h' => 'header-handle-1'], 200);
+
+        $this->actingAs($this->createUser())
+            ->post('/api/app/whatsapp/templates/media', [
+                'type' => 'IMAGE',
+                'file' => UploadedFile::fake()->image('header.jpg'),
+            ])
+            ->assertOk()
+            ->assertJsonPath('handle', 'header-handle-1');
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/app-123/uploads?')
+            && str_contains($request->url(), 'file_length=')
+        );
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/upload:session-1')
+            && $request->hasHeader('file_offset')
+        );
+    }
+
+    public function test_media_template_header_handle_is_submitted_to_meta(): void
+    {
+        $user = $this->createUser();
+        $this->actingAs($user)
+            ->postJson('/api/app/whatsapp/templates', array_merge($this->templateData(), [
+                'header_data' => ['type' => 'IMAGE', 'handle' => 'header-handle-1'],
+            ]))
+            ->assertCreated();
+
+        $template = MessageTemplate::where('name', 'order_update')->firstOrFail();
+        $this->assertSame('IMAGE', $template->header_type);
+        $this->assertSame('header-handle-1', $template->header_handle);
+        Http::fake([
+            'graph.facebook.com/*' => Http::response(['id' => 'tpl_media_1', 'status' => 'PENDING'], 200),
+        ]);
+
+        $this->actingAs($user)
+            ->postJson("/api/app/whatsapp/templates/{$template->id}/submit")
+            ->assertOk();
+
+        Http::assertSent(fn ($request) => collect($request['components'])
+            ->firstWhere('type', 'HEADER')['example']['header_handle'][0] === 'header-handle-1'
+        );
     }
 
     public function test_draft_template_cannot_be_sent_to_a_contact(): void

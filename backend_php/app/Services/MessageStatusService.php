@@ -17,6 +17,31 @@ class MessageStatusService
             return;
         }
 
+        $statusAt = ! empty($statusData['timestamp'])
+            ? Carbon::createFromTimestamp((int) $statusData['timestamp'])
+            : null;
+        $currentStatus = $message->status;
+        $successfulStatuses = ['sent' => 1, 'delivered' => 2, 'read' => 3];
+
+        if ($statusAt && $message->provider_timestamp && $statusAt->lt($message->provider_timestamp)) {
+            return;
+        }
+
+        if ($currentStatus === 'read' && $status !== 'read') {
+            return;
+        }
+
+        if (
+            isset($successfulStatuses[$currentStatus], $successfulStatuses[$status])
+            && $successfulStatuses[$status] < $successfulStatuses[$currentStatus]
+        ) {
+            return;
+        }
+
+        if ($status === 'failed' && isset($successfulStatuses[$currentStatus]) && $currentStatus !== 'sent') {
+            return;
+        }
+
         $updates = ['status' => $status];
 
         if (! empty($statusData['errors'][0])) {
@@ -24,10 +49,14 @@ class MessageStatusService
             $updates['error_title'] = $statusData['errors'][0]['title'] ?? null;
             $updates['error_details'] = $statusData['errors'][0]['message']
                 ?? ($statusData['errors'][0]['error_data']['details'] ?? null);
+        } elseif ($status !== 'failed') {
+            $updates['error_code'] = null;
+            $updates['error_title'] = null;
+            $updates['error_details'] = null;
         }
 
-        if (! empty($statusData['timestamp'])) {
-            $updates['provider_timestamp'] = Carbon::createFromTimestamp((int) $statusData['timestamp']);
+        if ($statusAt) {
+            $updates['provider_timestamp'] = $statusAt;
         }
 
         $message->update($updates);

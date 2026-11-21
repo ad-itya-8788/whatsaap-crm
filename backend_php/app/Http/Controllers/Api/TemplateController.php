@@ -6,6 +6,7 @@ use App\Exceptions\MessagingException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SendTemplateRequest;
 use App\Http\Requests\StoreTemplateRequest;
+use App\Http\Requests\UploadTemplateMediaRequest;
 use App\Models\Conversation;
 use App\Models\MessageTemplate;
 use App\Models\WhatsappConfig;
@@ -24,6 +25,22 @@ class TemplateController extends Controller
     public function index(): JsonResponse
     {
         return response()->json(MessageTemplate::orderByDesc('updated_at')->get());
+    }
+
+    public function uploadMedia(UploadTemplateMediaRequest $request): JsonResponse
+    {
+        $config = WhatsappConfig::query()->latest('id')->first();
+        if (! $config || ! $config->access_token || $config->status !== 'connected') {
+            return response()->json(['message' => 'Connect WhatsApp before uploading template media.'], 422);
+        }
+
+        try {
+            $handle = $this->meta->uploadTemplateHeader($config, $request->file('file'));
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['handle' => $handle]);
     }
 
     public function store(StoreTemplateRequest $request): JsonResponse
@@ -118,6 +135,7 @@ class TemplateController extends Controller
                     'body_text' => $body['text'] ?? null,
                     'header_type' => $header['format'] ?? null,
                     'header_content' => $header['text'] ?? null,
+                    'header_handle' => $header['example']['header_handle'][0] ?? null,
                     'footer_text' => $components->firstWhere('type', 'FOOTER')['text'] ?? null,
                     'buttons' => $components->firstWhere('type', 'BUTTONS')['buttons'] ?? null,
                     'sample_values' => isset($body['example']['body_text'])
@@ -149,6 +167,9 @@ class TemplateController extends Controller
                 'template_name' => $message_template->name,
                 'template_language' => $message_template->language,
                 'template_params' => $request->input('variables', []),
+                'header_media_type' => $message_template->header_type,
+                'header_media_file' => $request->file('header_file'),
+                'idempotency_key' => $request->validated('idempotency_key'),
             ], $request->user()->id);
         } catch (MessagingException $e) {
             return response()->json([
@@ -157,7 +178,7 @@ class TemplateController extends Controller
             ], $e->status);
         }
 
-        return response()->json($message, 201);
+        return response()->json($message, $message->wasRecentlyCreated ? 201 : 200);
     }
 
     private function isApproved(MessageTemplate $template): bool
@@ -171,6 +192,7 @@ class TemplateController extends Controller
             $header = $data['header_data'];
             $data['header_type'] = $header['type'] ?? null;
             $data['header_content'] = $header['text'] ?? null;
+            $data['header_handle'] = $header['handle'] ?? null;
             unset($data['header_data']);
         }
     }
@@ -183,8 +205,17 @@ class TemplateController extends Controller
         }
         $components = [$body];
 
-        if ($template->header_type && $template->header_content) {
-            $components[] = ['type' => 'HEADER', 'format' => strtoupper($template->header_type), 'text' => $template->header_content];
+        if ($template->header_type) {
+            $header = [
+                'type' => 'HEADER',
+                'format' => strtoupper($template->header_type),
+            ];
+            if (strtoupper($template->header_type) === 'TEXT') {
+                $header['text'] = $template->header_content;
+            } elseif ($template->header_handle) {
+                $header['example'] = ['header_handle' => [$template->header_handle]];
+            }
+            $components[] = $header;
         }
         if ($template->footer_text) {
             $components[] = ['type' => 'FOOTER', 'text' => $template->footer_text];
