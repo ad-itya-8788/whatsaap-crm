@@ -73,10 +73,23 @@ class WhatsappController extends Controller
             ], 422);
         }
 
+        $error = $this->meta->subscribeApp($config);
+        if ($error) {
+            $config->update(['last_registration_error' => $error]);
+
+            return response()->json([
+                'message' => 'WhatsApp app could not subscribe to the WABA: '.$error,
+                'configured' => true,
+                'status' => 'disconnected',
+                'connection_status' => 'disconnected',
+            ], 422);
+        }
+
         $config->update([
             'status' => 'connected',
             'connected_at' => $config->connected_at ?: now(),
             'last_registration_error' => null,
+            'subscribed_apps_at' => $config->waba_id ? now() : $config->subscribed_apps_at,
         ]);
 
         return $this->getConfig();

@@ -49,12 +49,14 @@ Prerequisites: PHP 8.2+, Composer, Node.js, npm, and MySQL (for example, the XAM
 ## Connect Meta WhatsApp Cloud API
 
 1. In Meta's WhatsApp API Setup, obtain the Phone Number ID, WhatsApp Business Account ID, and an access token with the required WhatsApp permissions.
-2. In the CRM, open **Settings → WhatsApp**, enter those values and a webhook verify token, then save. The API checks the token and Phone Number ID with Meta before reporting a connection.
+2. In the CRM, open **Settings → WhatsApp**, enter those values and a webhook verify token, then save. The API checks the token and Phone Number ID with Meta and subscribes the app to the WABA before reporting a connection. The access token needs permission to manage the WhatsApp Business Account.
 3. Set `META_APP_SECRET` in `backend_php/.env` to the secret for the Meta app that owns the webhook (`WHATSAPP_APP_SECRET` is accepted as a fallback). Webhook POST requests are rejected unless their Meta signature is valid. Then run `php artisan config:clear`.
 4. In Meta's Webhooks settings, configure the callback URL as `https://<public-backend-host>/api/whatsapp/webhook`, use the same verify token, and subscribe to the `messages` field. Meta must be able to reach this HTTPS URL.
 5. Create and submit templates in **Message Templates**, or create them in WhatsApp Manager and use **Sync from Meta**. Only templates confirmed as Approved by Meta can be sent to an individual contact.
 
 Keep `.env` private and never commit access tokens, app secrets, or verify tokens. Only message contacts who have opted in. Business-initiated messages require approved templates; free-form replies are subject to Meta's customer-service window and messaging policies.
+
+Message send requests can include an `idempotency_key`. The frontend reuses the same key when a request is retried, so an uncertain provider response cannot cause a second send. If a send is shown as pending after a timeout or provider error, wait for a status webhook or check Meta before submitting a new message.
 
 The WhatsApp Graph API host and version are configurable with `WHATSAPP_BASE_HOST` and `WHATSAPP_API_VERSION`. Update the version when upgrading Meta Graph API versions.
 

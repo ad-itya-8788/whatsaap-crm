@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
+import BrandLogo from '../common/BrandLogo.jsx'
 import Icon from '../common/Icon.jsx'
 
 const nav = [
@@ -38,7 +39,7 @@ export default function AppLayout() {
       </aside>
       <div className="app-main">
         <header className="app-topbar">
-          <span className="topbar-brand">WhatsApp CRM</span>
+          <div className="topbar-brand"><BrandLogo className="topbar-logo" /></div>
           <div className="topbar-user">
             <span className="topbar-name">{user?.name || user?.email || 'Agent'}</span>
             <button type="button" className="topbar-logout" onClick={onLogout} aria-label="Log out" title="Log out">

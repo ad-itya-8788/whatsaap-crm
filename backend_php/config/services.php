@@ -39,6 +39,7 @@ return [
         'host' => env('WHATSAPP_BASE_HOST', 'graph.facebook.com'),
         'api_version' => env('WHATSAPP_API_VERSION', 'v27.0'),
         'app_secret' => env('META_APP_SECRET') ?: env('WHATSAPP_APP_SECRET'),
+        'app_id' => env('META_APP_ID'),
     ],
 
 ];

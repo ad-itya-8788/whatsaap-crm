@@ -98,9 +98,12 @@ class WhatsappWebhookController extends Controller
         $normalized = Phone::normalize($from);
         $name = data_get($metaContact, 'profile.name');
         [$type, $text, $media] = $this->parseContent($data);
+        $inboundAt = ! empty($data['timestamp']) && is_numeric($data['timestamp'])
+            ? Carbon::createFromTimestamp((int) $data['timestamp'])
+            : now();
 
         try {
-            DB::transaction(function () use ($wamid, $from, $normalized, $name, $data, $type, $text, $media, $phoneNumberId) {
+            DB::transaction(function () use ($wamid, $from, $normalized, $name, $data, $type, $text, $media, $phoneNumberId, $inboundAt) {
                 $contact = Contact::where('phone_normalized', $normalized)->first()
                     ?: ($from ? Contact::where('wa_user_id', $from)->first() : null);
 
@@ -123,6 +126,7 @@ class WhatsappWebhookController extends Controller
                     ['contact_id' => $contact->id],
                     ['status' => 'open'],
                 );
+                $conversation = Conversation::query()->lockForUpdate()->findOrFail($conversation->id);
 
                 Message::create([
                     'conversation_id' => $conversation->id,
@@ -134,23 +138,30 @@ class WhatsappWebhookController extends Controller
                     'filename' => $data[$type]['filename'] ?? null,
                     'message_id' => $wamid,
                     'status' => 'received',
-                    'provider_timestamp' => ! empty($data['timestamp'])
-                        ? Carbon::createFromTimestamp((int) $data['timestamp'])
-                        : null,
+                    'provider_timestamp' => $inboundAt,
                     'meta' => array_merge($data, $phoneNumberId ? ['phone_number_id' => $phoneNumberId] : []),
                 ]);
 
-                $conversation->update([
-                    'unread_count' => (int) $conversation->unread_count + 1,
-                    'last_message_text' => $text ? Str::limit($text, 500, '') : $type,
-                    'last_message_at' => now(),
-                    'last_inbound_at' => now(),
-                    'first_inbound_at' => $conversation->first_inbound_at ?: now(),
-                    'status' => 'open',
-                ]);
+                $conversation->increment('unread_count');
+                $updates = ['status' => 'open'];
+
+                if (! $conversation->last_message_at || $inboundAt->gt($conversation->last_message_at)) {
+                    $updates['last_message_text'] = $text ? Str::limit($text, 500, '') : $type;
+                    $updates['last_message_at'] = $inboundAt;
+                }
+
+                if (! $conversation->last_inbound_at || $inboundAt->gt($conversation->last_inbound_at)) {
+                    $updates['last_inbound_at'] = $inboundAt;
+                }
+
+                if (! $conversation->first_inbound_at || $inboundAt->lt($conversation->first_inbound_at)) {
+                    $updates['first_inbound_at'] = $inboundAt;
+                }
+
+                $conversation->update($updates);
             });
         } catch (QueryException $e) {
-            if (! str_contains($e->getMessage(), 'Duplicate entry')) {
+            if (! $wamid || ! Message::where('message_id', $wamid)->exists()) {
                 throw $e;
             }
         }

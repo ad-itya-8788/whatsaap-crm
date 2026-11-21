@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import Icon from '../components/common/Icon.jsx'
+import BrandLogo from '../components/common/BrandLogo.jsx'
 import { errorMessage } from '../lib/utils.js'
 
 function AuthShell({ title, subtitle, children, footer }) {
   return (
     <main className="auth-wrap">
       <section className="auth-card">
-        <div className="auth-brand"><Icon name="chat" size={20} /> WhatsApp CRM</div>
+        <div className="auth-brand"><BrandLogo className="auth-logo" /></div>
         <h1 className="auth-title">{title}</h1>
         <p className="auth-subtitle">{subtitle}</p>
         {children}

@@ -32,9 +32,35 @@ class WhatsappConfigTest extends TestCase
             ->assertJsonPath('has_access_token', true)
             ->assertJsonMissingPath('access_token');
 
+        Http::assertSent(fn ($request) => $request->method() === 'POST'
+            && str_contains($request->url(), '/987654321/subscribed_apps'));
+
         $this->getJson('/api/app/whatsapp/health')
             ->assertOk()
             ->assertJsonPath('status', 'connected');
+    }
+
+    public function test_failed_waba_subscription_is_reported_instead_of_claiming_webhook_readiness(): void
+    {
+        Http::fakeSequence('graph.facebook.com/*')
+            ->push(['id' => '123456789'], 200)
+            ->push(['error' => ['message' => 'Missing permission']], 400);
+
+        $this->actingAs($this->createUser())
+            ->postJson('/api/app/whatsapp/config', [
+                'phone_number_id' => '123456789',
+                'waba_id' => '987654321',
+                'access_token' => 'test-access-token',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('status', 'disconnected')
+            ->assertJsonPath('message', 'WhatsApp app could not subscribe to the WABA: Missing permission');
+
+        $this->assertDatabaseHas('whatsapp_configs', [
+            'phone_number_id' => '123456789',
+            'status' => 'disconnected',
+            'last_registration_error' => 'Missing permission',
+        ]);
     }
 
     public function test_saving_existing_credentials_repairs_a_stale_disconnected_status(): void
