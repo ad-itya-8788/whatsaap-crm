@@ -49,6 +49,14 @@ class AuthController extends Controller
             ]);
         }
 
+        if (! $request->user()->is_active) {
+            Auth::logout();
+
+            throw ValidationException::withMessages([
+                'email' => ['This account has been deactivated. Contact an administrator.'],
+            ]);
+        }
+
         $request->session()->regenerate();
 
         return response()->json(['user' => $this->userPayload($request->user())]);

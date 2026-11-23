@@ -14,5 +14,6 @@ class Conversation extends Model {
     ];
     public function contact(): BelongsTo { return $this->belongsTo(Contact::class); }
     public function messages(): HasMany { return $this->hasMany(Message::class); }
+    public function notes(): HasMany { return $this->hasMany(ConversationNote::class); }
     public function assignedAgent(): BelongsTo { return $this->belongsTo(User::class, 'assigned_agent_id'); }
 }

@@ -164,6 +164,10 @@ class TemplateController extends Controller
         try {
             $message = $this->messaging->send($conversation, [
                 'content_type' => 'template',
+                'content_text' => $this->renderTemplateBody(
+                    (string) $message_template->body_text,
+                    $request->input('variables', []),
+                ),
                 'template_name' => $message_template->name,
                 'template_language' => $message_template->language,
                 'template_params' => $request->input('variables', []),
@@ -184,6 +188,20 @@ class TemplateController extends Controller
     private function isApproved(MessageTemplate $template): bool
     {
         return strtoupper((string) ($template->approval_status ?: $template->status)) === 'APPROVED';
+    }
+
+    private function renderTemplateBody(string $body, array $variables): string
+    {
+        $isList = array_is_list($variables);
+
+        return preg_replace_callback('/\{\{(\d+)\}\}/', function (array $matches) use ($variables, $isList): string {
+            $number = (int) $matches[1];
+            $key = $isList ? $number - 1 : $number;
+
+            return array_key_exists($key, $variables)
+                ? (string) $variables[$key]
+                : $matches[0];
+        }, $body);
     }
 
     private function mapHeader(array &$data): void

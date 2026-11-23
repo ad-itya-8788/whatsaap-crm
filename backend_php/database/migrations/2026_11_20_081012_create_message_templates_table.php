@@ -13,7 +13,7 @@ return new class extends Migration {
             $table->string('header_type')->nullable();
             $table->text('header_content')->nullable();
             $table->string('header_media_url')->nullable();
-            $table->string('header_handle')->nullable();
+            $table->text('header_handle')->nullable();
             $table->text('body_text')->nullable();
             $table->text('footer_text')->nullable();
             $table->json('buttons')->nullable();

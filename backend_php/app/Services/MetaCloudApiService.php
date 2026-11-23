@@ -270,13 +270,16 @@ class MetaCloudApiService
         return ['type' => 'text', 'text' => ['body' => $body]];
     }
 
-    public function messageMediaPayload(string $type, string $mediaId, ?string $caption, string $filename): array
+    public function messageMediaPayload(string $type, string $mediaId, ?string $caption, string $filename, ?string $mimeType = null): array
     {
         $media = ['id' => $mediaId];
         if ($type === 'document') {
             $media['filename'] = $filename;
         } elseif ($caption !== null && $caption !== '') {
             $media['caption'] = $caption;
+        }
+        if ($type === 'audio' && $mimeType && str_starts_with(strtolower($mimeType), 'audio/ogg')) {
+            $media['voice'] = true;
         }
 
         return [

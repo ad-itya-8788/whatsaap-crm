@@ -39,6 +39,7 @@ class SendMessageRequest extends FormRequest
                     }
                 },
             ],
+            'reply_to_message_id' => ['nullable', 'integer', 'exists:messages,id'],
             'idempotency_key' => ['nullable', 'string', 'max:128'],
         ];
     }

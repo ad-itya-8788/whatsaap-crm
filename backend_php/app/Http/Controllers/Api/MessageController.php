@@ -22,10 +22,24 @@ class MessageController extends Controller
     public function index(Request $request, Conversation $conversation): JsonResponse
     {
         $perPage = min(max($request->integer('per_page', 50), 1), 100);
+        $search = $request->string('search')->toString();
 
-        return response()->json(
-            $conversation->messages()->orderByDesc('id')->cursorPaginate($perPage)
-        );
+        $query = $conversation->messages()
+            ->with([
+                'replyTo:id,content_text,sender_type,content_type,filename',
+                'template:name,body_text',
+            ])
+            ->orderByDesc('id');
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('content_text', 'like', "%{$search}%")
+                    ->orWhere('filename', 'like', "%{$search}%")
+                    ->orWhere('template_name', 'like', "%{$search}%");
+            });
+        }
+
+        return response()->json($query->cursorPaginate($perPage));
     }
 
     public function store(SendMessageRequest $request, Conversation $conversation): JsonResponse
@@ -72,10 +86,14 @@ class MessageController extends Controller
 
         $filename = basename($message->filename ?: 'whatsapp-attachment');
         $filename = preg_replace('/[\r\n"\\\\]/', '_', $filename);
-        $disposition = in_array($type, ['image', 'video', 'audio'], true) ? 'inline' : 'attachment';
+        $mimeType = $asset['mime_type'] ?: 'application/octet-stream';
+        $previewable = in_array($type, ['image', 'video', 'audio'], true)
+            || $mimeType === 'application/pdf'
+            || str_starts_with($mimeType, 'text/');
+        $disposition = $previewable ? 'inline' : 'attachment';
 
         return response($asset['body'])
-            ->header('Content-Type', $asset['mime_type'] ?: 'application/octet-stream')
+            ->header('Content-Type', $mimeType)
             ->header('Content-Disposition', $disposition.'; filename="'.$filename.'"')
             ->header('Cache-Control', 'private, no-store')
             ->header('X-Content-Type-Options', 'nosniff');

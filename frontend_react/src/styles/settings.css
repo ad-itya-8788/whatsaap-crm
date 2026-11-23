@@ -1,0 +1,15 @@
+.connection-card, .settings-card { overflow: hidden; }
+.settings-layout { display: grid; grid-template-columns: minmax(280px, .9fr) minmax(0, 1.4fr); gap: var(--space-4); align-items: start; }
+.connection-body { padding: var(--space-4); }
+.status-row { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-4); font-size: 13px; font-weight: 600; }
+.settings-section-title { margin: var(--space-4) 0 var(--space-2); color: var(--muted); font-size: 12px; letter-spacing: .05em; text-transform: uppercase; }
+.webhook-box { display: flex; align-items: center; gap: var(--space-2); padding: 10px; border: 1px dashed var(--line); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.webhook-box code { flex: 1; min-width: 0; color: var(--ink-soft); font-size: 11px; overflow-wrap: anywhere; }
+.guidance { margin: var(--space-3) 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
+.settings-card form { padding: var(--space-4); }
+.settings-hint { margin: var(--space-3) 0 0; }
+.settings-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
+
+@media (max-width: 1100px) {
+  .settings-layout { grid-template-columns: 1fr; }
+}

@@ -23,10 +23,31 @@ class MessagingService
 
     public function send(Conversation $conversation, array $data, ?int $senderId): Message
     {
+        $conversation->loadMissing('contact');
+        $contact = $conversation->contact;
+
+        if ($contact && $contact->consent_status === 'opted_out') {
+            throw new MessagingException(
+                'This contact has opted out of WhatsApp messages. Update their consent before sending.',
+                422,
+            );
+        }
+
         $type = $data['content_type'] ?? 'text';
         $file = $data['file'] ?? $data['header_media_file'] ?? null;
         $fileHash = $file instanceof UploadedFile ? hash_file('sha256', $file->getRealPath()) : null;
         $idempotencyKey = $data['idempotency_key'] ?? null;
+        $replyTo = null;
+        if (! empty($data['reply_to_message_id'])) {
+            $replyTo = Message::query()
+                ->where('id', $data['reply_to_message_id'])
+                ->where('conversation_id', $conversation->id)
+                ->first();
+
+            if (! $replyTo) {
+                throw new MessagingException('The message you are replying to is not part of this conversation.', 422);
+            }
+        }
         $idempotencyHash = hash('sha256', json_encode([
             'conversation_id' => $conversation->id,
             'sender_id' => $senderId,
@@ -37,6 +58,7 @@ class MessagingService
             'template_params' => array_values($data['template_params'] ?? []),
             'media_type' => $data['header_media_type'] ?? $type,
             'file_hash' => $fileHash,
+            'reply_to_message_id' => $replyTo?->id,
         ], JSON_THROW_ON_ERROR));
 
         if ($idempotencyKey) {
@@ -65,7 +87,8 @@ class MessagingService
         }
 
         try {
-            $message = DB::transaction(function () use ($conversation, $senderId, $type, $data, $idempotencyKey, $idempotencyHash) {
+            $message =                 DB::transaction(function () use ($conversation, $senderId, $type, $data, $idempotencyKey, $idempotencyHash, $replyTo) {
+
                 $message = Message::create([
                     'conversation_id' => $conversation->id,
                     'sender_type' => 'agent',
@@ -74,12 +97,13 @@ class MessagingService
                     'content_text' => $data['content_text'] ?? null,
                     'template_name' => $data['template_name'] ?? null,
                     'status' => 'sending',
+                    'reply_to_message_id' => $replyTo?->id,
                     'idempotency_key' => $idempotencyKey,
                     'idempotency_hash' => $idempotencyKey ? $idempotencyHash : null,
                 ]);
 
                 $conversation->update([
-                    'last_message_text' => ($data['content_text'] ?? '') ?: ($data['template_name'] ?: $this->mediaLabel($type)),
+                    'last_message_text' => ($data['content_text'] ?? '') ?: (($data['template_name'] ?? '') ?: $this->mediaLabel($type)),
                     'last_message_at' => now(),
                     'last_reply_at' => now(),
                 ]);
@@ -128,9 +152,14 @@ class MessagingService
                     $mediaId,
                     $data['content_text'] ?? null,
                     $file->getClientOriginalName(),
+                    $file->getMimeType(),
                 );
             } else {
                 $payload = $this->meta->textPayload((string) $data['content_text']);
+            }
+
+            if ($replyTo?->message_id) {
+                $payload['context'] = ['message_id' => $replyTo->message_id];
             }
 
             $result = $this->meta->sendMessage($config, $phone, $payload);

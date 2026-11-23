@@ -9,6 +9,10 @@ export function errorMessage(error, fallback = 'Something went wrong. Please try
   return error?.message || fallback
 }
 
+export function isAdmin(user) {
+  return ['admin', 'owner'].includes(String(user?.role || '').toLowerCase())
+}
+
 export function createIdempotencyKey() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
 
@@ -59,6 +63,12 @@ export function formatTime(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+export function formatDuration(seconds) {
+  const total = Number.isFinite(Number(seconds)) ? Math.max(0, Math.floor(Number(seconds))) : 0
+  const minutes = Math.floor(total / 60)
+  return `${minutes}:${String(total % 60).padStart(2, '0')}`
 }
 
 export function formatDate(value) {

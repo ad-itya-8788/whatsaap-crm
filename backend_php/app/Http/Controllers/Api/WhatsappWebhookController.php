@@ -7,6 +7,7 @@ use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\WhatsappConfig;
+use App\Services\ConsentService;
 use App\Services\MessageStatusService;
 use App\Support\Phone;
 use Carbon\Carbon;
@@ -20,7 +21,10 @@ use Illuminate\Support\Str;
 
 class WhatsappWebhookController extends Controller
 {
-    public function __construct(private MessageStatusService $statuses) {}
+    public function __construct(
+        private MessageStatusService $statuses,
+        private ConsentService $consent,
+    ) {}
 
     public function verify(Request $request): JsonResponse|Response
     {
@@ -122,6 +126,10 @@ class WhatsappWebhookController extends Controller
                     return;
                 }
 
+                if ($this->isOptOutKeyword($text) && $contact->consent_status !== 'opted_out') {
+                    $this->consent->change($contact, 'opted_out', 'whatsapp_keyword');
+                }
+
                 $conversation = Conversation::firstOrCreate(
                     ['contact_id' => $contact->id],
                     ['status' => 'open'],
@@ -165,6 +173,19 @@ class WhatsappWebhookController extends Controller
                 throw $e;
             }
         }
+    }
+
+    private function isOptOutKeyword(?string $text): bool
+    {
+        if (! $text) {
+            return false;
+        }
+
+        $normalized = mb_strtolower(preg_replace('/\s+/u', ' ', trim($text)) ?? '');
+
+        return in_array($normalized, [
+            'stop', 'stopall', 'unsubscribe', 'cancel', 'opt out', 'optout',
+        ], true);
     }
 
     private function parseContent(array $data): array

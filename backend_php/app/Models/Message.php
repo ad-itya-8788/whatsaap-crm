@@ -31,4 +31,9 @@ class Message extends Model
     {
         return $this->belongsTo(self::class, 'reply_to_message_id');
     }
+
+    public function template(): BelongsTo
+    {
+        return $this->belongsTo(MessageTemplate::class, 'template_name', 'name');
+    }
 }
