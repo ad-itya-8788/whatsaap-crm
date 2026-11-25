@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import Recorder from 'opus-recorder'
 import encoderPath from 'opus-recorder/dist/encoderWorker.min.js?url'
+import api from '../../api/client.js'
 import Icon from '../common/Icon.jsx'
 import { useToast } from '../common/ToastProvider.jsx'
+import { errorMessage } from '../../lib/utils.js'
 import { fileSize, fileType } from './chatUtils.js'
 
 const ACCEPT = 'image/jpeg,image/png,video/mp4,video/3gpp,audio/aac,audio/amr,audio/mpeg,audio/mp4,audio/ogg,audio/opus,application/pdf,text/plain,text/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation'
@@ -36,6 +38,7 @@ export default function ChatComposer({
   onFileRemove,
   uploadProgress = 0,
   quickReplies = [],
+  conversationId = null,
 }) {
   const toast = useToast()
   const fileInputRef = useRef(null)
@@ -48,6 +51,7 @@ export default function ChatComposer({
   const [recording, setRecording] = useState(false)
   const [recordSeconds, setRecordSeconds] = useState(0)
   const [localError, setLocalError] = useState('')
+  const [drafting, setDrafting] = useState(false)
 
   useEffect(() => {
     if (!file) {
@@ -170,6 +174,23 @@ export default function ChatComposer({
     composerRef.current?.focus()
   }
 
+  const draftWithAi = async () => {
+    if (!conversationId || drafting) return
+    setDrafting(true)
+    try {
+      const { data } = await api.post('/api/app/ai/draft', { conversation_id: conversationId })
+      const body = String(data.content || '').trim()
+      if (!body) throw new Error('The AI returned an empty draft. Please try again.')
+      onDraftChange(draft ? `${draft.trimEnd()}\n${body}` : body)
+      composerRef.current?.focus()
+      toast.success('Draft added. Review it before sending.')
+    } catch (error) {
+      toast.error(errorMessage(error, 'Unable to create an AI draft.'))
+    } finally {
+      setDrafting(false)
+    }
+  }
+
   const onKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
@@ -177,7 +198,7 @@ export default function ChatComposer({
     }
   }
 
-  const disabled = sending || optedOut || (!draft.trim() && !file)
+  const disabled = sending || drafting || optedOut || (!draft.trim() && !file)
 
   return (
     <div className="composer" ref={popoverRef}>
@@ -220,6 +241,11 @@ export default function ChatComposer({
         <button type="button" className={`icon-button${recording ? ' is-recording' : ''}`} onClick={recording ? stopRecording : startRecording} aria-label={recording ? 'Stop recording' : 'Record audio'}>
           <Icon name="mic" size={20} />
         </button>
+        {conversationId && (
+          <button type="button" className="icon-button" onClick={draftWithAi} disabled={optedOut || drafting} aria-label="Draft with AI" title={drafting ? 'Drafting...' : 'Draft a reply with AI'}>
+            <Icon name="bot" size={19} />
+          </button>
+        )}
         <div className="quick-reply-menu">
           <button type="button" className={`icon-button${openMenu === 'replies' ? ' is-open' : ''}`} onClick={() => setOpenMenu((value) => value === 'replies' ? '' : 'replies')} disabled={optedOut} aria-label="Quick replies" aria-expanded={openMenu === 'replies'}>
             <Icon name="bolt" size={19} />

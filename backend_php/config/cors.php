@@ -1,11 +1,11 @@
 <?php
 
 return [
-    'paths' => ['api/*', 'sanctum/csrf-cookie', 'login', 'logout', 'register', 'forgot-password', 'reset-password', 'user'],
-    'allowed_methods' => ['*'],
-    'allowed_origins' => [env('FRONTEND_URL', 'http://localhost:5173')],
+    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+    'allowed_methods' => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    'allowed_origins' => array_values(array_filter(explode(',', env('FRONTEND_URL', 'http://localhost:5173')))),
     'allowed_origins_patterns' => [],
-    'allowed_headers' => ['*'],
+    'allowed_headers' => ['Accept', 'Authorization', 'Content-Type', 'Origin', 'X-CSRF-TOKEN', 'X-Requested-With', 'X-XSRF-TOKEN'],
     'exposed_headers' => [],
     'max_age' => 0,
     'supports_credentials' => true,

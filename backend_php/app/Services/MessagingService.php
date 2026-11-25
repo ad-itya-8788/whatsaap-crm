@@ -34,6 +34,9 @@ class MessagingService
         }
 
         $type = $data['content_type'] ?? 'text';
+        $senderType = in_array($data['sender_type'] ?? 'agent', ['agent', 'bot', 'system'], true)
+            ? $data['sender_type']
+            : 'agent';
         $file = $data['file'] ?? $data['header_media_file'] ?? null;
         $fileHash = $file instanceof UploadedFile ? hash_file('sha256', $file->getRealPath()) : null;
         $idempotencyKey = $data['idempotency_key'] ?? null;
@@ -51,6 +54,7 @@ class MessagingService
         $idempotencyHash = hash('sha256', json_encode([
             'conversation_id' => $conversation->id,
             'sender_id' => $senderId,
+            'sender_type' => $senderType,
             'content_type' => $type,
             'content_text' => $data['content_text'] ?? null,
             'template_name' => $data['template_name'] ?? null,
@@ -59,6 +63,8 @@ class MessagingService
             'media_type' => $data['header_media_type'] ?? $type,
             'file_hash' => $fileHash,
             'reply_to_message_id' => $replyTo?->id,
+            'interactive_reply_id' => $data['interactive_reply_id'] ?? null,
+            'payload' => $data['payload'] ?? null,
         ], JSON_THROW_ON_ERROR));
 
         if ($idempotencyKey) {
@@ -87,17 +93,20 @@ class MessagingService
         }
 
         try {
-            $message =                 DB::transaction(function () use ($conversation, $senderId, $type, $data, $idempotencyKey, $idempotencyHash, $replyTo) {
+            $message =                 DB::transaction(function () use ($conversation, $senderId, $senderType, $type, $data, $idempotencyKey, $idempotencyHash, $replyTo) {
 
                 $message = Message::create([
                     'conversation_id' => $conversation->id,
-                    'sender_type' => 'agent',
+                    'sender_type' => $senderType,
                     'sender_id' => $senderId,
                     'content_type' => $type,
                     'content_text' => $data['content_text'] ?? null,
                     'template_name' => $data['template_name'] ?? null,
                     'status' => 'sending',
                     'reply_to_message_id' => $replyTo?->id,
+                    'interactive_reply_id' => $data['interactive_reply_id'] ?? null,
+                    'interactive_payload' => $data['interactive_payload'] ?? null,
+                    'meta' => $data['meta'] ?? null,
                     'idempotency_key' => $idempotencyKey,
                     'idempotency_hash' => $idempotencyKey ? $idempotencyHash : null,
                 ]);
@@ -134,7 +143,9 @@ class MessagingService
                 ]);
             }
 
-            if ($type === 'template') {
+            if (is_array($data['payload'] ?? null)) {
+                $payload = $data['payload'];
+            } elseif ($type === 'template') {
                 $headerMedia = $mediaId ? [
                     'id' => $mediaId,
                     'type' => $mediaType,

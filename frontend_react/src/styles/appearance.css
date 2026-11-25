@@ -1,0 +1,121 @@
+.appearance-card {
+  grid-column: 1 / -1;
+}
+
+.appearance-body {
+  display: grid;
+  gap: 20px;
+  padding: 4px 0;
+}
+
+.appearance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.appearance-row.is-column {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.mode-switch {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--muted-soft);
+}
+
+.mode-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mode-switch button.is-active {
+  background: var(--card);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+  color: var(--foreground);
+}
+
+.theme-grid {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.theme-option {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.theme-option:hover {
+  background: var(--accent-soft);
+}
+
+.theme-option.is-active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.theme-swatch {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border: 1px solid rgb(0 0 0 / 0.1);
+  border-radius: 50%;
+}
+
+.theme-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.theme-copy strong {
+  font-size: 13px;
+}
+
+.theme-copy small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+@media (max-width: 900px) {
+  .theme-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .appearance-row:not(.is-column) {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .theme-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

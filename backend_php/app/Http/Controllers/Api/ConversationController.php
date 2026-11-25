@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\AutomationEngine;
 use App\Models\Conversation;
+use App\Models\Notification;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -97,6 +99,25 @@ class ConversationController extends Controller
         ]);
 
         $conversation->update(['assigned_agent_id' => $data['assignee_id'] ?? null]);
+
+        if (! empty($data['assignee_id']) && (int) $data['assignee_id'] !== $request->user()->id) {
+            $contact = $conversation->contact;
+            $label = $contact?->name ?: $contact?->phone ?: 'a contact';
+
+            Notification::create([
+                'user_id' => (int) $data['assignee_id'],
+                'type' => 'conversation_assigned',
+                'title' => 'Conversation assigned to you',
+                'body' => "{$label} was assigned to you.",
+                'data' => ['conversation_id' => $conversation->id],
+            ]);
+
+            app(AutomationEngine::class)->dispatch('conversation_assigned', [
+                'contact_id' => $conversation->contact_id,
+                'conversation_id' => $conversation->id,
+                'agent_id' => (int) $data['assignee_id'],
+            ]);
+        }
 
         return response()->json($conversation->load(['contact', 'assignedAgent']));
     }

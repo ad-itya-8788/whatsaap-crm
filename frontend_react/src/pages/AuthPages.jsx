@@ -26,7 +26,7 @@ export function LoginPage() {
   const [saving, setSaving] = useState(false)
 
   if (loading) return <div className="app-loading"><span className="spinner" /></div>
-  if (user) return <Navigate to="/chats" replace />
+  if (user) return <Navigate to="/dashboard" replace />
 
   const submit = async (event) => {
     event.preventDefault()
@@ -34,7 +34,7 @@ export function LoginPage() {
     setError('')
     try {
       await login(values)
-      navigate('/chats', { replace: true })
+      navigate('/dashboard', { replace: true })
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to sign in.'))
     } finally {
@@ -46,7 +46,7 @@ export function LoginPage() {
     <AuthShell
       title="Welcome back"
       subtitle="Sign in to your WhatsApp CRM workspace."
-      footer={<>New here? <Link to="/register">Create an account</Link></>}
+      footer={<>Need access? Ask an administrator to add your account.</>}
     >
       <form className="auth-form" onSubmit={submit}>
         {error && <div className="alert alert-error">{error}</div>}
@@ -65,55 +65,13 @@ export function LoginPage() {
 }
 
 export function RegisterPage() {
-  const { user, loading, register } = useAuth()
-  const navigate = useNavigate()
-  const [values, setValues] = useState({ name: '', email: '', password: '', password_confirmation: '' })
-  const [error, setError] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  if (loading) return <div className="app-loading"><span className="spinner" /></div>
-  if (user) return <Navigate to="/chats" replace />
-
-  const submit = async (event) => {
-    event.preventDefault()
-    setSaving(true)
-    setError('')
-    try {
-      await register(values)
-      navigate('/chats', { replace: true })
-    } catch (requestError) {
-      setError(errorMessage(requestError, 'Unable to create your account.'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
   return (
     <AuthShell
-      title="Create your account"
-      subtitle="Set up a workspace to manage your WhatsApp conversations."
-      footer={<>Already registered? <Link to="/login">Sign in</Link></>}
+      title="Registration is disabled"
+      subtitle="Aayojan AI CRM accounts are created by an administrator."
+      footer={<>Already have an account? <Link to="/login">Sign in</Link></>}
     >
-      <form className="auth-form" onSubmit={submit}>
-        {error && <div className="alert alert-error">{error}</div>}
-        <div className="field">
-          <label className="field-label" htmlFor="register-name">Full name</label>
-          <input id="register-name" className="input" autoComplete="name" required value={values.name} onChange={(event) => setValues({ ...values, name: event.target.value })} />
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="register-email">Email address</label>
-          <input id="register-email" className="input" type="email" autoComplete="email" required value={values.email} onChange={(event) => setValues({ ...values, email: event.target.value })} />
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="register-password">Password</label>
-          <input id="register-password" className="input" type="password" autoComplete="new-password" minLength={8} required value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} />
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="register-password-confirmation">Confirm password</label>
-          <input id="register-password-confirmation" className="input" type="password" autoComplete="new-password" minLength={8} required value={values.password_confirmation} onChange={(event) => setValues({ ...values, password_confirmation: event.target.value })} />
-        </div>
-        <button className="button button-primary button-block" disabled={saving}>{saving ? 'Creating account...' : 'Create account'}</button>
-      </form>
+      <div className="alert alert-info">Ask your administrator to add you as a team member, then sign in with the credentials they provide.</div>
     </AuthShell>
   )
 }

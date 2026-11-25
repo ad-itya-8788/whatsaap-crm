@@ -57,6 +57,7 @@ export default function ContactsPage() {
   const navigate = useNavigate()
   const toast = useToast()
   const [contacts, setContacts] = useState([])
+  const [contactStats, setContactStats] = useState(null)
   const [conversations, setConversations] = useState([])
   const [tags, setTags] = useState([])
   const [customFields, setCustomFields] = useState([])
@@ -111,6 +112,14 @@ export default function ContactsPage() {
       const { data } = await api.get('/api/app/contacts', { params: buildParams() })
       setContacts(extractList(data))
       setPaginator(extractPaginator(data))
+      if (data?.stats) {
+        setContactStats({
+          total: Number(data.stats.total ?? 0),
+          opted_in: Number(data.stats.opted_in ?? 0),
+          opted_out: Number(data.stats.opted_out ?? 0),
+          unknown: Number(data.stats.unknown ?? 0),
+        })
+      }
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to load contacts.'))
     } finally {
@@ -378,6 +387,22 @@ export default function ContactsPage() {
           </>
         }
       />
+      <section className="contacts-stats" aria-label="Contact consent summary">
+        {[
+          { key: 'total', label: 'Total Contacts', icon: '#', className: 'contact-stat-total' },
+          { key: 'opted_in', label: 'Opted In', icon: '✓', className: 'contact-stat-opted-in' },
+          { key: 'opted_out', label: 'Opted Out', icon: '×', className: 'contact-stat-opted-out' },
+          { key: 'unknown', label: 'Unknown', icon: '?', className: 'contact-stat-unknown' },
+        ].map((stat) => (
+          <article className={`contact-stat-card ${stat.className}`} key={stat.key}>
+            <span className="stat-icon" aria-hidden="true">{stat.icon}</span>
+            <div className="stat-copy">
+              <span className="stat-label">{stat.label}</span>
+              <strong className="stat-value">{contactStats ? contactStats[stat.key].toLocaleString() : '—'}</strong>
+            </div>
+          </article>
+        ))}
+      </section>
       {error && <div className="alert alert-error">{error}</div>}
       {notice && <div className="alert alert-success">{notice}</div>}
 

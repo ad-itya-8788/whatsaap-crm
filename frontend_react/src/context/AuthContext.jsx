@@ -41,15 +41,6 @@ export function AuthProvider({ children }) {
     return data
   }
 
-  const register = async (payload) => {
-    await csrf()
-    await api.post('/api/register', payload)
-    const { data } = await api.get('/api/user')
-    const authenticatedUser = normalizeUser(data.user || data)
-    if (!authenticatedUser) throw new Error('Account created, but the session could not be verified. Please sign in.')
-    setUser(authenticatedUser)
-    return data
-  }
 
   const logout = async () => {
     try { await api.post('/api/logout') } catch {}
@@ -57,7 +48,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, login, register, logout, refresh }}>
+    <AuthContext.Provider value={{ user, setUser, loading, login, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   )

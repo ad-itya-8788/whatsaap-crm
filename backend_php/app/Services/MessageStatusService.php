@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\BroadcastRecipient;
 use App\Models\Message;
 use App\Models\PendingMessageStatus;
 use Carbon\Carbon;
@@ -60,6 +61,7 @@ class MessageStatusService
         }
 
         $message->update($updates);
+        $this->syncBroadcastRecipient($message, $status, $updates);
 
         if ($message->message_id) {
             PendingMessageStatus::where('wamid', $message->message_id)
@@ -109,5 +111,25 @@ class MessageStatusService
                 ]],
             ]);
         }
+    }
+
+    private function syncBroadcastRecipient(Message $message, string $status, array $updates): void
+    {
+        $recipient = BroadcastRecipient::where('message_id', $message->id)->first();
+        if (! $recipient) {
+            return;
+        }
+
+        $recipient->update([
+            'status' => $status,
+            'error' => $status === 'failed' ? ($updates['error_title'] ?? 'Delivery failed') : null,
+            'provider_error' => $status === 'failed' ? [
+                'code' => $updates['error_code'] ?? null,
+                'title' => $updates['error_title'] ?? null,
+                'details' => $updates['error_details'] ?? null,
+            ] : null,
+        ]);
+
+        app(BroadcastService::class)->refreshCounters($recipient->broadcast);
     }
 }

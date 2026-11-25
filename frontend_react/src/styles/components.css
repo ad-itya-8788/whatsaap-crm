@@ -57,7 +57,7 @@
 
 .input:focus, .textarea:focus, .select:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(0, 168, 132, .12);
+  box-shadow: 0 0 0 3px var(--primary-soft-2);
 }
 
 .textarea { resize: vertical; min-height: 80px; }

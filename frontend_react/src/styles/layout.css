@@ -21,7 +21,7 @@ a.rail-brand {
   height: 40px;
   margin-bottom: var(--space-2);
   border-radius: 50%;
-  background: rgba(0, 168, 132, .15);
+  background: var(--primary-soft);
   color: var(--accent);
 }
 

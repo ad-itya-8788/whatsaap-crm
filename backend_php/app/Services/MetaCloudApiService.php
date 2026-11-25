@@ -270,6 +270,70 @@ class MetaCloudApiService
         return ['type' => 'text', 'text' => ['body' => $body]];
     }
 
+    public function buttonsPayload(string $body, array $buttons, ?array $header = null, ?string $footer = null): array
+    {
+        $interactive = [
+            'type' => 'button',
+            'body' => ['text' => $body],
+            'action' => [
+                'buttons' => collect($buttons)
+                    ->take(3)
+                    ->map(fn (array $button) => [
+                        'type' => 'reply',
+                        'id' => (string) ($button['id'] ?? ''),
+                        'title' => mb_substr((string) ($button['title'] ?? ''), 0, 20),
+                    ])
+                    ->values()
+                    ->all(),
+            ],
+        ];
+
+        if ($header && ! empty($header['text'])) {
+            $interactive['header'] = ['type' => 'text', 'text' => mb_substr((string) $header['text'], 0, 60)];
+        }
+        if ($footer) {
+            $interactive['footer'] = ['text' => mb_substr($footer, 0, 60)];
+        }
+
+        return ['type' => 'interactive', 'interactive' => $interactive];
+    }
+
+    public function listPayload(string $body, string $button, array $sections, ?array $header = null, ?string $footer = null): array
+    {
+        $interactive = [
+            'type' => 'list',
+            'body' => ['text' => $body],
+            'action' => [
+                'button' => mb_substr($button, 0, 20),
+                'sections' => collect($sections)
+                    ->take(10)
+                    ->map(fn (array $section) => [
+                        'title' => mb_substr((string) ($section['title'] ?? ''), 0, 24),
+                        'rows' => collect($section['rows'] ?? [])
+                            ->take(10)
+                            ->map(fn (array $row) => [
+                                'id' => (string) ($row['id'] ?? ''),
+                                'title' => mb_substr((string) ($row['title'] ?? ''), 0, 24),
+                                ...(empty($row['description']) ? [] : ['description' => mb_substr((string) $row['description'], 0, 72)]),
+                            ])
+                            ->values()
+                            ->all(),
+                    ])
+                    ->values()
+                    ->all(),
+            ],
+        ];
+
+        if ($header && ! empty($header['text'])) {
+            $interactive['header'] = ['type' => 'text', 'text' => mb_substr((string) $header['text'], 0, 60)];
+        }
+        if ($footer) {
+            $interactive['footer'] = ['text' => mb_substr($footer, 0, 60)];
+        }
+
+        return ['type' => 'interactive', 'interactive' => $interactive];
+    }
+
     public function messageMediaPayload(string $type, string $mediaId, ?string $caption, string $filename, ?string $mimeType = null): array
     {
         $media = ['id' => $mediaId];

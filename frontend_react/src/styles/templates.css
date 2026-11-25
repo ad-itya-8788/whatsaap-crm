@@ -23,7 +23,7 @@
 .template-list { display: grid; gap: 10px; max-height: calc(100vh - var(--topbar-h) - 260px); min-height: 180px; overflow: auto; padding: 14px; }
 .template-card { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); transition: border-color .15s ease, box-shadow .15s ease; }
 .template-card:hover { border-color: #b7d9cf; box-shadow: 0 3px 12px rgba(15, 23, 42, .06); }
-.template-card.is-editing { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(0, 168, 132, .1); }
+.template-card.is-editing { border-color: var(--accent); box-shadow: 0 0 0 2px var(--primary-soft-2); }
 .template-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
 .template-name { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
 .template-meta { margin-top: 4px; color: var(--muted); font-size: 11px; }

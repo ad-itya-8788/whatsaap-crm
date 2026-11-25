@@ -2,12 +2,21 @@ import { useCallback, useEffect, useState } from 'react'
 import api from '../api/client.js'
 import PageHeader from '../components/common/PageHeader.jsx'
 import Icon from '../components/common/Icon.jsx'
+import BrowserNotificationsCard from '../components/common/BrowserNotificationsCard.jsx'
 import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { errorMessage, isAdmin } from '../lib/utils.js'
 
 const blankConfig = { waba_id: '', phone_number_id: '', access_token: '', verify_token: '' }
+
+const THEMES = [
+  { id: 'amber', name: 'Gold', tagline: "Aayojan AI's gold accent.", swatch: 'oklch(0.745 0.16 65)' },
+  { id: 'violet', name: 'Violet', tagline: 'Confident and playful.', swatch: 'oklch(0.526 0.247 293)' },
+  { id: 'emerald', name: 'Emerald', tagline: 'Growth-oriented green.', swatch: 'oklch(0.62 0.16 162)' },
+  { id: 'cobalt', name: 'Cobalt', tagline: 'Clean B2B blue.', swatch: 'oklch(0.585 0.2 254)' },
+  { id: 'rose', name: 'Rose', tagline: 'Bold and modern.', swatch: 'oklch(0.645 0.22 16)' },
+]
 
 function resolveStatus(config, health) {
   if (config.connection_status) return config.connection_status
@@ -32,6 +41,8 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [confirmDisconnect, setConfirmDisconnect] = useState(false)
+  const [mode, setMode] = useState(() => localStorage.getItem('wacrm.mode') || 'light')
+  const [theme, setTheme] = useState(() => localStorage.getItem('wacrm.theme') || 'amber')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -110,6 +121,18 @@ export default function SettingsPage() {
     }
   }
 
+  const changeAppearance = (next = {}) => {
+    const nextMode = next.mode || mode
+    const nextTheme = next.theme || theme
+    setMode(nextMode)
+    setTheme(nextTheme)
+    document.documentElement.dataset.mode = nextMode
+    document.documentElement.dataset.theme = nextTheme
+    localStorage.setItem('wacrm.mode', nextMode)
+    localStorage.setItem('wacrm.theme', nextTheme)
+    window.dispatchEvent(new CustomEvent('wacrm:theme-changed', { detail: { mode: nextMode, theme: nextTheme } }))
+  }
+
   const connected = ['connected', 'ok', 'active'].includes(String(status).toLowerCase())
   const badgeTone = connectionError ? 'rejected' : connected ? 'approved' : 'pending'
 
@@ -120,6 +143,48 @@ export default function SettingsPage() {
       {!canManage && <div className="alert alert-info">Only administrators can change WhatsApp connection settings.</div>}
 
       <div className="settings-layout">
+        <section className="card appearance-card">
+          <header className="panel-header"><h2>Appearance</h2></header>
+          <div className="appearance-body">
+            <div className="appearance-row">
+              <div>
+                <h3 className="settings-section-title">Mode</h3>
+                <p className="field-hint">Choose how Aayojan AI CRM looks on this device.</p>
+              </div>
+              <div className="mode-switch" role="group" aria-label="Color mode">
+                <button type="button" className={mode === 'light' ? 'is-active' : ''} onClick={() => changeAppearance({ mode: 'light' })}>
+                  <Icon name="sun" size={15} /> Light
+                </button>
+                <button type="button" className={mode === 'dark' ? 'is-active' : ''} onClick={() => changeAppearance({ mode: 'dark' })}>
+                  <Icon name="moon" size={15} /> Dark
+                </button>
+              </div>
+            </div>
+            <div className="appearance-row is-column">
+              <div>
+                <h3 className="settings-section-title">Accent color</h3>
+                <p className="field-hint">Gold is the default Aayojan AI accent.</p>
+              </div>
+              <div className="theme-grid">
+                {THEMES.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`theme-option${theme === item.id ? ' is-active' : ''}`}
+                    onClick={() => changeAppearance({ theme: item.id })}
+                    aria-pressed={theme === item.id}
+                  >
+                    <span className="theme-swatch" style={{ background: item.swatch }} />
+                    <span className="theme-copy"><strong>{item.name}</strong><small>{item.tagline}</small></span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <BrowserNotificationsCard />
+
         <section className="card connection-card">
           <header className="panel-header">
             <h2>Connection</h2>

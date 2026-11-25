@@ -1,7 +1,4 @@
 :root {
-  --accent: #00a884;
-  --accent-dark: #008069;
-  --accent-soft: #e3f5ef;
   --nav-bg: #111b21;
   --nav-fg: #aebac1;
   --nav-active: #2a3942;
@@ -68,7 +65,7 @@ a { color: var(--accent-dark); }
 h1, h2, h3, p { margin-top: 0; }
 
 :focus-visible {
-  outline: 3px solid rgba(0, 168, 132, .65);
+  outline: 3px solid var(--ring);
   outline-offset: 2px;
 }
 

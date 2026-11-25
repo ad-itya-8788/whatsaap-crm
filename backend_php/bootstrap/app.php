@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureRole;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -17,6 +18,17 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => EnsureRole::class,
         ]);
+    })
+    ->withSchedule(function (Schedule $schedule) {
+            $schedule->command('broadcasts:dispatch-scheduled')
+                ->everyMinute()
+                ->withoutOverlapping();
+            $schedule->command('automations:dispatch-pending')
+                ->everyMinute()
+                ->withoutOverlapping();
+            $schedule->command('flows:sweep-timeouts')
+                ->everyFiveMinutes()
+                ->withoutOverlapping();
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

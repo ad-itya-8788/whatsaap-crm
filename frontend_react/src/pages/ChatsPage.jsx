@@ -710,6 +710,7 @@ export default function ChatsPage() {
               onFileRemove={() => setSelectedFile(null)}
               uploadProgress={uploadProgress}
               quickReplies={quickReplies}
+              conversationId={selectedId}
             />
             {replyTo && <div className="reply-context"><Icon name="reply" size={14} /><span>{messageText(replyTo) || 'Attachment'}</span><button type="button" className="icon-button" onClick={() => setReplyTo(null)} aria-label="Cancel reply"><Icon name="close" size={14} /></button></div>}
           </>

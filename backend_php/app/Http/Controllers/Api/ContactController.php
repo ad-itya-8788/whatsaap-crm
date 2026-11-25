@@ -8,6 +8,7 @@ use App\Models\Contact;
 use App\Models\ConsentEvent;
 use App\Models\CustomField;
 use App\Models\Tag;
+use App\Services\AutomationEngine;
 use App\Services\ConsentService;
 use App\Support\Phone;
 use Illuminate\Http\JsonResponse;
@@ -68,7 +69,24 @@ class ContactController extends Controller
             $paginator->getCollection()->map(fn (Contact $contact) => $this->contactPayload($contact))
         );
 
-        return response()->json($paginator);
+        $stats = Contact::query()
+            ->selectRaw("
+                COUNT(*) AS total,
+                SUM(CASE WHEN consent_status = 'opted_in' THEN 1 ELSE 0 END) AS opted_in,
+                SUM(CASE WHEN consent_status = 'opted_out' THEN 1 ELSE 0 END) AS opted_out,
+                SUM(CASE WHEN consent_status NOT IN ('opted_in', 'opted_out') OR consent_status IS NULL THEN 1 ELSE 0 END) AS unknown
+            ")
+            ->first();
+
+        return response()->json([
+            ...$paginator->toArray(),
+            'stats' => [
+                'total' => (int) $stats->total,
+                'opted_in' => (int) $stats->opted_in,
+                'opted_out' => (int) $stats->opted_out,
+                'unknown' => (int) $stats->unknown,
+            ],
+        ]);
     }
 
     public function store(ContactRequest $request): JsonResponse
@@ -98,6 +116,11 @@ class ContactController extends Controller
         if ($tagIds !== null) {
             $contact->tags()->sync($tagIds);
         }
+
+        app(AutomationEngine::class)->dispatch('new_contact_created', [
+            'contact_id' => $contact->id,
+            'contact_created' => true,
+        ]);
 
         return response()->json($this->contactPayload($contact), 201);
     }
@@ -155,7 +178,17 @@ class ContactController extends Controller
             'tags.*' => ['integer', 'exists:tags,id'],
         ]);
 
+        $before = $contact->tags()->pluck('tags.id')->all();
         $contact->tags()->sync($data['tags']);
+        $added = array_diff(array_map('intval', $data['tags']), array_map('intval', $before));
+
+        foreach ($added as $tagId) {
+            app(AutomationEngine::class)->dispatch('tag_added', [
+                'contact_id' => $contact->id,
+                'conversation_id' => $contact->conversations()->value('id'),
+                'tag_id' => $tagId,
+            ]);
+        }
 
         return response()->json(['tags' => $contact->load('tags')->tags]);
     }
