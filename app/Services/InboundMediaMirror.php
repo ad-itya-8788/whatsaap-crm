@@ -66,6 +66,16 @@ class InboundMediaMirror
         ];
     }
 
+    public function deleteByMessageId(int|string $messageId): void
+    {
+        $disk = Storage::disk('local');
+        $path = "whatsapp/inbound/{$messageId}";
+
+        if ($disk->exists($path) && ! $disk->delete($path)) {
+            Log::warning('whatsapp.inbound_media.delete_failed', ['message_id' => $messageId]);
+        }
+    }
+
     private function path(Message $message): string
     {
         return "whatsapp/inbound/{$message->id}";

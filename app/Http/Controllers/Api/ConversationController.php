@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Notification;
 use App\Models\User;
+use App\Services\InboundMediaMirror;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ConversationController extends Controller
 {
@@ -79,6 +81,28 @@ class ConversationController extends Controller
     public function show(Conversation $conversation): JsonResponse
     {
         return response()->json($conversation->load(['contact.tags', 'assignedAgent:id,name,avatar_url'])->loadCount('notes'));
+    }
+
+    public function destroy(Conversation $conversation, InboundMediaMirror $mediaMirror): JsonResponse
+    {
+        $mediaMessageIds = DB::transaction(function () use ($conversation) {
+            $conversation = Conversation::query()->lockForUpdate()->findOrFail($conversation->id);
+            $mediaMessageIds = $conversation->messages()
+                ->where('sender_type', 'customer')
+                ->whereNotNull('media_url')
+                ->pluck('id')
+                ->all();
+
+            $conversation->delete();
+
+            return $mediaMessageIds;
+        });
+
+        foreach ($mediaMessageIds as $messageId) {
+            $mediaMirror->deleteByMessageId($messageId);
+        }
+
+        return response()->json(['ok' => true]);
     }
 
     public function unreadCount(): JsonResponse

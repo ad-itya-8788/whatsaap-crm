@@ -226,7 +226,6 @@ export default function AppLayout({ children }) {
         <div className="sidebar-brand">
           <Link href="/dashboard" aria-label="Aayojan AI CRM home">
             <BrandLogo className="brand-logo sidebar-logo" />
-            <span className="sidebar-brand-name">Aayojan AI CRM</span>
           </Link>
           <button type="button" className="sidebar-close" onClick={() => setDrawerOpen(false)} aria-label="Close navigation">
             <Icon name="close" size={20} />

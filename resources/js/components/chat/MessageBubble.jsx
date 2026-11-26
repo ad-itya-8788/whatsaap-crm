@@ -93,7 +93,7 @@ function MessageStatus({ status }) {
   )
 }
 
-export default function MessageBubble({ message, incoming, mediaItems = [], onOpenMedia, onReply, onRetry, onReact, reactions = [], retrying = false, grouped = false }) {
+export default function MessageBubble({ message, incoming, mediaItems = [], onOpenMedia, onReply, onRetry, onReact, onDelete, reactions = [], retrying = false, grouped = false }) {
   const toast = useToast()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
@@ -223,6 +223,7 @@ export default function MessageBubble({ message, incoming, mediaItems = [], onOp
               {onReply && <button type="button" onClick={() => { setMenuOpen(false); onReply(message) }}><Icon name="reply" size={14} /> Reply</button>}
               {item && <button type="button" onClick={() => { setMenuOpen(false); openMedia() }}><Icon name="eye" size={14} /> Open attachment</button>}
               {item && <a href={item.src} download={item.name}><Icon name="download" size={14} /> Download</a>}
+              {onDelete && <button type="button" onClick={() => { setMenuOpen(false); onDelete(message) }}><Icon name="trash" size={14} /> Delete from CRM</button>}
             </div>
           )}
         </div>

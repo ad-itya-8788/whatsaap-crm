@@ -17,6 +17,7 @@ use App\Services\MetaCloudApiService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MessageController extends Controller
@@ -62,6 +63,49 @@ class MessageController extends Controller
         }
 
         return response()->json($message, $message->wasRecentlyCreated ? 201 : 200);
+    }
+
+    public function destroy(Message $message, InboundMediaMirror $mediaMirror): JsonResponse
+    {
+        $result = DB::transaction(function () use ($message) {
+            $conversation = Conversation::query()
+                ->whereKey($message->conversation_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $message = $conversation->messages()
+                ->whereKey($message->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $mediaMessageId = $message->sender_type === 'customer' && $message->media_url
+                ? $message->id
+                : null;
+            $message->delete();
+
+            $latest = $conversation->messages()->orderByDesc('id')->first([
+                'content_text',
+                'content_type',
+                'template_name',
+                'provider_timestamp',
+                'created_at',
+            ]);
+            $preview = $latest
+                ? Str::limit($latest->content_text ?: $latest->template_name ?: $latest->content_type, 500, '')
+                : null;
+
+            $conversation->forceFill([
+                'last_message_text' => $preview,
+                'last_message_at' => $latest?->provider_timestamp ?? $latest?->created_at,
+            ])->save();
+
+            return ['media_message_id' => $mediaMessageId];
+        });
+
+        if ($result['media_message_id'] !== null) {
+            $mediaMirror->deleteByMessageId($result['media_message_id']);
+        }
+
+        return response()->json(['ok' => true]);
     }
 
     public function react(ReactMessageRequest $request, Message $message): JsonResponse
