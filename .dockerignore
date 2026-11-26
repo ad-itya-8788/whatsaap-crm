@@ -8,9 +8,8 @@
 !database/
 !database/migrations/
 !database/migrations/**
-!deploy/
-!deploy/render/
-!deploy/render/**
+!docker/
+!docker/**
 !public/
 !public/**
 !resources/

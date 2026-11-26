@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\MetaApiException;
 use App\Models\WhatsappConfig;
 use App\Support\WhatsappMedia;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
@@ -147,7 +148,7 @@ class MetaCloudApiService
 
     public function uploadMessageMedia(WhatsappConfig $config, UploadedFile $file): string
     {
-        $stream = \GuzzleHttp\Psr7\Utils::tryFopen($file->getPathname(), 'rb');
+        $stream = Utils::tryFopen($file->getPathname(), 'rb');
 
         try {
             $response = Http::withToken($config->access_token)
@@ -215,7 +216,7 @@ class MetaCloudApiService
             throw new MetaApiException('Meta did not return a template upload session.', $session->status());
         }
 
-        $stream = \GuzzleHttp\Psr7\Utils::tryFopen($file->getPathname(), 'rb');
+        $stream = Utils::tryFopen($file->getPathname(), 'rb');
 
         try {
             $upload = Http::withHeaders($authorization + ['file_offset' => '0'])

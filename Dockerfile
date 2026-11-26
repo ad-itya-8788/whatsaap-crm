@@ -9,7 +9,7 @@ RUN npm run build
 FROM php:8.3-apache-bookworm AS php-base
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tini util-linux \
-    && docker-php-ext-install -j2 pdo_mysql opcache pcntl \
+    && docker-php-ext-install -j2 pdo_mysql pcntl \
     && a2enmod rewrite headers \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /var/www/html
@@ -42,11 +42,13 @@ ENV APP_ENV=production \
 
 COPY --from=dependencies /var/www/html /var/www/html
 COPY --from=frontend /build/public/build /var/www/html/public/build
-COPY deploy/render/apache.conf /etc/apache2/sites-available/000-default.conf
-COPY deploy/render/php.ini /usr/local/etc/php/conf.d/99-render.ini
-COPY --chmod=755 deploy/render/start.sh /usr/local/bin/crm-start
+COPY docker/apache-vhost.conf /etc/apache2/sites-available/000-default.conf
+COPY docker/php.ini /usr/local/etc/php/conf.d/99-render.ini
+COPY --chmod=755 docker/docker-entrypoint.sh /usr/local/bin/crm-start
 
 RUN cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
+    && chown root:root /var/www/html \
+    && chmod 755 /var/www/html \
     && mkdir -p bootstrap/cache storage/app/private storage/app/public \
         storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
     && chown -R www-data:www-data bootstrap/cache storage \
@@ -55,5 +57,6 @@ RUN cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
     && RENDER_HTTP_PORT=10000 apache2ctl configtest
 
 EXPOSE 10000
+STOPSIGNAL SIGTERM
 ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/crm-start"]
 CMD ["apache2-foreground"]

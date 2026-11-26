@@ -24,12 +24,19 @@ class InboundMediaMirror
 
         try {
             $asset = $this->meta->downloadMessageMedia($config, $mediaId, $message->content_type, self::MAX_BYTES);
+            $stream = $asset['body']->detach();
+            if (! is_resource($stream)) {
+                Log::warning('whatsapp.inbound_media.storage_failed', ['message_id' => $message->id]);
+
+                return;
+            }
+
             try {
-                if (! Storage::disk('local')->put($this->path($message), $asset['body'])) {
+                if (! Storage::disk('local')->put($this->path($message), $stream)) {
                     Log::warning('whatsapp.inbound_media.storage_failed', ['message_id' => $message->id]);
                 }
             } finally {
-                $asset['body']->close();
+                fclose($stream);
             }
         } catch (Throwable) {
             Log::warning('whatsapp.inbound_media.mirror_failed', ['message_id' => $message->id]);

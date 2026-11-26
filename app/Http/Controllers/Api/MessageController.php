@@ -16,7 +16,6 @@ use App\Services\MessagingService;
 use App\Services\MetaCloudApiService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -164,10 +163,11 @@ class MessageController extends Controller
             } finally {
                 $body->close();
             }
-        })
-            ->header('Content-Type', $mimeType)
-            ->header('Content-Disposition', $disposition.'; filename="'.$filename.'"')
-            ->header('Cache-Control', 'private, no-store')
-            ->header('X-Content-Type-Options', 'nosniff');
+        }, 200, [
+            'Content-Type' => $mimeType,
+            'Content-Disposition' => $disposition.'; filename="'.$filename.'"',
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 }

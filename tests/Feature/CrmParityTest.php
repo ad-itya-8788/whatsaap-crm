@@ -5,14 +5,17 @@ namespace Tests\Feature;
 use App\Jobs\DeliverOutboundWebhook;
 use App\Models\Contact;
 use App\Models\Conversation;
+use App\Models\Message;
 use App\Models\MessageTemplate;
 use App\Models\User;
 use App\Models\WebhookEndpoint;
 use App\Models\WhatsappConfig;
 use App\Services\OutboundWebhookTarget;
+use App\Services\InboundMediaMirror;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class CrmParityTest extends TestCase
@@ -132,6 +135,43 @@ class CrmParityTest extends TestCase
             && $request['template']['components'][0]['parameters'][0]['text'] === 'QA');
     }
 
+    public function test_inbox_attachments_stream_from_meta_and_from_the_local_mirror(): void
+    {
+        $agent = User::factory()->create(['role' => 'agent']);
+        $contact = Contact::create(['name' => 'Attachment contact']);
+        $conversation = Conversation::create(['contact_id' => $contact->id]);
+        $config = WhatsappConfig::create([
+            'status' => 'connected', 'phone_number_id' => '12345', 'access_token' => 'fixture-token',
+        ]);
+        $message = Message::create([
+            'conversation_id' => $conversation->id,
+            'sender_type' => 'customer',
+            'content_type' => 'document',
+            'media_url' => '123',
+            'media_type' => 'application/pdf',
+            'filename' => 'test.pdf',
+        ]);
+
+        Storage::fake('local');
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://graph.facebook.com/*' => Http::response([
+                'url' => 'https://example.fbcdn.net/attachment',
+                'file_size' => 7,
+                'mime_type' => 'application/pdf',
+            ]),
+            'https://example.fbcdn.net/attachment' => fn () => Http::response('%PDF-1.'),
+        ]);
+
+        $path = '/api/app/messages/'.$message->id.'/media';
+        $this->actingAs($agent)->get($path)->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf')->assertStreamedContent('%PDF-1.');
+
+        app(InboundMediaMirror::class)->store($message, $config);
+        $this->get($path)->assertOk()->assertStreamedContent('%PDF-1.');
+        Http::assertSentCount(4);
+    }
+
     public function test_webhook_delivery_signs_the_body_and_rejects_local_destinations(): void
     {
         $target = app(OutboundWebhookTarget::class);
@@ -156,5 +196,26 @@ class CrmParityTest extends TestCase
                 && hash_equals(hash_hmac('sha256', $parts[1].'.'.$request->body(), 'fixture-signing-secret'), $parts[2]);
         });
         $this->assertNotNull($endpoint->refresh()->last_delivery_at);
+    }
+
+    public function test_meta_can_verify_and_post_to_the_public_webhook(): void
+    {
+        $secret = 'fixture-app-secret';
+        config(['services.whatsapp.app_secret' => $secret]);
+        WhatsappConfig::create([
+            'status' => 'connected', 'phone_number_id' => '12345',
+            'access_token' => 'fixture-token', 'verify_token' => 'fixture-verifier',
+        ]);
+
+        $path = '/api/whatsapp/webhook';
+        $this->get($path.'?hub.mode=subscribe&hub.verify_token=fixture-verifier&hub.challenge=12345')
+            ->assertOk()->assertContent('12345');
+
+        $payload = '{"entry":[]}';
+        $this->call('POST', $path, [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $payload, $secret),
+        ], $payload)->assertOk()->assertExactJson(['ok' => true]);
+        $this->postJson($path, ['entry' => []])->assertForbidden();
     }
 }

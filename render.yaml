@@ -20,3 +20,5 @@ services:
         sync: false
       - key: META_APP_SECRET
         sync: false
+      - key: META_APP_ID
+        sync: false
