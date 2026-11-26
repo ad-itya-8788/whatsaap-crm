@@ -4,15 +4,15 @@
 
 .appearance-body {
   display: grid;
-  gap: 20px;
-  padding: 4px 0;
+  gap: var(--space-4);
+  padding: var(--space-1) 0;
 }
 
 .appearance-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .appearance-row.is-column {
@@ -23,48 +23,48 @@
 .mode-switch {
   display: inline-flex;
   padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--muted-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
 }
 
 .mode-switch button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
+  gap: var(--space-2);
+  padding: 6px 10px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--muted-foreground);
+  color: var(--muted);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 
 .mode-switch button.is-active {
-  background: var(--card);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
-  color: var(--foreground);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink);
 }
 
 .theme-grid {
   display: grid;
   width: 100%;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .theme-option {
   display: flex;
   min-width: 0;
   align-items: flex-start;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--card);
-  color: var(--foreground);
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -76,14 +76,14 @@
 
 .theme-option.is-active {
   border-color: var(--primary);
-  box-shadow: 0 0 0 1px var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
 }
 
 .theme-swatch {
   width: 20px;
   height: 20px;
   flex: 0 0 20px;
-  border: 1px solid rgb(0 0 0 / 0.1);
+  border: 1px solid var(--line);
   border-radius: 50%;
 }
 
@@ -94,12 +94,12 @@
 }
 
 .theme-copy strong {
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .theme-copy small {
-  color: var(--muted-foreground);
-  font-size: 11px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
   line-height: 1.3;
 }
 

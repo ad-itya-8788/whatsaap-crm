@@ -8,6 +8,8 @@
 !database/
 !database/migrations/
 !database/migrations/**
+!database/seeders/
+!database/seeders/**
 !docker/
 !docker/**
 !public/

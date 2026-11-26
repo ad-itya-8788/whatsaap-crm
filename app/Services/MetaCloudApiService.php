@@ -119,13 +119,26 @@ class MetaCloudApiService
             return $this->errorMessage($response);
         }
 
-        $apps = collect($response->json('data', []));
-        $appId = (string) config('services.whatsapp.app_id');
-        $subscribed = $appId === ''
-            ? $apps->isNotEmpty()
-            : $apps->contains(fn ($app) => (string) data_get($app, 'whatsapp_business_api_data.id', data_get($app, 'id')) === $appId);
+        $appIds = collect($response->json('data', []))
+            ->map(fn ($app) => trim((string) data_get($app, 'whatsapp_business_api_data.id', data_get($app, 'id', ''))))
+            ->filter()
+            ->unique()
+            ->values();
 
-        return $subscribed ? null : 'The Meta app is not subscribed to this WhatsApp Business Account.';
+        if ($appIds->isEmpty()) {
+            return 'Meta returned no apps subscribed to this WABA. Check the WABA ID, app access to the business account, and the WhatsApp webhook configuration in Meta.';
+        }
+
+        $appId = trim((string) config('services.whatsapp.app_id'));
+        if ($appId === '' || $appIds->contains($appId)) {
+            return null;
+        }
+
+        return sprintf(
+            'This WABA is subscribed to Meta app ID(s) %s, but META_APP_ID is %s. Set META_APP_ID to the app that issued the WhatsApp access token.',
+            $appIds->implode(', '),
+            $appId,
+        );
     }
 
     public function subscribeApp(WhatsappConfig $config): ?string

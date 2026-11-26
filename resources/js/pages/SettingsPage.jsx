@@ -433,6 +433,7 @@ export default function SettingsPage() {
         toast.success('WhatsApp configuration saved.')
       }
       await load()
+      window.dispatchEvent(new Event('wacrm:whatsapp-changed'))
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to save WhatsApp configuration.'))
       toast.error(errorMessage(requestError, 'Unable to save WhatsApp configuration.'))
@@ -451,6 +452,7 @@ export default function SettingsPage() {
       setRegistration(null)
       setConfirmDisconnect(false)
       await load()
+      window.dispatchEvent(new Event('wacrm:whatsapp-changed'))
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to disconnect WhatsApp.'))
       toast.error(errorMessage(requestError, 'Unable to disconnect WhatsApp.'))
@@ -474,6 +476,7 @@ export default function SettingsPage() {
     try {
       const { data } = await api.get('/api/app/whatsapp/config/verify-registration')
       setRegistration(data)
+      window.dispatchEvent(new Event('wacrm:whatsapp-changed'))
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to verify WhatsApp registration.'))
     } finally {

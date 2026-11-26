@@ -22,6 +22,10 @@ const mainNav = [
 ]
 
 const manageNav = [
+  { to: '/workspace', label: 'Tags & fields', icon: 'tag' },
+  { to: '/templates', label: 'Message Templates', icon: 'template' },
+  { to: '/reports', label: 'Reports', icon: 'chart' },
+  { to: '/team', label: 'Team', icon: 'users' },
   { to: '/settings', label: 'Settings', icon: 'settings' },
 ]
 
@@ -44,6 +48,24 @@ function pageTitle(pathname) {
   if (exact) return exact[1]
   const prefix = pageTitles.find(([path]) => pathname.startsWith(path))
   return prefix ? prefix[1] : 'Dashboard'
+}
+
+function breadcrumbs(pathname) {
+  const current = pageTitle(pathname)
+  if (pathname === '/dashboard') return [{ label: 'Workspace', to: '/dashboard' }, { label: current }]
+  const items = [{ label: 'Workspace', to: '/dashboard' }]
+  if (/^\/broadcasts\/new(?:[/:?]|$)/.test(pathname)) {
+    items.push({ label: 'Broadcasts', to: '/broadcasts' }, { label: 'New broadcast' })
+  } else if (/^\/broadcasts\/[^/]+/.test(pathname)) {
+    items.push({ label: 'Broadcasts', to: '/broadcasts' }, { label: 'Broadcast details' })
+  } else if (/^\/templates\/create(?:[/:?]|$)/.test(pathname)) {
+    items.push({ label: 'Message Templates', to: '/templates' }, { label: 'New template' })
+  } else if (/^\/templates\/[^/]+\/edit/.test(pathname)) {
+    items.push({ label: 'Message Templates', to: '/templates' }, { label: 'Edit template' })
+  } else {
+    items.push({ label: current })
+  }
+  return items
 }
 
 function AccountAvatar({ user }) {
@@ -85,6 +107,7 @@ export default function AppLayout({ children }) {
   const [footerMenuOpen, setFooterMenuOpen] = useState(false)
   const [unread, setUnread] = useState(0)
   const [notificationUnread, setNotificationUnread] = useState(0)
+  const [whatsapp, setWhatsapp] = useState(null)
   const mode = useColorMode()
 
   const loadUnread = useCallback(async (signal) => {
@@ -97,8 +120,14 @@ export default function AppLayout({ children }) {
     setNotificationUnread(Number(data?.count || 0))
   }, [])
 
+  const loadWhatsapp = useCallback(async (signal) => {
+    const { data } = await api.get('/api/app/whatsapp/config', { signal, timeout: 10000 })
+    setWhatsapp(data)
+  }, [])
+
   usePoll(loadUnread, 60_000, { enabled: Boolean(user), event: 'wacrm:inbox-changed' })
   usePoll(loadNotificationUnread, 60_000, { enabled: Boolean(user), event: 'wacrm:notifications-changed' })
+  usePoll(loadWhatsapp, 120_000, { enabled: Boolean(user), event: 'wacrm:whatsapp-changed' })
 
   useEffect(() => {
     setDrawerOpen(false)
@@ -160,13 +189,14 @@ export default function AppLayout({ children }) {
           href={item.to}
           aria-current={isActive ? 'page' : undefined}
           className={`sidebar-link${isActive ? ' is-active' : ''}`}
+          title={item.label}
         >
           <Icon name={item.icon} size={16} />
           <span className="sidebar-link-label">{item.label}</span>
           {item.unread && unread > 0 && !isActive ? (
             <span className="nav-dot" aria-label={`${unread} unread conversations`} />
           ) : null}
-          {item.notificationUnread && notificationUnread > 0 ? (
+          {item.notificationUnread && notificationUnread > 0 && !isActive ? (
             <span className="nav-count" aria-label={`${notificationUnread} unread notifications`}>
               {notificationUnread > 9 ? '9+' : notificationUnread}
             </span>
@@ -175,6 +205,12 @@ export default function AppLayout({ children }) {
       </li>
     )
   }
+
+  const crumbs = breadcrumbs(location.pathname)
+  const connected = whatsapp?.status === 'connected'
+  const accountLabel = whatsapp?.phone_number_id
+    ? `Connected · ${whatsapp.phone_number_id}`
+    : connected ? 'WhatsApp connected' : 'WhatsApp not connected'
 
   return (
     <div className="app-shell">
@@ -190,6 +226,7 @@ export default function AppLayout({ children }) {
         <div className="sidebar-brand">
           <Link href="/dashboard" aria-label="Aayojan AI CRM home">
             <BrandLogo className="brand-logo sidebar-logo" />
+            <span className="sidebar-brand-name">Aayojan AI CRM</span>
           </Link>
           <button type="button" className="sidebar-close" onClick={() => setDrawerOpen(false)} aria-label="Close navigation">
             <Icon name="close" size={20} />
@@ -197,9 +234,14 @@ export default function AppLayout({ children }) {
         </div>
 
         <nav className="sidebar-nav">
-          <ul className="sidebar-section">{mainNav.map(renderLink)}</ul>
-          <div className="sidebar-section-divider" />
-          <ul className="sidebar-section">{manageNav.map(renderLink)}</ul>
+          <div className="sidebar-group">
+            <p className="sidebar-label">Workspace</p>
+            <ul className="sidebar-section">{mainNav.map(renderLink)}</ul>
+          </div>
+          <div className="sidebar-group">
+            <p className="sidebar-label">Manage</p>
+            <ul className="sidebar-section">{manageNav.map(renderLink)}</ul>
+          </div>
         </nav>
 
         <div className="sidebar-footer">
@@ -209,6 +251,7 @@ export default function AppLayout({ children }) {
               <span className="sidebar-user-name">{user?.name || 'Agent'}</span>
               <span className="sidebar-user-email">{user?.email || ''}</span>
             </span>
+            <Icon name="more" size={16} />
           </button>
           {footerMenuOpen ? (
             <AccountMenu user={user} onClose={() => setFooterMenuOpen(false)} onLogout={onLogout} showIdentity={false} />
@@ -221,34 +264,54 @@ export default function AppLayout({ children }) {
           <div className="topbar-start">
             <button
               type="button"
-              className="topbar-menu-btn"
+              className="topbar-menu-btn topbar-control"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open navigation"
+              title="Open navigation"
             >
-              <Icon name="menu" size={20} />
+              <Icon name="menu" size={18} />
             </button>
-            <h1 className="topbar-title">{pageTitle(location.pathname)}</h1>
+            <nav className="topbar-breadcrumb" aria-label="Breadcrumb">
+              {crumbs.map((crumb, index) => (
+                <span className="topbar-crumb" key={`${crumb.label}-${index}`}>
+                  {index > 0 && <Icon name="back" size={13} className="crumb-sep flip-icon" />}
+                  {crumb.to && index < crumbs.length - 1
+                    ? <Link href={crumb.to}>{crumb.label}</Link>
+                    : <span aria-current={index === crumbs.length - 1 ? 'page' : undefined}>{crumb.label}</span>}
+                </span>
+              ))}
+            </nav>
           </div>
           <div className="topbar-actions">
+            <Link className={`topbar-whatsapp${connected ? ' is-connected' : ''}`} href="/settings?tab=whatsapp" title={accountLabel}>
+              <Icon name="whatsapp" size={15} />
+              <span className="text-truncate">{whatsapp ? accountLabel : 'WhatsApp status'}</span>
+            </Link>
+            <Link className="topbar-control" href="/notifications" title="Notifications" aria-label={`Notifications${notificationUnread ? `, ${notificationUnread} unread` : ''}`}>
+              <Icon name="bell" size={17} />
+              {notificationUnread > 0 && <span className="nav-dot" />}
+            </Link>
             <button
               type="button"
-              className="mode-toggle"
+              className="topbar-control"
               onClick={() => changeAppearance({ mode: mode === 'dark' ? 'light' : 'dark' })}
               aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               title={mode === 'dark' ? 'Light mode' : 'Dark mode'}
             >
-              <Icon name={mode === 'dark' ? 'sun' : 'moon'} size={18} />
+              <Icon name={mode === 'dark' ? 'sun' : 'moon'} size={17} />
             </button>
             <div className="account-menu-wrap">
               <button
                 type="button"
-                className="topbar-avatar"
+                className="topbar-control topbar-account"
                 onClick={() => { setHeaderMenuOpen((open) => !open); setFooterMenuOpen(false) }}
                 aria-label="Open account menu"
                 aria-expanded={headerMenuOpen}
+                title={user?.name || 'Account'}
               >
                 <AccountAvatar user={user} />
                 <span className="topbar-account-name">{user?.name || 'Agent'}</span>
+                <Icon name="more" size={14} className="account-caret" />
               </button>
               {headerMenuOpen ? (
                 <AccountMenu user={user} onClose={() => setHeaderMenuOpen(false)} onLogout={onLogout} />

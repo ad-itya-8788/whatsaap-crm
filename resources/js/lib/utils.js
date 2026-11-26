@@ -1,12 +1,25 @@
+const SAFE_CLIENT_ERRORS = new Set([
+  'Network Error',
+  'Request aborted',
+])
+
+function isSafeMessage(message) {
+  if (typeof message !== 'string' || !message.trim()) return false
+  if (message.length > 300) return false
+  return !/\b(select\s+|insert\s+into|update\s+\w+\s+set|delete\s+from|sqlstate|pdoexception|stack\s*trace|vendor[\\/]|\.php:\d+)\b/i.test(message)
+}
+
 export function errorMessage(error, fallback = 'Something went wrong. Please try again.') {
   const data = error?.response?.data
   if (data?.errors) {
-    const messages = Object.values(data.errors).flat().filter(Boolean)
+    const messages = Object.values(data.errors).flat().filter(isSafeMessage)
     if (messages.length) return messages.join(' ')
   }
-  if (typeof data?.message === 'string' && data.message.trim()) return data.message
-  if (error?.message === 'Network Error') return 'Cannot reach the server. Check your connection and try again.'
-  return error?.message || fallback
+  if (isSafeMessage(data?.message)) return data.message.trim()
+  if (SAFE_CLIENT_ERRORS.has(error?.message) || /^timeout of \d+ms exceeded$/.test(error?.message || '')) {
+    return 'Cannot reach the server. Check your connection and try again.'
+  }
+  return fallback
 }
 
 export function isAdmin(user) {
