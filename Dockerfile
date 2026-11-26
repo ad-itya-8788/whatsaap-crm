@@ -47,6 +47,8 @@ COPY docker/php.ini /usr/local/etc/php/conf.d/99-render.ini
 COPY --chmod=755 docker/docker-entrypoint.sh /usr/local/bin/crm-start
 
 RUN cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
+    && (getent group 1000 >/dev/null || groupadd --gid 1000 render-secrets) \
+    && usermod --append --groups 1000 www-data \
     && chown root:root /var/www/html \
     && chmod 755 /var/www/html \
     && mkdir -p bootstrap/cache storage/app/private storage/app/public \

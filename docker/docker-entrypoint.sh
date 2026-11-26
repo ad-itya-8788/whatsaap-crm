@@ -11,12 +11,27 @@ export RENDER_HTTP_PORT="$port"
 export APP_URL="${APP_URL:-${RENDER_EXTERNAL_URL:-http://localhost:$port}}"
 : "${APP_KEY:?Set a stable Laravel APP_KEY in the service environment}"
 
-printf 'Listen %s\n' "$port" > /etc/apache2/ports.conf
+if [[ "${RENDER:-}" == true ]]; then
+    export APP_DEBUG=false
+fi
 
 as_app() {
     setpriv --reuid=www-data --regid=www-data --init-groups -- "$@"
 }
 
+mysql_ca="${MYSQL_ATTR_SSL_CA:-}"
+if [[ -n "$mysql_ca" ]] && ! as_app php -r '
+    $path = $argv[1];
+    if (!is_file($path) || !is_readable($path)) exit(1);
+    $pem = @file_get_contents($path);
+    exit($pem !== false && @openssl_x509_read($pem) !== false ? 0 : 1);
+' -- "$mysql_ca"; then
+    echo "MYSQL_ATTR_SSL_CA must point to a readable PEM certificate or bundle inside the container." >&2
+    echo "On Render, use the provider CA under /etc/secrets or the system trust bundle if your provider specifies it." >&2
+    exit 1
+fi
+
+printf 'Listen %s\n' "$port" > /etc/apache2/ports.conf
 as_app php artisan config:cache --no-interaction --quiet
 
 if [[ "${RENDER_RUN_BACKGROUND:-true}" != true ]] || [[ "$1" != apache2-foreground ]]; then
