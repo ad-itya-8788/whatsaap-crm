@@ -155,7 +155,6 @@ function FailedMessagesDialog({ open, messages, total, onClose }) {
             {messages.map((message) => {
               const reason = friendlyProviderMessage(message.errorCode, message.errorTitle)
                 || message.failureReason
-                || message.errorTitle
                 || 'Delivery failed'
               const technical = [message.errorTitle, message.errorCode ? `Code ${message.errorCode}` : null].filter(Boolean).join(' · ')
               return (

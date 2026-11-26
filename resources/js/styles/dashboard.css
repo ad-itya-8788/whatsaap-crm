@@ -461,7 +461,8 @@
   font-size: var(--fs-xs);
 }
 
-.dash-volume {
+.dash-volume,
+.dash-performance {
   min-height: 0;
 }
 
