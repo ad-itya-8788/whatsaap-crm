@@ -28,13 +28,6 @@ class MessagingService
         $conversation->loadMissing('contact');
         $contact = $conversation->contact;
 
-        if ($contact && $contact->consent_status === 'opted_out') {
-            throw new MessagingException(
-                'This contact has opted out of WhatsApp messages. Update their consent before sending.',
-                422,
-            );
-        }
-
         $type = $data['content_type'] ?? 'text';
         $senderType = $data['sender_type'] ?? 'agent';
         if (! in_array($senderType, ['agent', 'bot', 'system'], true)) {

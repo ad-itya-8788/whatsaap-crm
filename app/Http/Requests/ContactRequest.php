@@ -22,7 +22,6 @@ class ContactRequest extends FormRequest
             'wa_user_id' => ['nullable', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],
             'company' => ['nullable', 'string', 'max:255'],
-            'consent_status' => ['sometimes', 'in:opted_in,opted_out,unknown'],
             'tags' => ['sometimes', 'array'],
             'tags.*' => ['integer', 'exists:tags,id'],
             'custom_fields' => ['sometimes', 'array', function ($attribute, $value, $fail) {

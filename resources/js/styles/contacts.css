@@ -14,7 +14,7 @@
 
 .app-content:has(.contacts-card) .contacts-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(220px, 260px);
   gap: var(--space-3);
   margin-bottom: var(--space-4);
 }
@@ -67,18 +67,6 @@
 
 .app-content:has(.contacts-card) .contact-stat-total {
   --stat-accent: var(--contacts-primary);
-}
-
-.app-content:has(.contacts-card) .contact-stat-opted-in {
-  --stat-accent: #1b9a59;
-}
-
-.app-content:has(.contacts-card) .contact-stat-opted-out {
-  --stat-accent: #dc4653;
-}
-
-.app-content:has(.contacts-card) .contact-stat-unknown {
-  --stat-accent: #db8a19;
 }
 
 .app-content:has(.contacts-card) .page-header {
@@ -438,8 +426,7 @@
 }
 
 .app-content:has(.contacts-card) .contact-tags-field,
-.app-content:has(.contacts-card) .custom-field-section,
-.app-content:has(.contacts-card) .consent-editor {
+.app-content:has(.contacts-card) .custom-field-section {
   margin-top: var(--space-4);
   padding-top: var(--space-4);
   border-top: 1px solid var(--contacts-border);
@@ -462,10 +449,6 @@
 }
 
 @media (max-width: 1024px) {
-  .app-content:has(.contacts-card) .contacts-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .app-content:has(.contacts-card) .page-header {
     align-items: flex-start;
   }
@@ -481,6 +464,7 @@
 
 @media (max-width: 640px) {
   .app-content:has(.contacts-card) .contacts-stats {
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-2);
   }
 

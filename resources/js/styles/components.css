@@ -192,23 +192,6 @@
 .link-button:hover { text-decoration: underline; }
 .wa-id { color: var(--muted); font-size: var(--fs-sm); }
 
-.consent-badge {
-  display: inline-flex;
-  min-height: 22px;
-  align-items: center;
-  padding: 2px 7px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--secondary);
-  color: var(--muted);
-  font-size: var(--fs-xs);
-  font-weight: 650;
-  white-space: nowrap;
-}
-.consent-opted_in { background: var(--success-soft); border-color: color-mix(in srgb, var(--success) 26%, var(--line)); color: var(--success); }
-.consent-opted_out { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 26%, var(--line)); color: var(--danger); }
-.consent-unknown { background: var(--warning-soft); border-color: color-mix(in srgb, var(--warning) 26%, var(--line)); color: var(--warning); }
-
 .pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 10px var(--space-4); border-top: 1px solid var(--line); color: var(--muted); font-size: var(--fs-sm); }
 .pagination-actions { display: flex; align-items: center; gap: var(--space-2); }
 

@@ -3,6 +3,48 @@ const SAFE_CLIENT_ERRORS = new Set([
   'Request aborted',
 ])
 
+const GENERIC_PROVIDER_MESSAGE = 'Message could not be delivered.'
+const PROVIDER_ERROR_MESSAGES = new Map([
+  ['132001', 'Template unavailable for the selected WhatsApp account.'],
+  ['131037', 'WhatsApp display name approval required.'],
+])
+const PROVIDER_CODE_PATTERN = /(?:^|\D)#?(\d{4,8})(?:\D|$)/g
+const RAW_PROVIDER_ERROR_PATTERN = /\(?#\d{4,8}\)?|\b(?:whatsapp|meta|facebook|graph\s+api|provider)\b|\btemplate\b|\bdisplay\s+name\b|\b(?:send|delivery)\s+failed\b|\bdoes\s+(?:not|n't)\s+exist\b|\bunavailable\b|\bapproval\b|\brejected\b|\binvalid\s+(?:parameter|template|recipient)\b|\bapi\b/i
+
+function providerCodes(...values) {
+  const codes = []
+  for (const value of values) {
+    if (value === null || value === undefined) continue
+    const text = String(value)
+    const direct = text.trim()
+    if (/^\d+$/.test(direct) && !codes.includes(direct)) codes.push(direct)
+    for (const match of text.matchAll(PROVIDER_CODE_PATTERN)) {
+      if (!codes.includes(match[1])) codes.push(match[1])
+    }
+  }
+  return codes
+}
+
+function looksLikeRawProviderError(value) {
+  return RAW_PROVIDER_ERROR_PATTERN.test(String(value ?? ''))
+}
+
+export function friendlyProviderMessage(code, title) {
+  const codes = providerCodes(code, title)
+  const known = codes.find((item) => PROVIDER_ERROR_MESSAGES.has(item))
+  if (known) return PROVIDER_ERROR_MESSAGES.get(known)
+  if (codes.length && looksLikeRawProviderError(title ?? code)) return GENERIC_PROVIDER_MESSAGE
+  return null
+}
+
+function providerMessageFromData(data) {
+  const rawMessage = typeof data?.message === 'string' ? data.message : ''
+  return friendlyProviderMessage(
+    data?.error_code ?? data?.code ?? data?.provider_code ?? rawMessage,
+    rawMessage || data?.title || data?.error_title,
+  )
+}
+
 function isSafeMessage(message) {
   if (typeof message !== 'string' || !message.trim()) return false
   if (message.length > 300) return false
@@ -11,8 +53,16 @@ function isSafeMessage(message) {
 
 export function errorMessage(error, fallback = 'Something went wrong. Please try again.') {
   const data = error?.response?.data
+  const providerMessage = providerMessageFromData(data)
+  if (providerMessage) return providerMessage
   if (data?.errors) {
-    const messages = Object.values(data.errors).flat().filter(isSafeMessage)
+    const entries = Object.values(data.errors).flat()
+    for (const entry of entries) {
+      const raw = typeof entry === 'string' ? entry : String(entry?.message ?? entry?.title ?? '')
+      const friendly = friendlyProviderMessage(entry?.code ?? entry?.error_code ?? entry?.provider_code ?? raw, raw)
+      if (friendly) return friendly
+    }
+    const messages = entries.filter(isSafeMessage)
     if (messages.length) return messages.join(' ')
   }
   if (isSafeMessage(data?.message)) return data.message.trim()

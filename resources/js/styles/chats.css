@@ -64,11 +64,14 @@
 .icon-button.is-open, .icon-button.is-recording { background: var(--primary-soft); color: var(--accent-ink); }
 .icon-button.is-recording { color: var(--danger); }
 .thread-more { position: relative; }
-.thread-more-menu, .message-action-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 12; min-width: 170px; padding: 4px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow-lg); }
+.thread-more-menu, .message-action-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 12; width: max-content; min-width: 170px; max-width: min(248px, calc(100vw - 24px)); padding: 4px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow-lg); }
 .thread-more-menu button, .message-action-menu button, .message-action-menu a { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0; border-radius: 4px; background: transparent; color: var(--ink); font-size: var(--fs-sm); text-decoration: none; text-align: left; }
 .thread-more-menu button:hover, .message-action-menu button:hover, .message-action-menu a:hover { background: var(--hover); }
-
-.consent-banner { display: flex; align-items: center; gap: 8px; padding: 8px var(--space-4); border-bottom: 1px solid color-mix(in srgb, var(--warning) 24%, var(--line)); background: var(--warning-soft); color: var(--warning); font-size: var(--fs-sm); }
+.message.in .message-action-menu { right: auto; left: 0; }
+.message.out .message-action-menu { right: 0; left: auto; }
+.message-action-menu .message-reactions { flex-wrap: nowrap; margin: 0; }
+.message-action-menu .message-reaction-picker { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 2px; width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; padding: 2px 2px 5px; }
+.message-action-menu .message-reaction-picker button { display: grid; flex: 0 0 30px; width: 30px; height: 30px; place-items: center; padding: 0; font-size: 19px; line-height: 1; }
 
 .thread-side-panel { position: absolute; inset: 56px 0 0 auto; z-index: 8; display: flex; flex-direction: column; width: 330px; max-width: 92%; background: var(--surface); border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); }
 .side-panel-tabs { display: flex; align-items: center; gap: 4px; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--line); }

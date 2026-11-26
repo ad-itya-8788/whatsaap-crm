@@ -51,7 +51,6 @@ function ConversationComposer({
   onDraftChange,
   onSend,
   sending = false,
-  optedOut = false,
   file = null,
   onFileSelect,
   onFileRemove,
@@ -244,11 +243,11 @@ function ConversationComposer({
   const onKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !window.matchMedia?.('(pointer: coarse)').matches) {
       event.preventDefault()
-      if (!sending && !optedOut && (draft.trim() || file)) onSend()
+      if (!sending && (draft.trim() || file)) onSend()
     }
   }
 
-  const disabled = sending || drafting || optedOut || (!draft.trim() && !file)
+  const disabled = sending || drafting || (!draft.trim() && !file)
   const templatePicker = (
     <TemplatePicker
       open={dialog?.type === 'template'}
@@ -261,7 +260,6 @@ function ConversationComposer({
   )
 
   if (readOnly) return <div className="composer"><span className="muted">Read-only access</span></div>
-  if (optedOut) return null
   if (!windowOpen) {
     return (
       <div className="composer composer-window-closed">
@@ -318,12 +316,12 @@ function ConversationComposer({
           <Icon name="mic" size={20} />
         </button>
         {conversationId && (
-          <button type="button" className="icon-button" onClick={draftWithAi} disabled={optedOut || drafting} aria-label="Draft with AI" title={drafting ? 'Drafting...' : 'Draft a reply with AI'}>
+          <button type="button" className="icon-button" onClick={draftWithAi} disabled={drafting} aria-label="Draft with AI" title={drafting ? 'Drafting...' : 'Draft a reply with AI'}>
             <Icon name="bot" size={19} />
           </button>
         )}
         <div className="quick-reply-menu">
-          <button type="button" className={`icon-button${openMenu === 'replies' ? ' is-open' : ''}`} onClick={() => setOpenMenu((value) => value === 'replies' ? '' : 'replies')} disabled={optedOut} aria-label="More message options" aria-expanded={openMenu === 'replies'}>
+          <button type="button" className={`icon-button${openMenu === 'replies' ? ' is-open' : ''}`} onClick={() => setOpenMenu((value) => value === 'replies' ? '' : 'replies')} aria-label="More message options" aria-expanded={openMenu === 'replies'}>
             <Icon name="plus" size={19} />
           </button>
           {openMenu === 'replies' && (
@@ -359,11 +357,10 @@ function ConversationComposer({
           className="composer-input"
           rows="1"
           aria-label="Message"
-          placeholder={optedOut ? 'This contact opted out of messages' : 'Type a message...'}
+          placeholder="Type a message..."
           value={draft}
           onChange={(event) => onDraftChange(event.target.value)}
           onKeyDown={onKeyDown}
-          disabled={optedOut}
         />
         <button className="button button-primary composer-send" type="submit" disabled={disabled}>
           <Icon name="send" size={16} /> <span>{sending ? 'Sending...' : 'Send'}</span>

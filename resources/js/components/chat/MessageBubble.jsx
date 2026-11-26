@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import Icon from '../common/Icon.jsx'
 import { useToast } from '../common/ToastProvider.jsx'
-import { formatDuration, formatTime } from '../../lib/utils.js'
+import { formatDuration, formatTime, friendlyProviderMessage } from '../../lib/utils.js'
 import { isIncoming, locationFromMessage, mediaItem, messageMediaType, messageText } from './chatUtils.js'
 import InteractivePreview from './InteractivePreview.jsx'
 import MessageReactions from './MessageReactions.jsx'
@@ -108,6 +108,11 @@ export default function MessageBubble({ message, incoming, mediaItems = [], onOp
   const failed = String(message?.status || '').toLowerCase() === 'failed'
   const errorTitle = String(message?.error_title || '').trim()
   const errorDetails = String(message?.error_details || '').trim()
+  const technicalDetails = [
+    errorTitle,
+    errorDetails && errorDetails !== errorTitle && errorDetails,
+    message?.error_code && `Error code: ${message.error_code}`,
+  ].filter(Boolean).join('\n')
   const hasFailureReason = failed && (errorTitle || errorDetails || message?.error_code)
 
   useEffect(() => {
@@ -191,11 +196,10 @@ export default function MessageBubble({ message, incoming, mediaItems = [], onOp
       {text && message?.content_type !== 'reaction' && !location && !interactive && <LinkifiedText text={text} />}
       {reactions.length > 0 && <MessageReactions message={message} reactions={reactions} onReact={onReact} canReact={Boolean(onReact)} />}
       {hasFailureReason && (
-        <div className="message-error-reason">
+        <div className="message-error-reason" title={technicalDetails}>
           <Icon name="alert" size={14} />
           <div>
-            <strong>{errorTitle || 'Message failed to send'}</strong>
-            {errorDetails && errorDetails !== errorTitle && <span>{errorDetails}</span>}
+            <strong>{friendlyProviderMessage(message?.error_code, errorTitle) || 'Message could not be delivered.'}</strong>
             {message?.error_code && <small>Error code: {message.error_code}</small>}
           </div>
         </div>

@@ -101,7 +101,6 @@ export default function ChatsPage() {
 
   const selected = conversations.find((item) => String(item.id) === String(selectedId))
     || (String(linkedConversation?.id) === selectedId ? linkedConversation : null)
-  const optedOut = selected?.contact?.consent_status === 'opted_out'
   const readOnly = user?.role === 'viewer'
   const canDelete = ['admin', 'owner'].includes(user?.role)
   const windowOpen = Date.now() - Date.parse(selected?.last_inbound_at) < 24 * 60 * 60 * 1000
@@ -552,11 +551,6 @@ export default function ChatsPage() {
     if (event?.preventDefault) event.preventDefault()
     const text = draft.trim()
     if ((!text && !selectedFile) || !selectedId || sending) return
-    if (optedOut) {
-      toast.error('This contact opted out of WhatsApp messages. You cannot send to them.')
-      return
-    }
-
     setSending(true)
     setThreadError('')
     setUploadProgress(0)
@@ -636,7 +630,7 @@ export default function ChatsPage() {
   }
 
   const sendRichMessage = async (signature, buildPayload) => {
-    if (!selectedId || sending || optedOut || readOnly) return false
+    if (!selectedId || sending || readOnly) return false
     const conversationId = selectedId
     const attemptSignature = JSON.stringify([conversationId, replyTo?.id, signature])
     if (richSendAttemptRef.current?.signature !== attemptSignature) {
@@ -795,11 +789,9 @@ export default function ChatsPage() {
               </div>
             </header>
 
-            {!optedOut && <AiThreadBanner conversation={selected} readOnly={readOnly} onChange={(data) => {
+            <AiThreadBanner conversation={selected} readOnly={readOnly} onChange={(data) => {
               setConversations((items) => items.map((item) => item.id === data.id ? { ...item, ...data } : item))
-            }} />}
-
-            {optedOut && <div className="consent-banner"><Icon name="alert" size={16} /> This contact opted out of WhatsApp messages. Sending is disabled.</div>}
+            }} />
 
             {sidePanel && (
               <aside className="thread-side-panel" aria-label={sidePanel === 'notes' ? 'Conversation notes' : 'Contact information'}>
@@ -817,7 +809,6 @@ export default function ChatsPage() {
                     </div>
                     <dl className="contact-detail-list">
                       <div><dt>WhatsApp ID</dt><dd>{selected.contact?.wa_user_id || 'Not linked'}</dd></div>
-                      <div><dt>Consent</dt><dd><span className={`consent-badge consent-${String(selected.contact?.consent_status || 'unknown')}`}>{selected.contact?.consent_status || 'unknown'}</span></dd></div>
                       <div><dt>Status</dt><dd>{String(selected.status || 'open')}</dd></div>
                       <div><dt>Assignee</dt><dd>{selected.assignedAgent ? <><PresenceDot member={presence[selected.assignedAgent.id]} />{selected.assignedAgent.name}</> : 'Unassigned'}</dd></div>
                     </dl>
@@ -910,7 +901,6 @@ export default function ChatsPage() {
               onDraftChange={setDraft}
               onSend={send}
               sending={sending}
-              optedOut={optedOut}
               file={selectedFile}
               onFileSelect={setSelectedFile}
               onFileRemove={() => setSelectedFile(null)}

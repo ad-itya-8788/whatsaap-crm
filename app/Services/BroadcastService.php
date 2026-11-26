@@ -42,9 +42,7 @@ class BroadcastService
                     'phone' => '+'.$digits,
                     'user_id' => $userId,
                 ]);
-                if ($contact->consent_status !== 'opted_out') {
-                    $broadcast->recipients()->create(['contact_id' => $contact->id, 'variables' => $values]);
-                }
+                $broadcast->recipients()->create(['contact_id' => $contact->id, 'variables' => $values]);
             }
 
             $count = $broadcast->recipients()->count();
@@ -218,11 +216,7 @@ class BroadcastService
     {
         $type = $audience['type'] ?? 'all';
 
-        $query = Contact::query()
-            ->where(function ($query) {
-                $query->whereNull('consent_status')
-                    ->orWhere('consent_status', '!=', 'opted_out');
-            });
+        $query = Contact::query();
 
         if ($type === 'tags') {
             $tagIds = array_values(array_filter($audience['tag_ids'] ?? []));

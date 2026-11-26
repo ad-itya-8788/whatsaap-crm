@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\WhatsappConfig;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class DashboardService
@@ -60,7 +61,7 @@ class DashboardService
             'replies' => [
                 'medianHuman' => $median,
                 'medianHumanPrevious' => $previousMedian,
-                'team' => $this->team(),
+                'team' => $this->team($from, $to),
             ],
             'volume' => ['series' => $volume],
             'setup' => $this->setup(),
@@ -150,15 +151,21 @@ class DashboardService
         ];
     }
 
-    public function activity(int $limit = 50): array
+    public function activity(int $limit = 5): array
     {
+        $limit = min(max($limit, 1), 5);
+
         return Message::query()
             ->with(['conversation:id,contact_id', 'conversation.contact:id,name,phone'])
             ->latest()
+            ->orderByDesc('id')
             ->limit($limit)
-            ->get(['id', 'conversation_id', 'sender_type', 'status', 'content_text', 'template_name', 'media_type', 'provider_timestamp', 'created_at'])
+            ->get(['id', 'conversation_id', 'sender_type', 'status', 'content_text', 'template_name', 'media_type', 'provider_timestamp', 'created_at', 'error_code', 'error_title', 'error_details'])
             ->map(function (Message $message) {
                 $contact = $message->conversation?->contact;
+                $errorCode = $message->error_code !== null ? (int) $message->error_code : null;
+                $errorTitle = $message->error_title !== null ? (string) $message->error_title : null;
+                $errorDetails = $message->error_details !== null ? (string) $message->error_details : null;
 
                 return [
                     'id' => $message->id,
@@ -168,9 +175,22 @@ class DashboardService
                     'preview' => $message->content_text ?: $message->template_name ?: $message->media_type,
                     'conversationId' => $message->conversation_id,
                     'timestamp' => ($message->provider_timestamp ?: $message->created_at)?->toIso8601String(),
+                    'errorCode' => $errorCode,
+                    'errorTitle' => $errorTitle,
+                    'errorDetails' => $errorDetails,
+                    'failureReason' => $this->friendlyProviderError($errorCode, $errorTitle),
                 ];
             })
             ->all();
+    }
+
+    private function friendlyProviderError(?int $code, ?string $title): ?string
+    {
+        return match ($code) {
+            132001 => 'Template unavailable for the selected WhatsApp account.',
+            131037 => 'WhatsApp display name approval required.',
+            default => null,
+        };
     }
 
     public function campaigns(int $days = 7): array
@@ -211,13 +231,15 @@ class DashboardService
             'read' => (int) $summary->read_count,
             'failed' => (int) $summary->failed,
             'templates' => MessageTemplate::query()->count(),
-            'optedOut' => Contact::query()->where('consent_status', 'opted_out')->count(),
             'failures' => $failures,
         ];
     }
 
-    public function team(): array
+    public function team(?Carbon $from = null, ?Carbon $to = null): array
     {
+        $from ??= now()->subDays(6)->startOfDay();
+        $to ??= now()->endOfDay();
+
         $assigned = Conversation::query()
             ->whereNotNull('assigned_agent_id')
             ->selectRaw("assigned_agent_id as user_id,
@@ -236,13 +258,24 @@ class DashboardService
             ->get()
             ->keyBy('user_id');
 
+        $medians = Conversation::query()
+            ->whereNotNull('assigned_agent_id')
+            ->whereNotNull('first_inbound_at')
+            ->whereNotNull('last_reply_at')
+            ->whereBetween('first_inbound_at', [$from, $to])
+            ->whereColumn('last_reply_at', '>=', 'first_inbound_at')
+            ->get(['assigned_agent_id', 'first_inbound_at', 'last_reply_at'])
+            ->groupBy('assigned_agent_id')
+            ->map(fn (Collection $rows) => $this->medianConversationMinutes($rows));
+
         return User::query()
             ->where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name'])
-            ->map(function (User $user) use ($assigned, $replies) {
+            ->map(function (User $user) use ($assigned, $replies, $medians) {
                 $row = $assigned->get($user->id);
                 $replyRow = $replies->get($user->id);
+                $median = $medians->get($user->id);
 
                 return [
                     'id' => $user->id,
@@ -251,14 +284,33 @@ class DashboardService
                     'active' => (int) ($row->active ?? 0),
                     'closed' => (int) ($row->closed ?? 0),
                     'replies' => (int) ($replyRow->replies ?? 0),
+                    'medianMinutes' => $median !== null ? (float) $median : null,
                 ];
             })
             ->all();
     }
 
+    private function medianConversationMinutes(Collection $conversations): ?float
+    {
+        $minutes = $conversations
+            ->map(fn (Conversation $conversation) => $conversation->first_inbound_at->diffInMinutes($conversation->last_reply_at))
+            ->sort()
+            ->values();
+
+        if ($minutes->isEmpty()) {
+            return null;
+        }
+
+        $middle = intdiv($minutes->count(), 2);
+
+        return $minutes->count() % 2 === 1
+            ? (float) $minutes[$middle]
+            : round(($minutes[$middle - 1] + $minutes[$middle]) / 2, 1);
+    }
+
     public function setup(): array
     {
-        $config = WhatsappConfig::query()->latest('id')->first(['status', 'phone_number_id']);
+        $config = WhatsappConfig::query()->latest('id')->first(['status', 'phone_number_id', 'registered_at', 'last_registration_error']);
         $counts = DB::query()
             ->selectSub(MessageTemplate::query()->selectRaw('COUNT(*)'), 'templates')
             ->selectSub(QuickReply::query()->selectRaw('COUNT(*)'), 'quick_replies')
@@ -267,10 +319,26 @@ class DashboardService
             ->selectSub(CustomField::query()->selectRaw('COUNT(*)'), 'custom_fields')
             ->first();
 
+        $status = $config?->status !== null ? (string) $config->status : null;
+        $registrationError = $config?->last_registration_error;
+        $registrationError = $registrationError !== null ? (string) $registrationError : null;
+        $displayPhone = null;
+
+        if ($config?->phone_number_id !== null && $config->phone_number_id !== '') {
+            $cached = Cache::get('whatsapp.display_phone_number.'.hash('sha256', (string) $config->phone_number_id));
+            $displayPhone = is_string($cached) && $cached !== '' ? $cached : null;
+        }
+
         return [
             'whatsappConnected' => $config !== null
                 && in_array($config->status, ['connected', 'active', 'verified'], true),
             'whatsappPhoneNumberId' => $config?->phone_number_id,
+            'whatsappStatus' => $status,
+            'whatsappDisplayPhone' => $displayPhone,
+            'whatsappRegistrationError' => $registrationError,
+            'whatsappPendingApproval' => $config !== null
+                && $config->registered_at === null
+                && ($registrationError === null || $registrationError === ''),
             'templates' => (int) $counts->templates,
             'quickReplies' => (int) $counts->quick_replies,
             'contacts' => (int) $counts->contacts,

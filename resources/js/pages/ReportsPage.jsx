@@ -104,7 +104,6 @@ export default function ReportsPage() {
     { label: 'Outbound', value: display(overview?.outbound), sub: 'Sent by your team', icon: 'send' },
     { label: 'Delivery rate', value: percent(overview?.delivery_rate), sub: `${number(overview?.delivered)} delivered`, icon: 'check' },
     { label: 'Failure rate', value: percent(overview?.failure_rate), sub: `${number(overview?.failed)} failed`, icon: 'alert' },
-    { label: 'Opted-out contacts', value: display(overview?.opted_out_contacts), sub: 'Do not message', icon: 'shield' },
   ]
 
   const peak = Math.max(1, ...trend.map((day) => Math.max(number(day.conversations), number(day.messages), number(day.failed))))

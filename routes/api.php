@@ -55,8 +55,6 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::post('/contacts/{contact}/notes', [ContactController::class, 'storeNote'])->middleware('role:agent,admin,owner');
         Route::delete('/contacts/{contact}/notes/{note}', [ContactController::class, 'destroyNote'])->middleware('role:agent,admin,owner');
         Route::put('/contacts/{contact}/tags', [ContactController::class, 'syncTags'])->middleware('role:agent,admin,owner');
-        Route::post('/contacts/{contact}/consent', [ContactController::class, 'consent'])->middleware('role:agent,admin,owner');
-        Route::get('/contacts/{contact}/consent', [ContactController::class, 'consentEvents']);
 
         Route::get('/tags', [TagController::class, 'index']);
         Route::apiResource('tags', TagController::class)

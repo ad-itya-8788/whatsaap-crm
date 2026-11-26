@@ -10,17 +10,6 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { errorMessage, extractList, extractPaginator } from '../lib/utils.js'
 
 const blankContact = { name: '', phone: '', email: '', company: '' }
-const blankConsentForm = { status: '', source: '', note: '' }
-const consentStatuses = [
-  { value: 'unknown', label: 'Unknown' },
-  { value: 'opted_in', label: 'Opted in' },
-  { value: 'opted_out', label: 'Opted out' },
-]
-
-function consentLabel(status) {
-  const found = consentStatuses.find((item) => item.value === status)
-  return found ? found.label : 'Unknown'
-}
 
 function fieldOptions(field) {
   if (Array.isArray(field?.options)) return field.options
@@ -60,13 +49,11 @@ export default function ContactsPage() {
   const { user } = useAuth()
   const readOnly = user?.role === 'viewer'
   const [contacts, setContacts] = useState([])
-  const [contactStats, setContactStats] = useState(null)
   const [tags, setTags] = useState([])
   const [customFields, setCustomFields] = useState([])
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedTagIds, setSelectedTagIds] = useState([])
-  const [consentFilter, setConsentFilter] = useState('')
   const [fieldFilterId, setFieldFilterId] = useState('')
   const [fieldFilterValue, setFieldFilterValue] = useState('')
   const [page, setPage] = useState(1)
@@ -74,9 +61,7 @@ export default function ContactsPage() {
   const [form, setForm] = useState(blankContact)
   const [formTagIds, setFormTagIds] = useState([])
   const [customValues, setCustomValues] = useState({})
-  const [consentForm, setConsentForm] = useState(blankConsentForm)
   const [editing, setEditing] = useState(null)
-  const [editingContact, setEditingContact] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [detailContact, setDetailContact] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -94,7 +79,6 @@ export default function ContactsPage() {
   const buildParams = useCallback((withPaging = true) => {
     const params = {}
     if (debouncedSearch) params.search = debouncedSearch
-    if (consentFilter) params.consent_status = consentFilter
     if (fieldFilterId && fieldFilterValue) {
       params.field_id = fieldFilterId
       params.field_value = fieldFilterValue
@@ -105,7 +89,7 @@ export default function ContactsPage() {
       params.per_page = 25
     }
     return params
-  }, [debouncedSearch, consentFilter, fieldFilterId, fieldFilterValue, selectedTagIds, page])
+  }, [debouncedSearch, fieldFilterId, fieldFilterValue, selectedTagIds, page])
 
   const contactsRequest = useRef(null)
 
@@ -120,14 +104,6 @@ export default function ContactsPage() {
       if (controller.signal.aborted) return
       setContacts(extractList(data))
       setPaginator(extractPaginator(data))
-      if (data?.stats) {
-        setContactStats({
-          total: Number(data.stats.total ?? 0),
-          opted_in: Number(data.stats.opted_in ?? 0),
-          opted_out: Number(data.stats.opted_out ?? 0),
-          unknown: Number(data.stats.unknown ?? 0),
-        })
-      }
     } catch (requestError) {
       if (requestError.code !== 'ERR_CANCELED') setError(errorMessage(requestError, 'Unable to load contacts.'))
     } finally {
@@ -190,7 +166,6 @@ export default function ContactsPage() {
     setSearch('')
     setDebouncedSearch('')
     setSelectedTagIds([])
-    setConsentFilter('')
     setFieldFilterId('')
     setFieldFilterValue('')
     setPage(1)
@@ -200,9 +175,7 @@ export default function ContactsPage() {
     setForm(blankContact)
     setFormTagIds([])
     setCustomValues({})
-    setConsentForm(blankConsentForm)
     setEditing(null)
-    setEditingContact(null)
   }
 
   const startCreate = () => {
@@ -214,7 +187,6 @@ export default function ContactsPage() {
 
   const startEdit = (contact) => {
     setEditing(contact.id)
-    setEditingContact(contact)
     setForm({
       name: contact.name || '',
       phone: contact.phone || contact.phone_normalized || '',
@@ -223,7 +195,6 @@ export default function ContactsPage() {
     })
     setFormTagIds((contact.tags || []).map((tag) => tag.id))
     setCustomValues({ ...(contact.custom_fields || {}) })
-    setConsentForm({ status: contact.consent_status || '', source: '', note: '' })
     setShowForm(true)
     setError('')
     setNotice('')
@@ -262,17 +233,8 @@ export default function ContactsPage() {
         const created = data?.contact || data?.data || data
         contactId = created?.id
       }
-      if (!contactId) throw new Error('Contact saved, but its id was missing. Tags and consent could not be synchronized.')
+      if (!contactId) throw new Error('Contact saved, but its id was missing. Tags could not be synchronized.')
       await api.put(`/api/app/contacts/${contactId}/tags`, { tags: formTagIds })
-      if (editing && consentForm.status && (
-        consentForm.status !== editingContact?.consent_status || consentForm.source.trim() || consentForm.note.trim()
-      )) {
-        await api.post(`/api/app/contacts/${contactId}/consent`, {
-          status: consentForm.status,
-          ...(consentForm.source.trim() ? { source: consentForm.source.trim() } : {}),
-          ...(consentForm.note.trim() ? { note: consentForm.note.trim() } : {}),
-        })
-      }
       setShowForm(false)
       resetForm()
       setNotice(editing ? 'Contact updated.' : 'Contact added.')
@@ -354,7 +316,7 @@ export default function ContactsPage() {
   }
 
   const downloadTemplate = () => {
-    const csv = 'name,phone,email,company,tags,consent_status\n'
+    const csv = 'name,phone,email,company,tags\n'
     downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), 'contacts-template.csv')
   }
 
@@ -390,7 +352,7 @@ export default function ContactsPage() {
     <>
       <PageHeader
         title="Contacts"
-        subtitle="Manage contacts, tags, consent and WhatsApp conversations."
+        subtitle="Manage contacts, tags and WhatsApp conversations."
         actions={
           <>
             <button type="button" className="button button-secondary" onClick={exportContacts} disabled={exporting}><Icon name="download" size={16} /> {exporting ? 'Exporting...' : 'Export'}</button>
@@ -399,21 +361,14 @@ export default function ContactsPage() {
           </>
         }
       />
-      <section className="contacts-stats" aria-label="Contact consent summary">
-        {[
-          { key: 'total', label: 'Total Contacts', icon: '#', className: 'contact-stat-total' },
-          { key: 'opted_in', label: 'Opted In', icon: '✓', className: 'contact-stat-opted-in' },
-          { key: 'opted_out', label: 'Opted Out', icon: '×', className: 'contact-stat-opted-out' },
-          { key: 'unknown', label: 'Unknown', icon: '?', className: 'contact-stat-unknown' },
-        ].map((stat) => (
-          <article className={`contact-stat-card ${stat.className}`} key={stat.key}>
-            <span className="stat-icon" aria-hidden="true">{stat.icon}</span>
-            <div className="stat-copy">
-              <span className="stat-label">{stat.label}</span>
-              <strong className="stat-value">{contactStats ? contactStats[stat.key].toLocaleString() : '—'}</strong>
-            </div>
-          </article>
-        ))}
+      <section className="contacts-stats" aria-label="Contact summary">
+        <article className="contact-stat-card contact-stat-total">
+          <span className="stat-icon" aria-hidden="true">#</span>
+          <div className="stat-copy">
+            <span className="stat-label">Total Contacts</span>
+            <strong className="stat-value">{paginator.total.toLocaleString()}</strong>
+          </div>
+        </article>
       </section>
       {error && <div className="alert alert-error">{error}</div>}
       {notice && <div className="alert alert-success">{notice}</div>}
@@ -527,28 +482,6 @@ export default function ContactsPage() {
                 </div>
               </div>
             )}
-            {editing && (
-              <div className="field consent-editor">
-                <h3 className="settings-section-title">Consent</h3>
-                <div className="form-grid">
-                  <div className="field">
-                    <label className="field-label" htmlFor="contact-consent-status">Status</label>
-                    <select id="contact-consent-status" className="select" value={consentForm.status} onChange={(event) => setConsentForm({ ...consentForm, status: event.target.value })}>
-                      <option value="">Keep current status</option>
-                      {consentStatuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label className="field-label" htmlFor="contact-consent-source">Source</label>
-                    <input id="contact-consent-source" className="input" placeholder="e.g. website form" value={consentForm.source} onChange={(event) => setConsentForm({ ...consentForm, source: event.target.value })} />
-                  </div>
-                  <div className="field field-full">
-                    <label className="field-label" htmlFor="contact-consent-note">Note</label>
-                    <input id="contact-consent-note" className="input" value={consentForm.note} onChange={(event) => setConsentForm({ ...consentForm, note: event.target.value })} />
-                  </div>
-                </div>
-              </div>
-            )}
             <div className="settings-actions">
               <button className="button button-primary" disabled={saving}>{saving ? 'Saving...' : 'Save contact'}</button>
               <button type="button" className="button button-secondary" onClick={() => setShowForm(false)}>Cancel</button>
@@ -592,13 +525,6 @@ export default function ContactsPage() {
             </div>
           </div>
           <div className="field">
-            <label className="field-label" htmlFor="contact-consent-filter">Consent</label>
-            <select id="contact-consent-filter" className="select" value={consentFilter} onChange={(event) => changeFilter(setConsentFilter, event.target.value)}>
-              <option value="">All</option>
-              {consentStatuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
-            </select>
-          </div>
-          <div className="field">
             <label className="field-label" htmlFor="contact-field-filter">Custom field</label>
             <select id="contact-field-filter" className="select" value={fieldFilterId} onChange={(event) => changeFilter(setFieldFilterId, event.target.value)}>
               <option value="">Any field</option>
@@ -621,7 +547,7 @@ export default function ContactsPage() {
         <div className="table-wrap">
           <table className="data-table">
             <thead>
-              <tr><th>Name</th><th>Phone</th><th>Email / Company</th><th>WhatsApp ID</th><th>Tags</th><th>Consent</th><th>Actions</th></tr>
+              <tr><th>Name</th><th>Phone</th><th>Email / Company</th><th>WhatsApp ID</th><th>Tags</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {contacts.map((contact) => (
@@ -645,7 +571,6 @@ export default function ContactsPage() {
                       {!contact.tags?.length && '—'}
                     </div>
                   </td>
-                  <td><span className={`consent-badge consent-${contact.consent_status || 'unknown'}`}>{consentLabel(contact.consent_status)}</span></td>
                   <td>
                     {!readOnly && <div className="actions-cell">
                       <button type="button" className="icon-button" onClick={() => startEdit(contact)} aria-label={`Edit ${contact.name || 'contact'}`}><Icon name="edit" size={16} /></button>
@@ -654,8 +579,8 @@ export default function ContactsPage() {
                   </td>
                 </tr>
               ))}
-              {loading && <tr><td colSpan="7" className="table-empty"><span className="spinner" /> Loading contacts...</td></tr>}
-              {!loading && !contacts.length && <tr><td colSpan="7" className="table-empty">{search || consentFilter || fieldFilterValue || selectedTagIds.length ? 'No contacts match these filters.' : 'No contacts yet. Add your first contact to get started.'}</td></tr>}
+              {loading && <tr><td colSpan="6" className="table-empty"><span className="spinner" /> Loading contacts...</td></tr>}
+              {!loading && !contacts.length && <tr><td colSpan="6" className="table-empty">{search || fieldFilterValue || selectedTagIds.length ? 'No contacts match these filters.' : 'No contacts yet. Add your first contact to get started.'}</td></tr>}
             </tbody>
           </table>
         </div>

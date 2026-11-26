@@ -9,7 +9,6 @@ use App\Models\Message;
 use App\Models\MessageReaction;
 use App\Models\WhatsappConfig;
 use App\Services\AiAutoReplyService;
-use App\Services\ConsentService;
 use App\Services\InboundMediaMirror;
 use App\Services\MessageStatusService;
 use App\Services\TemplateLifecycleService;
@@ -29,7 +28,6 @@ class WhatsappWebhookController extends Controller
 {
     public function __construct(
         private MessageStatusService $statuses,
-        private ConsentService $consent,
         private InboundMediaMirror $mediaMirror,
         private AiAutoReplyService $aiAutoReply,
         private TemplateLifecycleService $templates,
@@ -203,10 +201,6 @@ class WhatsappWebhookController extends Controller
                     return null;
                 }
 
-                if ($this->isOptOutKeyword($text) && $contact->consent_status !== 'opted_out') {
-                    $this->consent->change($contact, 'opted_out', 'whatsapp_keyword');
-                }
-
                 $conversation = Conversation::firstOrCreate(['contact_id' => $contact->id], ['status' => 'open']);
                 $conversation = Conversation::query()->lockForUpdate()->findOrFail($conversation->id);
 
@@ -261,19 +255,6 @@ class WhatsappWebhookController extends Controller
         if ($message && $media && $config->mirror_inbound_media !== false) {
             defer(fn () => $this->mediaMirror->store($message, $config))->always();
         }
-    }
-
-    private function isOptOutKeyword(?string $text): bool
-    {
-        if (! $text) {
-            return false;
-        }
-
-        $normalized = mb_strtolower(preg_replace('/\s+/u', ' ', trim($text)) ?? '');
-
-        return in_array($normalized, [
-            'stop', 'stopall', 'unsubscribe', 'cancel', 'opt out', 'optout',
-        ], true);
     }
 
     private function parseContent(array $data): array

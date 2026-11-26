@@ -35,7 +35,7 @@
 .sidebar-user-email, .account-menu-email { color: var(--muted); font-size: var(--fs-xs); }
 
 .app-main { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
-.app-topbar { position: relative; z-index: 20; display: flex; height: var(--topbar-h); flex: 0 0 var(--topbar-h); align-items: center; justify-content: space-between; gap: var(--space-3); padding: 0 var(--page-pad); border-bottom: 1px solid var(--line); background: var(--surface); }
+.app-topbar { position: relative; z-index: 20; display: flex; height: var(--topbar-h); flex: 0 0 var(--topbar-h); align-items: center; justify-content: space-between; gap: var(--space-3); padding: 0 var(--page-pad); border-bottom: 1px solid var(--line); background: var(--header); }
 .topbar-start, .topbar-actions, .topbar-breadcrumb { display: flex; min-width: 0; align-items: center; }
 .topbar-start { flex: 1; gap: var(--space-1); }
 .topbar-breadcrumb { gap: var(--space-2); overflow: hidden; }

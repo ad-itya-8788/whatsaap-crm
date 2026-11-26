@@ -6,10 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\ContactRequest;
 use App\Models\Contact;
 use App\Models\Conversation;
-use App\Models\ConsentEvent;
 use App\Models\CustomField;
 use App\Models\Tag;
-use App\Services\ConsentService;
 use App\Support\Phone;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,8 +18,6 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ContactController extends Controller
 {
-    public function __construct(private ConsentService $consent) {}
-
     public function index(Request $request): JsonResponse
     {
         $perPage = min(max($request->integer('per_page', 25), 1), 100);
@@ -29,7 +25,6 @@ class ContactController extends Controller
             'search' => ['sometimes', 'nullable', 'string', 'max:255'],
             'tag_ids' => ['sometimes', 'array'],
             'tag_ids.*' => ['integer'],
-            'consent_status' => ['sometimes', 'in:opted_in,opted_out,unknown'],
             'field_id' => ['sometimes', 'required_with:field_value', 'integer', 'exists:custom_fields,id'],
             'field_value' => ['sometimes', 'required_with:field_id', 'nullable', 'string', 'max:1000'],
         ]);
@@ -55,10 +50,6 @@ class ContactController extends Controller
             $query->whereHas('tags', fn ($q) => $q->whereIn('tags.id', $filters['tag_ids']));
         }
 
-        if (isset($filters['consent_status'])) {
-            $query->where('consent_status', $filters['consent_status']);
-        }
-
         if (array_key_exists('field_id', $filters)) {
             $query->whereHas('customFieldValues', function ($q) use ($filters) {
                 $q->where('custom_field_id', $filters['field_id'])
@@ -71,24 +62,7 @@ class ContactController extends Controller
             $paginator->getCollection()->map(fn (Contact $contact) => $this->contactPayload($contact))
         );
 
-        $stats = Contact::query()
-            ->selectRaw("
-                COUNT(*) AS total,
-                SUM(CASE WHEN consent_status = 'opted_in' THEN 1 ELSE 0 END) AS opted_in,
-                SUM(CASE WHEN consent_status = 'opted_out' THEN 1 ELSE 0 END) AS opted_out,
-                SUM(CASE WHEN consent_status NOT IN ('opted_in', 'opted_out') OR consent_status IS NULL THEN 1 ELSE 0 END) AS unknown
-            ")
-            ->first();
-
-        return response()->json([
-            ...$paginator->toArray(),
-            'stats' => [
-                'total' => (int) $stats->total,
-                'opted_in' => (int) $stats->opted_in,
-                'opted_out' => (int) $stats->opted_out,
-                'unknown' => (int) $stats->unknown,
-            ],
-        ]);
+        return response()->json($paginator);
     }
 
     public function store(ContactRequest $request): JsonResponse
@@ -200,40 +174,11 @@ class ContactController extends Controller
         return response()->json(['tags' => $contact->load('tags')->tags]);
     }
 
-    public function consent(Request $request, Contact $contact): JsonResponse
-    {
-        $data = $request->validate([
-            'status' => ['required', 'in:opted_in,opted_out,unknown'],
-            'source' => ['nullable', 'string', 'max:100'],
-            'note' => ['nullable', 'string', 'max:1000'],
-        ]);
-
-        $event = $this->consent->change(
-            $contact,
-            $data['status'],
-            $data['source'] ?? null,
-            $data['note'] ?? null,
-            $request->user()->id,
-        );
-
-        return response()->json([
-            'contact' => $this->contactPayload($contact->refresh()),
-            'event' => $event->load('changedBy'),
-        ]);
-    }
-
-    public function consentEvents(Contact $contact): JsonResponse
-    {
-        return response()->json(
-            $contact->consentEvents()->with('changedBy')->latest()->limit(20)->get()
-        );
-    }
-
     public function export(): StreamedResponse
     {
         $fields = CustomField::query()->where('is_active', true)->orderBy('id')->get(['id', 'name']);
 
-        $headers = ['name', 'phone', 'email', 'company', 'tags', 'consent_status'];
+        $headers = ['name', 'phone', 'email', 'company', 'tags'];
         foreach ($fields as $field) {
             $headers[] = 'field:'.$field->name;
         }
@@ -245,7 +190,7 @@ class ContactController extends Controller
             fputcsv($handle, $headers);
 
             Contact::query()
-                ->select(['id', 'name', 'phone', 'email', 'company', 'consent_status'])
+                ->select(['id', 'name', 'phone', 'email', 'company'])
                 ->orderBy('id')
                 ->chunkById(250, function ($contacts) use ($handle, $fields) {
                     $contacts->load(['tags', 'customFieldValues']);
@@ -258,7 +203,6 @@ class ContactController extends Controller
                             $contact->email,
                             $contact->company,
                             $contact->tags->pluck('name')->implode('; '),
-                            $contact->consent_status,
                         ];
 
                         foreach ($fields as $field) {
@@ -411,26 +355,15 @@ class ContactController extends Controller
         }
         $seen[$normalized] = true;
 
-        $status = mb_strtolower((string) ($get('consent_status') ?: 'unknown'));
-        if (! in_array($status, ['opted_in', 'opted_out', 'unknown'], true)) {
-            $this->importError($result, $errors, $rowNumber, 'Invalid consent_status.');
-            return;
-        }
-
         $attributes = [
             'phone' => $phoneRaw,
             'phone_normalized' => $normalized,
             'name' => $get('name') ?: $phoneRaw,
             'email' => $get('email') ?: null,
             'company' => $get('company') ?: null,
-            'consent_status' => $status,
         ];
 
         $existing = Contact::where('phone_normalized', $normalized)->first();
-        $statusChanged = ! $existing || $existing->consent_status !== $status;
-        if ($statusChanged) {
-            $attributes['consent_at'] = $status === 'unknown' ? null : now();
-        }
 
         $tagNames = preg_split('/[;,|]/', (string) ($get('tags') ?: '')) ?: [];
         $tagNames = array_values(array_unique(array_filter(array_map('trim', $tagNames))));
@@ -448,7 +381,7 @@ class ContactController extends Controller
             return;
         }
 
-        DB::transaction(function () use ($attributes, $existing, $tagNames, $fieldValues, $status, $statusChanged, $userId) {
+        DB::transaction(function () use ($attributes, $existing, $tagNames, $fieldValues, $userId) {
             if ($existing) {
                 $contact = $existing;
                 $contact->update($attributes);
@@ -471,14 +404,6 @@ class ContactController extends Controller
                 );
             }
 
-            if ($statusChanged) {
-                ConsentEvent::create([
-                    'contact_id' => $contact->id,
-                    'status' => $status,
-                    'source' => 'import',
-                    'changed_by' => $userId,
-                ]);
-            }
         });
 
         $existing ? $result['updated']++ : $result['imported']++;

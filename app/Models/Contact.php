@@ -10,11 +10,7 @@ class Contact extends Model
 {
     protected $fillable = [
         'user_id', 'phone', 'phone_normalized', 'wa_user_id', 'wa_username',
-        'name', 'email', 'company', 'avatar_url', 'consent_status', 'consent_at',
-    ];
-
-    protected $casts = [
-        'consent_at' => 'datetime',
+        'name', 'email', 'company', 'avatar_url',
     ];
 
     public function conversations(): HasMany
@@ -30,11 +26,6 @@ class Contact extends Model
     public function customFieldValues(): HasMany
     {
         return $this->hasMany(ContactCustomValue::class);
-    }
-
-    public function consentEvents(): HasMany
-    {
-        return $this->hasMany(ConsentEvent::class);
     }
 
     public function notes(): HasMany

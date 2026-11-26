@@ -20,7 +20,7 @@ class DashboardController extends Controller
 
     public function activity(Request $request): JsonResponse
     {
-        $limit = min(max($request->integer('limit', 50), 1), 100);
+        $limit = min(max($request->integer('limit', 5), 1), 5);
 
         return response()->json($this->dashboard->activity($limit));
     }

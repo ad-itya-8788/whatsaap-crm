@@ -73,8 +73,7 @@ class AiAutoReplyService
         if (! $config->is_active || ! $config->auto_reply_enabled || $conversation->assigned_agent_id
             || $conversation->ai_autoreply_disabled || $conversation->status === 'closed'
             || $conversation->ai_reply_count >= $config->auto_reply_max_per_conversation
-            || ! $conversation->last_inbound_at?->gt(now()->subHours(24))
-            || $conversation->contact?->consent_status === 'opted_out') {
+            || ! $conversation->last_inbound_at?->gt(now()->subHours(24))) {
             return false;
         }
 

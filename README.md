@@ -52,7 +52,7 @@ Render free services can sleep after 15 minutes idle. Webhook delivery can be de
 
 ## Database schema
 
-Laravel records migrations in `migrations`. Each of the 34 application tables has its own initial migration. Filenames are ordered by foreign-key dependency. The migration files define the columns, foreign keys, unique constraints, and indexes.
+Laravel records migrations in `migrations`. The original 34 application tables each have an initial migration; a follow-up migration removes consent tracking, leaving 33 application tables. Filenames are ordered by foreign-key dependency. The migration files define the columns, foreign keys, unique constraints, and indexes.
 
 | Order | Table |
 | --- | --- |
@@ -70,23 +70,22 @@ Laravel records migrations in `migrations`. Each of the 34 application tables ha
 | 12 | `contact_tag` |
 | 13 | `custom_fields` |
 | 14 | `contact_custom_values` |
-| 15 | `consent_events` |
-| 16 | `contact_notes` |
-| 17 | `whatsapp_configs` |
-| 18 | `message_templates` |
-| 19 | `conversations` |
-| 20 | `messages` |
-| 21 | `pending_message_statuses` |
-| 22 | `message_reactions` |
-| 23 | `conversation_notes` |
-| 24 | `quick_replies` |
-| 25 | `broadcasts` |
-| 26 | `broadcast_recipients` |
-| 27 | `ai_configs` |
-| 28 | `ai_knowledge_documents` |
-| 29 | `ai_knowledge_chunks` |
-| 30 | `ai_usage_logs` |
-| 31 | `crm_settings` |
-| 32 | `notifications` |
-| 33 | `api_keys` |
-| 34 | `webhook_endpoints` |
+| 15 | `contact_notes` |
+| 16 | `whatsapp_configs` |
+| 17 | `message_templates` |
+| 18 | `conversations` |
+| 19 | `messages` |
+| 20 | `pending_message_statuses` |
+| 21 | `message_reactions` |
+| 22 | `conversation_notes` |
+| 23 | `quick_replies` |
+| 24 | `broadcasts` |
+| 25 | `broadcast_recipients` |
+| 26 | `ai_configs` |
+| 27 | `ai_knowledge_documents` |
+| 28 | `ai_knowledge_chunks` |
+| 29 | `ai_usage_logs` |
+| 30 | `crm_settings` |
+| 31 | `notifications` |
+| 32 | `api_keys` |
+| 33 | `webhook_endpoints` |

@@ -10,6 +10,7 @@ import Icon from '../common/Icon.jsx'
 import { useToast } from '../common/ToastProvider.jsx'
 import { changeAppearance, useColorMode } from '../../lib/appearance.js'
 import { usePoll } from '../../lib/usePoll.js'
+import { useWhatsappConfig } from '../../lib/whatsappConfig.js'
 import { errorMessage } from '../../lib/utils.js'
 
 const mainNav = [
@@ -107,7 +108,6 @@ export default function AppLayout({ children }) {
   const [footerMenuOpen, setFooterMenuOpen] = useState(false)
   const [unread, setUnread] = useState(0)
   const [notificationUnread, setNotificationUnread] = useState(0)
-  const [whatsapp, setWhatsapp] = useState(null)
   const mode = useColorMode()
 
   const loadUnread = useCallback(async (signal) => {
@@ -120,14 +120,9 @@ export default function AppLayout({ children }) {
     setNotificationUnread(Number(data?.count || 0))
   }, [])
 
-  const loadWhatsapp = useCallback(async (signal) => {
-    const { data } = await api.get('/api/app/whatsapp/config', { signal, timeout: 10000 })
-    setWhatsapp(data)
-  }, [])
-
   usePoll(loadUnread, 60_000, { enabled: Boolean(user), event: 'wacrm:inbox-changed' })
   usePoll(loadNotificationUnread, 60_000, { enabled: Boolean(user), event: 'wacrm:notifications-changed' })
-  usePoll(loadWhatsapp, 120_000, { enabled: Boolean(user), event: 'wacrm:whatsapp-changed' })
+  const { data: whatsapp } = useWhatsappConfig({ enabled: Boolean(user) })
 
   useEffect(() => {
     setDrawerOpen(false)
@@ -207,10 +202,13 @@ export default function AppLayout({ children }) {
   }
 
   const crumbs = breadcrumbs(location.pathname)
-  const connected = whatsapp?.status === 'connected'
-  const accountLabel = whatsapp?.display_phone_number
-    ? `Connected · ${whatsapp.display_phone_number}`
-    : connected ? 'WhatsApp connected' : 'WhatsApp not connected'
+  const waStatus = String(whatsapp?.status || '').toLowerCase()
+  const connected = ['connected', 'active', 'verified', 'ok'].includes(waStatus) && !whatsapp?.last_registration_error
+  const displayPhone = whatsapp?.display_phone_number
+  const accountLabel = displayPhone || (connected ? 'WhatsApp connected' : 'WhatsApp not connected')
+  const accountTitle = displayPhone
+    ? `${displayPhone}${connected ? ' · Connected' : ' · Not connected'}`
+    : accountLabel
 
   return (
     <div className="app-shell">
@@ -282,9 +280,9 @@ export default function AppLayout({ children }) {
             </nav>
           </div>
           <div className="topbar-actions">
-            <Link className={`topbar-whatsapp${connected ? ' is-connected' : ''}`} href="/settings?tab=whatsapp" title={accountLabel}>
+            <Link className={`topbar-whatsapp${connected ? ' is-connected' : ''}`} href="/settings?tab=whatsapp" title={accountTitle}>
               <Icon name="whatsapp" size={15} />
-              <span className="text-truncate">{whatsapp ? accountLabel : 'WhatsApp status'}</span>
+              <span className="text-truncate">{whatsapp?.configured || whatsapp ? accountLabel : 'WhatsApp status'}</span>
             </Link>
             <Link className="topbar-control" href="/notifications" title="Notifications" aria-label={`Notifications${notificationUnread ? `, ${notificationUnread} unread` : ''}`}>
               <Icon name="bell" size={17} />

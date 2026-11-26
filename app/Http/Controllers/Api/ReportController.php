@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
@@ -45,7 +44,6 @@ class ReportController extends Controller
             'failed' => $failed,
             'delivery_rate' => $outbound > 0 ? round((($delivered + $read) / $outbound) * 100, 1) : 0,
             'failure_rate' => $outbound > 0 ? round(($failed / $outbound) * 100, 1) : 0,
-            'opted_out_contacts' => Contact::query()->where('consent_status', 'opted_out')->count(),
         ]);
     }
 

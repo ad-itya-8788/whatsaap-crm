@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractList, extractPaginator, isAdmin, placeholders, renderTemplate } from './utils.js'
+import { errorMessage, extractList, extractPaginator, friendlyProviderMessage, isAdmin, placeholders, renderTemplate } from './utils.js'
 
 describe('utils', () => {
   it('extracts lists from Laravel paginator payloads', () => {
@@ -23,5 +23,14 @@ describe('utils', () => {
   it('finds and renders template placeholders', () => {
     expect(placeholders('Hi {{1}}, welcome to {{ company }}')).toEqual(['1', 'company'])
     expect(renderTemplate('Hi {{1}}', { 1: 'Asha' })).toBe('Hi Asha')
+  })
+
+  it('returns friendly messages for known provider codes', () => {
+    expect(friendlyProviderMessage('132001', 'Template name does not exist in the translation.')).toBe('Template unavailable for the selected WhatsApp account.')
+    expect(friendlyProviderMessage('(#131037) WhatsApp provided number needs display name approval.')).toBe('WhatsApp display name approval required.')
+  })
+
+  it('converts raw provider messages to friendly text', () => {
+    expect(errorMessage({ response: { data: { message: 'Send failed (#132001) Template name does not exist in the translation.' } } })).toBe('Template unavailable for the selected WhatsApp account.')
   })
 })

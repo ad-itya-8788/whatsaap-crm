@@ -3,8 +3,9 @@ import { Link } from '@inertiajs/react'
 import { useSearchParams } from '../lib/navigation.js'
 import api from '../api/client.js'
 import Icon from '../components/common/Icon.jsx'
-import { errorMessage } from '../lib/utils.js'
+import { errorMessage, friendlyProviderMessage } from '../lib/utils.js'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useWhatsappConfig } from '../lib/whatsappConfig.js'
 
 const RANGES = [
   { days: 1, label: 'Today' },
@@ -12,6 +13,8 @@ const RANGES = [
   { days: 30, label: '30 days' },
   { days: 90, label: '90 days' },
 ]
+
+const KPI_TONES = ['green', 'blue', 'purple', 'red']
 
 function number(value) {
   if (value === null || value === undefined || value === '') return '—'
@@ -47,7 +50,7 @@ function relative(value) {
 }
 
 function ratio(numerator, denominator) {
-  return denominator > 0 ? Number(numerator) / Number(denominator) : null
+  return Number(denominator) > 0 ? Number(numerator) / Number(denominator) : null
 }
 
 function change(current, previous) {
@@ -56,53 +59,43 @@ function change(current, previous) {
   return (Number(current) - Number(previous)) / Number(previous)
 }
 
-function Sparkline({ values }) {
+function sum(values) {
+  return (values || []).reduce((total, value) => total + (Number(value) || 0), 0)
+}
+
+function Sparkline({ values, tone }) {
   const points = useMemo(() => {
-    if (!values.length) return ''
-    const max = Math.max(...values, 1)
-    return values
-      .map((value, index) => `${(index / Math.max(values.length - 1, 1)) * 100},${28 - (value / max) * 24}`)
+    const source = Array.isArray(values) ? values : []
+    if (!source.length) return ''
+    const max = Math.max(...source, 1)
+    return source
+      .map((value, index) => `${(index / Math.max(source.length - 1, 1)) * 100},${28 - (Math.max(0, value) / max) * 24}`)
       .join(' ')
   }, [values])
 
-  if (!points) return <div className="dash-spark-empty" />
+  if (!points) return <div className="dash-chart-unavailable">History unavailable</div>
 
   return (
-    <svg className="dash-spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
-      <polygon points={`0,30 ${points} 100,30`} fill="currentColor" opacity=".12" />
+    <svg className={`dash-spark dash-spark-${tone}`} viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+      <polygon points={`0,30 ${points} 100,30`} fill="currentColor" opacity=".14" />
       <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" />
     </svg>
   )
 }
 
-function ReplyTargetScale({ value, target }) {
-  const max = Math.max(target * 2, 1)
-  const fill = value === null || value === undefined ? 0 : Math.min(100, (value / max) * 100)
-
-  return (
-    <div className="dash-target-scale" role="img" aria-label={`Reply target ${duration(target)}; current median ${duration(value)}`}>
-      <div className="dash-target-track">
-        <span className="dash-target-fill" style={{ width: `${fill}%` }} />
-        <span className="dash-target-marker" />
-      </div>
-      <div className="dash-target-labels"><span>0</span><span>Target {duration(target)}</span><span>{duration(max)}</span></div>
-    </div>
-  )
-}
-
-function KpiTile({ title, detail, value, delta, comparison, footer }) {
+function KpiCard({ title, value, icon, tone, detail, delta, comparison, values }) {
   const direction = delta === null || delta === undefined ? 'flat' : delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat'
 
   return (
-    <article className="dash-tile">
-      <div className="dash-tile-head">
-        <span className="dash-tile-title">{title}</span>
-        {detail ? <span className="dash-tile-detail" title={detail}>i</span> : null}
+    <article className="dash-card dash-kpi">
+      <div className="dash-kpi-top">
+        <span className={`dash-kpi-icon dash-kpi-${tone}`}><Icon name={icon} size={17} /></span>
+        <span className="dash-kpi-title" title={detail}>{title}</span>
       </div>
-      <div className="dash-tile-value">{value}</div>
-      <div className="dash-tile-foot">
+      <strong className="dash-kpi-value">{value}</strong>
+      <div className="dash-kpi-foot">
         {delta === null || delta === undefined ? (
-          <span className="dash-delta dash-delta-flat"><span aria-hidden="true">—</span> No change</span>
+          <span className="dash-delta dash-delta-flat">Comparison unavailable</span>
         ) : (
           <span className={`dash-delta dash-delta-${direction}`}>
             {direction === 'flat'
@@ -113,7 +106,7 @@ function KpiTile({ title, detail, value, delta, comparison, footer }) {
         )}
         {comparison ? <span className="dash-compare">{comparison}</span> : null}
       </div>
-      <div className="dash-tile-visual">{footer}</div>
+      <div className="dash-kpi-visual"><Sparkline values={values} tone={tone} /></div>
     </article>
   )
 }
@@ -159,18 +152,23 @@ function FailedMessagesDialog({ open, messages, total, onClose }) {
         </div>
         {messages?.length ? (
           <ul className="dash-failed-list">
-            {messages.map((message) => (
-              <li key={message.id}>
-                <Link href={`/inbox?c=${message.conversationId}`} onClick={onClose}>
-                  <span className="dash-failed-contact">{message.contactName || message.contactPhone || 'Unknown contact'}</span>
-                  <time dateTime={message.at}>{message.at ? new Date(message.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</time>
-                  <span className="dash-failed-reason">
-                    {message.errorTitle || 'Unknown reason'}{message.errorCode ? ` (${message.errorCode})` : ''}
-                  </span>
-                  {message.preview ? <span className="dash-failed-preview">{message.preview}</span> : null}
-                </Link>
-              </li>
-            ))}
+            {messages.map((message) => {
+              const reason = friendlyProviderMessage(message.errorCode, message.errorTitle)
+                || message.failureReason
+                || message.errorTitle
+                || 'Delivery failed'
+              const technical = [message.errorTitle, message.errorCode ? `Code ${message.errorCode}` : null].filter(Boolean).join(' · ')
+              return (
+                <li key={message.id}>
+                  <Link href={`/inbox?c=${message.conversationId}`} onClick={onClose} title={technical || undefined}>
+                    <span className="dash-failed-contact">{message.contactName || message.contactPhone || 'Unknown contact'}</span>
+                    <time dateTime={message.at}>{message.at ? new Date(message.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</time>
+                    <span className="dash-failed-reason">{reason}</span>
+                    {message.preview ? <span className="dash-failed-preview">{message.preview}</span> : null}
+                  </Link>
+                </li>
+              )
+            })}
           </ul>
         ) : (
           <div className="dash-empty">No failed messages in the last 24 hours.</div>
@@ -193,31 +191,31 @@ function AttentionRow({ data, onlineCount }) {
       <div className="dash-attention-grid">
         <AttentionTile
           icon="chat"
-          tone={attention.waitingOverTarget > 0 ? 'critical' : attention.waiting > 0 ? 'warning' : 'calm'}
+          tone={attention.waitingOverTarget > 0 ? 'red' : attention.waiting > 0 ? 'amber' : 'green'}
           value={attention.waiting || 0}
           label="waiting"
           meta={oldest ? `Oldest ${oldest} · ${number(attention.waitingOverTarget || 0)} over target` : 'No conversations waiting'}
-          href="/inbox?filter=waiting"
+          to="/inbox?filter=waiting"
         />
         <AttentionTile
           icon="users"
-          tone={attention.unassigned > 0 ? 'warning' : 'calm'}
+          tone={attention.unassigned > 0 ? 'amber' : 'green'}
           value={attention.unassigned || 0}
           label="unassigned"
           meta={`${number(onlineCount)} team member${onlineCount === 1 ? '' : 's'} online`}
-          href="/inbox?filter=unassigned"
+          to="/inbox?filter=unassigned"
         />
         <AttentionTile
           icon="clock"
-          tone={attention.windowsClosing > 0 ? 'serious' : 'calm'}
+          tone={attention.windowsClosing > 0 ? 'purple' : 'green'}
           value={attention.windowsClosing || 0}
           label="windows closing"
           meta="24-hour reply window closes soon"
-          href="/inbox?filter=expiring"
+          to="/inbox?filter=expiring"
         />
         <AttentionTile
           icon="alert"
-          tone={attention.failed > 0 ? 'critical' : 'calm'}
+          tone={attention.failed > 0 ? 'red' : 'green'}
           value={attention.failed || 0}
           label="failed messages"
           meta="Delivery failures in the last 24 hours"
@@ -235,8 +233,7 @@ function AttentionRow({ data, onlineCount }) {
 }
 
 function formatHour(hour) {
-  const date = new Date(2000, 0, 1, hour)
-  return date.toLocaleTimeString([], { hour: 'numeric' })
+  return new Date(2000, 0, 1, hour).toLocaleTimeString([], { hour: 'numeric' })
 }
 
 function dayLabel(value, days = 7) {
@@ -247,24 +244,20 @@ function dayLabel(value, days = 7) {
 }
 
 function MessageVolume({ series, hours, view, onViewChange, hourlyLoading, hourlyError }) {
-  const rows = series || []
-  const chartRows = view === 'hours' ? hours : rows
-  const max = Math.max(1, ...chartRows.map((row) => row.inbound + row.outbound))
-  const totalInbound = rows.reduce((sum, row) => sum + row.inbound, 0)
-  const totalOutbound = rows.reduce((sum, row) => sum + row.outbound, 0)
-  const averageInbound = rows.length ? Math.round(totalInbound / rows.length) : 0
-  const busiestDay = rows.reduce((busiest, row) => {
-    const total = row.inbound + row.outbound
-    return total > (busiest?.inbound ?? -1) + (busiest?.outbound ?? 0) ? row : busiest
+  const rows = Array.isArray(view === 'hours' ? hours : series) ? (view === 'hours' ? hours : series) : []
+  const max = Math.max(1, ...rows.map((row) => Math.max(Number(row.inbound) || 0, Number(row.outbound) || 0)))
+  const totalInbound = sum(series.map((row) => row.inbound))
+  const totalOutbound = sum(series.map((row) => row.outbound))
+  const average = rows.length ? Math.round((sum(rows.map((row) => (Number(row.inbound) || 0) + (Number(row.outbound) || 0)))) / rows.length) : 0
+  const busiest = rows.reduce((best, row) => {
+    const total = (Number(row.inbound) || 0) + (Number(row.outbound) || 0)
+    return total > (best?.total ?? -1) ? { row, total } : best
   }, null)
-  const busiestHour = (hours || []).reduce((busiest, row) => {
-    const total = row.inbound + row.outbound
-    return total > (busiest?.inbound ?? -1) + (busiest?.outbound ?? 0) ? row : busiest
-  }, null)
+  const hasData = rows.some((row) => (Number(row.inbound) || 0) + (Number(row.outbound) || 0) > 0)
   const ticks = [1, 0.75, 0.5, 0.25, 0]
 
   return (
-    <section className="dash-card dash-volume-card">
+    <section className="dash-card dash-volume">
       <div className="dash-card-head">
         <div>
           <h2>Message volume</h2>
@@ -276,68 +269,229 @@ function MessageVolume({ series, hours, view, onViewChange, hourlyLoading, hourl
         </div>
       </div>
       <div className="dash-volume-summary">
-        <div><span>Incoming</span><strong>{number(totalInbound)}</strong></div>
+        <div><span>Incoming</span><strong className="is-blue">{number(totalInbound)}</strong></div>
         <div><span>Outgoing</span><strong>{number(totalOutbound)}</strong></div>
-        <div><span>Incoming per day</span><strong>{number(averageInbound)}</strong></div>
+        <div><span>Average / {view === 'hours' ? 'hour' : 'day'}</span><strong>{number(average)}</strong></div>
         <div>
           <span>{view === 'hours' ? 'Busiest hour' : 'Busiest day'}</span>
-          <strong>{view === 'hours'
-            ? busiestHour && (busiestHour.inbound + busiestHour.outbound) > 0 ? formatHour(busiestHour.hour) : '—'
-            : busiestDay && (busiestDay.inbound + busiestDay.outbound) > 0 ? dayLabel(busiestDay.date) : '—'}</strong>
+          <strong>{busiest?.total > 0
+            ? view === 'hours' ? formatHour(busiest.row.hour) : dayLabel(busiest.row.date, rows.length)
+            : '—'}</strong>
         </div>
       </div>
       <div className="dash-volume-legend">
-      <span><i className="dash-legend-in" /> Incoming</span>
-      <span><i className="dash-legend-out" /> Outgoing</span>
+        <span><i className="dash-legend-dot is-in" /> Incoming</span>
+        <span><i className="dash-legend-dot is-out" /> Outgoing</span>
       </div>
       {view === 'hours' && hourlyLoading ? (
         <div className="dash-chart-message"><span className="spinner" /> Loading hourly activity…</div>
       ) : view === 'hours' && hourlyError ? (
         <div className="dash-chart-message is-error" role="alert">{hourlyError}</div>
-      ) : chartRows?.length ? (
+      ) : !rows.length ? (
+        <div className="dash-chart-message">Message history unavailable for this period.</div>
+      ) : !hasData ? (
+        <div className="dash-chart-message">No messages in this period.</div>
+      ) : (
         <div className="dash-chart" role="img" aria-label={`Message volume ${view === 'hours' ? 'by hour' : 'by day'}`}>
           <div className="dash-chart-axis" aria-hidden="true">
-            {ticks.map((tick) => {
-              const value = max * tick
-              const label = max <= 4 && !Number.isInteger(value)
-                ? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
-                : number(Math.round(value))
-              return <span key={tick}>{label}</span>
-            })}
+            {ticks.map((tick) => <span key={tick}>{number(Math.round(max * tick))}</span>)}
           </div>
           <div className="dash-chart-plot">
-            <div className="dash-chart-gridlines" aria-hidden="true">
-              {ticks.map((tick) => <i key={tick} />)}
-            </div>
+            <div className="dash-chart-gridlines" aria-hidden="true">{ticks.map((tick) => <i key={tick} />)}</div>
             <div className="dash-bars">
-              {chartRows.map((row, index) => {
+              {rows.map((row, index) => {
                 const key = view === 'hours' ? row.hour : row.date
-                const label = view === 'hours' ? formatHour(row.hour) : dayLabel(row.date, chartRows.length)
-                const total = row.inbound + row.outbound
-                const labelStep = chartRows.length > 60 ? 7 : chartRows.length > 14 ? 3 : 1
+                const label = view === 'hours' ? formatHour(row.hour) : dayLabel(row.date, rows.length)
+                const inbound = Number(row.inbound) || 0
+                const outbound = Number(row.outbound) || 0
+                const labelStep = rows.length > 60 ? 7 : rows.length > 14 ? 3 : 1
+                const showLabel = view === 'hours' ? Number(row.hour) % 3 === 0 : index % labelStep === 0 || index === rows.length - 1
                 return (
-                  <div className="dash-bar-group" key={key} title={`${label}: ${row.inbound} incoming, ${row.outbound} outgoing`}>
+                  <div className="dash-bar-group" key={key} title={`${label}: ${inbound} incoming, ${outbound} outgoing`}>
                     <div className="dash-bar-track">
-                      <div className="dash-bar-stack" style={{ height: `${(total / max) * 100}%` }}>
-                        {total > 0 ? (
-                          <>
-                            <div className="dash-bar dash-bar-out" style={{ height: `${(row.outbound / total) * 100}%` }} />
-                            <div className="dash-bar dash-bar-in" style={{ height: `${(row.inbound / total) * 100}%` }} />
-                          </>
-                        ) : null}
-                      </div>
+                      <span className="dash-bar dash-bar-in" style={{ height: `${(inbound / max) * 100}%` }} />
+                      <span className="dash-bar dash-bar-out" style={{ height: `${(outbound / max) * 100}%` }} />
                     </div>
-                    {(view === 'days' && (index % labelStep === 0 || index === chartRows.length - 1))
-                      || (view === 'hours' && Number(row.hour) % 3 === 0)
-                      ? <span className="dash-bar-label">{label}</span>
-                      : null}
+                    {showLabel ? <span className="dash-bar-label">{label}</span> : null}
                   </div>
                 )
               })}
             </div>
           </div>
         </div>
-      ) : <div className="dash-chart-message">No message activity in this period.</div>}
+      )}
+    </section>
+  )
+}
+
+function ReplyPerformance({ overview }) {
+  const median = overview.replies?.medianHuman
+  const previous = overview.replies?.medianHumanPrevious
+  const target = Number(overview.replyTargetMinutes) || 15
+  const scaleMax = Math.max(target * 2, 1)
+  const fill = median === null || median === undefined ? 0 : Math.min(100, (Number(median) / scaleMax) * 100)
+  const marker = Math.min(100, (target / scaleMax) * 100)
+  const hasMedian = median !== null && median !== undefined
+  const onTarget = hasMedian && Number(median) <= target
+  const attention = overview.attention || {}
+
+  return (
+    <section className="dash-card dash-performance">
+      <div className="dash-card-head">
+        <div>
+          <h2>Reply performance</h2>
+          <p>First response in this period</p>
+        </div>
+        <span className={`dash-perf-badge ${hasMedian ? (onTarget ? 'is-good' : 'is-warn') : 'is-muted'}`}>
+          {!hasMedian ? 'No data' : onTarget ? 'Within target' : 'Above target'}
+        </span>
+      </div>
+      <div className="dash-perf-hero">
+        <span className="dash-perf-icon"><Icon name="clock" size={20} /></span>
+        <div>
+          <strong>{duration(median)}</strong>
+          <span>Median first reply</span>
+        </div>
+      </div>
+      <div className="dash-target-scale" role="img" aria-label={`Reply target ${duration(target)}; current median ${duration(median)}`}>
+        <div className="dash-target-track">
+          <span className="dash-target-fill" style={{ width: `${fill}%` }} />
+          <span className="dash-target-marker" style={{ left: `${marker}%` }} />
+        </div>
+        <div className="dash-target-labels">
+          <span>0</span>
+          <span>Target {duration(target)}</span>
+          <span>{duration(scaleMax)}</span>
+        </div>
+      </div>
+      <ul className="dash-perf-list">
+        <li><span>Waiting conversations</span><strong>{number(attention.waiting || 0)}</strong></li>
+        <li><span>Over target</span><strong className={(attention.waitingOverTarget || 0) > 0 ? 'is-red' : ''}>{number(attention.waitingOverTarget || 0)}</strong></li>
+        <li><span>Resolved conversations</span><strong>{number(overview.kpis?.resolved)}</strong></li>
+        <li>
+          <span>vs previous period</span>
+          <strong className={previous !== null && median !== null && Number(median) <= Number(previous) ? 'is-green' : ''}>
+            {previous === null || previous === undefined || !hasMedian ? '—' : duration(previous)}
+          </strong>
+        </li>
+      </ul>
+    </section>
+  )
+}
+
+function messageTone(item) {
+  if (item.type === 'customer') return 'incoming'
+  const status = String(item.status || '').toLowerCase()
+  if (status === 'failed') return 'failed'
+  if (status === 'pending') return 'pending'
+  if (status === 'read') return 'read'
+  if (status === 'delivered') return 'delivered'
+  if (status === 'sent') return 'sent'
+  return 'neutral'
+}
+
+function messageIcon(item) {
+  const tone = messageTone(item)
+  if (tone === 'incoming') return 'inbox'
+  if (tone === 'failed') return 'alert'
+  if (tone === 'pending') return 'clock'
+  if (tone === 'read' || tone === 'delivered') return 'checks'
+  return 'send'
+}
+
+function RecentActivity({ items, loading }) {
+  return (
+    <section className="dash-card dash-activity-card">
+      <div className="dash-card-head">
+        <div>
+          <h2>Recent activity</h2>
+          <p>Latest 5 messages across all conversations</p>
+        </div>
+        <Link className="dash-link" href="/inbox">View all</Link>
+      </div>
+      {loading ? (
+        <div className="dash-activity-skeleton" role="status" aria-label="Loading recent activity">
+          {Array.from({ length: 5 }).map((_, index) => <span className="dash-skeleton-block" key={index} />)}
+        </div>
+      ) : items?.length ? (
+        <ul className="dash-activity">
+          {items.slice(0, 5).map((item) => {
+            const tone = messageTone(item)
+            const friendly = friendlyProviderMessage(item.errorCode, item.errorTitle)
+              || item.failureReason
+              || (tone === 'failed' ? 'Delivery failed' : null)
+            const preview = friendly || item.preview || String(item.status || '').replace(/_/g, ' ') || 'Message'
+            const technical = [item.errorTitle, item.errorCode ? `Code ${item.errorCode}` : null].filter(Boolean).join(' · ')
+            return (
+              <li key={item.id}>
+                <Link href={`/inbox?c=${item.conversationId}`} title={technical || preview}>
+                  <span className={`dash-activity-icon dash-activity-${tone}`}><Icon name={messageIcon(item)} size={14} /></span>
+                  <span className="dash-activity-avatar">{String(item.title || '?').charAt(0).toUpperCase()}</span>
+                  <span className="dash-activity-text">
+                    <strong>{item.title}</strong>
+                    <span>{preview}</span>
+                  </span>
+                  <span className={`dash-activity-status dash-status-${tone}`}>{tone === 'incoming' ? 'Incoming' : String(item.status || tone).replace(/_/g, ' ')}</span>
+                  <time dateTime={item.timestamp}>{relative(item.timestamp)}</time>
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      ) : (
+        <div className="dash-empty">No messages in this period.</div>
+      )}
+    </section>
+  )
+}
+
+function WhatsAppAccounts({ config, setup }) {
+  const status = String(config?.status || setup?.whatsappStatus || 'disconnected').toLowerCase()
+  const registrationError = config?.last_registration_error || setup?.whatsappRegistrationError
+  const connected = ['connected', 'active', 'verified', 'ok'].includes(status) && !registrationError
+  const pendingApproval = Boolean(setup?.whatsappPendingApproval || (!config?.registered_at && !registrationError && connected))
+  const displayPhone = config?.display_phone_number || setup?.whatsappDisplayPhone
+  const tone = registrationError ? 'failed' : pendingApproval ? 'pending' : connected ? 'connected' : 'disconnected'
+  const statusLabel = registrationError
+    ? friendlyProviderMessage(registrationError, registrationError) || 'Connection error'
+    : pendingApproval ? 'Approval pending' : connected ? 'Connected' : 'Not connected'
+  const technical = registrationError ? String(registrationError) : undefined
+
+  return (
+    <section className="dash-card dash-accounts">
+      <div className="dash-card-head">
+        <div>
+          <h2>Connected WhatsApp accounts</h2>
+          <p>Current workspace account</p>
+        </div>
+        <Link className="dash-link" href="/settings?tab=whatsapp">Manage</Link>
+      </div>
+      <div className="dash-account-row">
+        <span className="dash-account-icon dash-kpi-green"><Icon name="whatsapp" size={17} /></span>
+        <span className="dash-account-copy">
+          <small>Phone number</small>
+          <strong>{displayPhone || 'Number unavailable'}</strong>
+        </span>
+        <span className={`dash-account-status is-${tone}`} title={technical}>{statusLabel}</span>
+      </div>
+      <div className="dash-account-row">
+        <span className="dash-account-icon dash-kpi-blue"><Icon name="user" size={17} /></span>
+        <span className="dash-account-copy">
+          <small>Business display name</small>
+          <strong>{config?.verified_name || 'Not provided by Meta'}</strong>
+        </span>
+      </div>
+      <div className="dash-account-row">
+        <span className="dash-account-icon dash-kpi-purple"><Icon name="shield" size={17} /></span>
+        <span className="dash-account-copy">
+          <small>Registration</small>
+          <strong>{config?.registered_at ? `Registered ${relative(config.registered_at)}` : pendingApproval ? 'Awaiting approval' : 'Not registered'}</strong>
+        </span>
+      </div>
+      <div className="dash-account-actions">
+        <Link className="button button-secondary button-sm" href="/settings?tab=whatsapp"><Icon name="settings" size={14} /> Account settings</Link>
+        <Link className="button button-ghost button-sm" href="/templates"><Icon name="template" size={14} /> Templates</Link>
+      </div>
     </section>
   )
 }
@@ -346,7 +500,7 @@ function ReplyQueue({ items, team, replyTargetMinutes }) {
   const names = new Map((team || []).map((member) => [String(member.id), member.name]))
 
   return (
-    <section className="dash-card dash-queue-card">
+    <section className="dash-card dash-queue">
       <div className="dash-card-head">
         <div>
           <h2>Reply queue</h2>
@@ -355,10 +509,10 @@ function ReplyQueue({ items, team, replyTargetMinutes }) {
         <Link className="dash-link" href="/inbox?filter=waiting">Open inbox</Link>
       </div>
       {items?.length ? (
-        <ul className="dash-queue">
-          {items.slice(0, 6).map((item) => (
+        <ul className="dash-queue-list">
+          {items.slice(0, 5).map((item) => (
             <li key={item.conversationId}>
-              <Link className="dash-queue-link" href={`/inbox?c=${item.conversationId}`}>
+              <Link href={`/inbox?c=${item.conversationId}`}>
                 <span className="avatar">{String(item.contactName || item.contactPhone || '?').charAt(0).toUpperCase()}</span>
                 <span className="dash-queue-text">
                   <strong>{item.contactName || item.contactPhone || 'Unknown contact'}</strong>
@@ -366,9 +520,7 @@ function ReplyQueue({ items, team, replyTargetMinutes }) {
                 </span>
                 <span className="dash-queue-meta">
                   {item.unread ? <b className="dash-unread">{item.unread}</b> : null}
-                  <strong className={`dash-queue-wait${item.waitingMinutes >= replyTargetMinutes ? ' is-overdue' : ''}`}>
-                    {duration(item.waitingMinutes)}
-                  </strong>
+                  <strong className={`dash-queue-wait${item.waitingMinutes >= replyTargetMinutes ? ' is-overdue' : ''}`}>{duration(item.waitingMinutes)}</strong>
                   <span>{item.assignedAgentId ? names.get(String(item.assignedAgentId)) || 'Assigned' : 'Unassigned'}</span>
                 </span>
               </Link>
@@ -376,7 +528,7 @@ function ReplyQueue({ items, team, replyTargetMinutes }) {
           ))}
         </ul>
       ) : (
-        <div className="dash-empty">Inbox zero — nothing is waiting for a reply.</div>
+        <div className="dash-empty">No conversations waiting for a reply.</div>
       )}
     </section>
   )
@@ -402,7 +554,7 @@ function TeamCard({ team }) {
                   <td><span className="dash-team-member"><span className="avatar">{member.name.charAt(0).toUpperCase()}</span><strong>{member.name}</strong></span></td>
                   <td>{number(member.active)}</td>
                   <td>{number(member.replies)}</td>
-                  <td>{duration(member.medianMinutes)}</td>
+                  <td>{member.medianMinutes === null || member.medianMinutes === undefined ? <span title="No reply data in this period">—</span> : duration(member.medianMinutes)}</td>
                 </tr>
               ))}
             </tbody>
@@ -417,7 +569,14 @@ function TeamCard({ team }) {
 
 function CampaignsCard({ campaigns }) {
   if (!campaigns) return null
-  const latest = campaigns.latestBroadcast
+  const stats = [
+    ['Sent', campaigns.sent],
+    ['Delivered', campaigns.delivered],
+    ['Read', campaigns.read],
+    ['Failed', campaigns.failed],
+    ['Opted out', campaigns.optedOut],
+    ['Templates', campaigns.templates],
+  ]
 
   return (
     <section className="dash-card">
@@ -428,51 +587,15 @@ function CampaignsCard({ campaigns }) {
         </div>
         <Link className="dash-link" href="/broadcasts">Broadcasts</Link>
       </div>
-      {latest ? (
-        <Link className="dash-latest-broadcast" href={`/broadcasts/${latest.id}`}>
-          <span><strong>{latest.name}</strong><small>{number(latest.recipients)} recipients · {latest.status}</small></span>
-          <Icon name="arrowRight" size={14} />
-        </Link>
-      ) : <p className="dash-no-broadcasts">No broadcasts sent yet.</p>}
-      <ul className="dash-health-list">
-        <li><span>Automations</span><span className="is-unavailable">Unavailable</span></li>
-        <li><span>Flows</span><span className="is-unavailable">Unavailable</span></li>
-      </ul>
-    </section>
-  )
-}
-
-function ActivityFeed({ items, loading }) {
-  return (
-    <section className="dash-card">
-      <div className="dash-card-head">
-        <div>
-          <h2>Recent activity</h2>
-          <p>Latest messages across all conversations</p>
-        </div>
+      <div className="dash-campaign-stats">
+        {stats.map(([label, value]) => (
+          <div key={label}><span>{label}</span><strong>{number(value)}</strong></div>
+        ))}
       </div>
-      {loading ? (
-        <div className="dash-activity-skeleton" role="status" aria-label="Loading activity">
-          {Array.from({ length: 4 }).map((_, index) => <span className="dash-skeleton-block" key={index} />)}
-        </div>
-      ) : items?.length ? (
-        <ul className="dash-activity">
-          {items.slice(0, 12).map((item) => (
-            <li key={item.id}>
-              <span className={`dash-activity-icon dash-activity-${item.type}`}>
-                <Icon name={item.type === 'customer' ? 'inbox' : 'send'} size={14} />
-              </span>
-              <span className="dash-activity-text">
-                <strong>{item.title}</strong>
-                <span>{item.preview || item.status}</span>
-              </span>
-              <time>{relative(item.timestamp)}</time>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="dash-empty">No messages yet.</div>
-      )}
+      <ul className="dash-health-list">
+        <li><span>Automations</span><span className="is-unavailable">Not configured</span></li>
+        <li><span>Flows</span><span className="is-unavailable">Not configured</span></li>
+      </ul>
     </section>
   )
 }
@@ -504,6 +627,7 @@ export default function DashboardPage() {
   const [params, setParams] = useSearchParams()
   const rawRange = Number(params.get('range'))
   const range = RANGES.some((option) => option.days === rawRange) ? rawRange : 7
+  const { data: whatsappConfig } = useWhatsappConfig({ enabled: Boolean(user) })
 
   const [overview, setOverview] = useState(null)
   const [campaigns, setCampaigns] = useState(null)
@@ -529,13 +653,13 @@ export default function DashboardPage() {
 
     const [campaignsResult, activityResult] = await Promise.allSettled([
       api.get('/api/app/dashboard/campaigns', { ...options, params: { days: range } }),
-      api.get('/api/app/dashboard/activity', { ...options, params: { limit: 12 } }),
+      api.get('/api/app/dashboard/activity', { ...options, params: { limit: 5 } }),
     ])
     if (signal?.aborted) return
     if (campaignsResult.status === 'fulfilled') setCampaigns(campaignsResult.value.data)
     if (activityResult.status === 'fulfilled') {
       const { data } = activityResult.value
-      setActivity(Array.isArray(data) ? data : [])
+      setActivity(Array.isArray(data) ? data.slice(0, 5) : [])
     }
     setActivityLoading(false)
   }, [range])
@@ -571,8 +695,8 @@ export default function DashboardPage() {
     }
     const initial = window.setTimeout(refresh, 0)
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') refresh()
-    }, 60000)
+      if (document.visibilityState === 'visible') void refresh()
+    }, 60_000)
     return () => {
       controller.abort()
       window.clearTimeout(initial)
@@ -591,19 +715,18 @@ export default function DashboardPage() {
       <div className="dash-error">
         <Icon name="alertCircle" size={22} />
         <p>Dashboard data could not be loaded.</p>
-        <button type="button" className="button button-primary" onClick={() => { setFailed(false); load() }}>Try again</button>
+        <button type="button" className="button button-primary" onClick={() => { setFailed(false); void load() }}>Try again</button>
       </div>
     )
   }
 
-  const kpis = overview?.kpis
-  const volume = overview?.volume?.series || []
-  const setup = overview?.setup
+  const kpis = overview?.kpis || {}
+  const volume = Array.isArray(overview?.volume?.series) ? overview.volume.series : []
+  const setup = overview?.setup || {}
   const onlineCount = (overview?.replies?.team || []).filter((member) => member.presence === 'online').length
-  const readRate = ratio(kpis?.broadcastRead, kpis?.broadcastDelivered)
-  const previousReadRate = ratio(kpis?.broadcastReadPrevious, kpis?.broadcastDeliveredPrevious)
-  const broadcastCount = kpis?.broadcastCount ?? campaigns?.broadcastCount
-  const hasBroadcasts = Number(broadcastCount) > 0
+  const hasBroadcasts = Number(kpis.broadcastDelivered) > 0
+  const readRate = ratio(kpis.broadcastRead, kpis.broadcastDelivered)
+  const previousReadRate = ratio(kpis.broadcastReadPrevious, kpis.broadcastDeliveredPrevious)
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
   const firstName = user?.name?.split(' ')[0] || 'there'
@@ -621,39 +744,27 @@ export default function DashboardPage() {
             ? `${number(waiting)} customer${waiting === 1 ? ' is' : 's are'} waiting for a reply${oldest ? `, the oldest for ${oldest}` : ''}.`
             : 'No customers are waiting for a reply.'}</p>
         </div>
-        <div className="dash-header-actions">
-          <Link className={`dash-whatsapp-status${setup?.whatsappConnected ? ' is-connected' : ''}`} href="/settings?tab=whatsapp">
-            <span className="status-dot" />
-            <span>
-              {[
-                setup?.whatsappDisplayPhone || setup?.displayPhoneNumber,
-                setup?.whatsappQualityRating || setup?.qualityRating,
-                setup?.whatsappDailyLimit || setup?.dailyLimit,
-              ].filter(Boolean).join(' · ') || (!overview ? 'Checking WhatsApp status' : setup?.whatsappConnected ? 'WhatsApp connected' : 'WhatsApp not connected')}
-            </span>
-          </Link>
-          <div className="dash-toolbar">
-            <div className="dash-range" role="group" aria-label="Dashboard range">
-              {RANGES.map((option) => (
-                <button
-                  key={option.days}
-                  type="button"
-                  className={range === option.days ? 'is-active' : ''}
-                  aria-pressed={range === option.days}
-                  onClick={() => setRange(option.days)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            <details className="dash-new-menu">
-              <summary className="dash-new-button"><Icon name="plus" size={15} /> New <span className="dash-new-chevron" /></summary>
-              <div className="dash-new-popover">
-                <Link href="/contacts"><Icon name="user" size={15} /> New contact</Link>
-                <Link href="/broadcasts/new"><Icon name="radio" size={15} /> New broadcast</Link>
-              </div>
-            </details>
+        <div className="dash-toolbar">
+          <div className="dash-range" role="group" aria-label="Dashboard range">
+            {RANGES.map((option) => (
+              <button
+                key={option.days}
+                type="button"
+                className={range === option.days ? 'is-active' : ''}
+                aria-pressed={range === option.days}
+                onClick={() => setRange(option.days)}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
+          <details className="dash-new-menu">
+            <summary className="dash-new-button"><Icon name="plus" size={15} /> New <span className="dash-new-chevron" /></summary>
+            <div className="dash-new-popover">
+              <Link href="/contacts"><Icon name="user" size={15} /> New contact</Link>
+              <Link href="/broadcasts/new"><Icon name="radio" size={15} /> New broadcast</Link>
+            </div>
+          </details>
         </div>
       </header>
 
@@ -662,44 +773,47 @@ export default function DashboardPage() {
       ) : (
         <>
           <AttentionRow data={overview} onlineCount={onlineCount} />
+
           <div className="dash-kpis">
-            <KpiTile
-              title="New conversations"
-              detail="Conversations created in this period"
+            <KpiCard
+              title="Total conversations"
               value={number(kpis.newConversations)}
+              icon="chat"
+              tone={KPI_TONES[0]}
+              detail="Conversations created in this period"
               delta={change(kpis.newConversations, kpis.newConversationsPrevious)}
               comparison={`vs previous ${range}d`}
-              footer={<Sparkline values={volume.map((row) => row.newConversations)} />}
+              values={volume.map((row) => row.newConversations)}
             />
-            <KpiTile
-              title="Median first reply"
-              detail="Median time from first inbound message to first reply"
-              value={duration(overview.replies.medianHuman)}
-              delta={overview.replies.medianHuman != null && overview.replies.medianHumanPrevious != null
-                ? -change(overview.replies.medianHuman, overview.replies.medianHumanPrevious)
-                : null}
-              comparison={`vs previous ${range}d`}
-              footer={<ReplyTargetScale value={overview.replies.medianHuman} target={overview.replyTargetMinutes} />}
+            <KpiCard
+              title="Messages sent"
+              value={number(sum(volume.map((row) => row.outbound)))}
+              icon="send"
+              tone={KPI_TONES[1]}
+              detail="Agent and bot messages sent in this period"
+              delta={null}
+              comparison="Actual period total"
+              values={volume.map((row) => row.outbound)}
             />
-            <KpiTile
-              title="Resolved"
-              detail="Conversations closed in this period"
-              value={number(kpis.resolved)}
-              delta={change(kpis.resolved, kpis.resolvedPrevious)}
-              comparison={`vs previous ${range}d`}
-              footer={<Sparkline values={volume.map((row) => row.resolved)} />}
+            <KpiCard
+              title="Messages received"
+              value={number(sum(volume.map((row) => row.inbound)))}
+              icon="inbox"
+              tone={KPI_TONES[2]}
+              detail="Customer messages received in this period"
+              delta={null}
+              comparison="Actual period total"
+              values={volume.map((row) => row.inbound)}
             />
-            <KpiTile
-              title="Broadcast read rate"
-              detail="Share of broadcast messages that were read"
-              value={hasBroadcasts ? percent(readRate) : '—'}
-              delta={previousReadRate !== null && readRate !== null ? change(readRate, previousReadRate) : null}
-              comparison={`vs previous ${range}d`}
-              footer={<span className="dash-broadcast-empty">
-                {hasBroadcasts
-                  ? `${number(kpis.broadcastRead)} of ${number(kpis.broadcastDelivered)} messages read`
-                  : Number(broadcastCount) === 0 ? 'No broadcasts in this period' : 'Broadcast data unavailable'}
-              </span>}
+            <KpiCard
+              title="Failed messages"
+              value={number(kpis.failedMessages ?? sum(volume.map((row) => row.failed)))}
+              icon="alert"
+              tone={KPI_TONES[3]}
+              detail="Messages that failed to send in this period"
+              delta={null}
+              comparison="Actual period total"
+              values={volume.map((row) => row.failed)}
             />
           </div>
 
@@ -712,19 +826,40 @@ export default function DashboardPage() {
               hourlyLoading={hourlyLoading}
               hourlyError={hourlyError}
             />
-            <ReplyQueue
-              items={overview.queue}
-              team={overview.replies.team}
-              replyTargetMinutes={overview.replyTargetMinutes}
-            />
+            <ReplyPerformance overview={overview} />
           </div>
 
           <div className="dash-split">
-            <TeamCard team={overview.replies.team} />
-            <CampaignsCard campaigns={campaigns} />
+            <RecentActivity items={activity} loading={activityLoading} />
+            <WhatsAppAccounts config={whatsappConfig} setup={setup} />
           </div>
 
-          <ActivityFeed items={activity} loading={activityLoading} />
+          <div className="dash-split">
+            <ReplyQueue items={overview.queue} team={overview.replies?.team} replyTargetMinutes={overview.replyTargetMinutes} />
+            <TeamCard team={overview.replies?.team} />
+          </div>
+
+          <CampaignsCard campaigns={campaigns} />
+
+          {hasBroadcasts && readRate !== null && (
+            <div className="dash-card dash-broadcast-summary">
+              <div>
+                <span>Broadcast read rate</span>
+                <strong>{percent(readRate)}</strong>
+                <small>{number(kpis.broadcastRead)} of {number(kpis.broadcastDelivered)} delivered messages read</small>
+              </div>
+              <div>
+                <span>Previous period</span>
+                <strong>{percent(previousReadRate)}</strong>
+                <small>{previousReadRate === null ? 'Comparison unavailable' : `vs previous ${range}d`}</small>
+              </div>
+              <div>
+                <span>Resolved conversations</span>
+                <strong>{number(kpis.resolved)}</strong>
+                <small>Closed in this period</small>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

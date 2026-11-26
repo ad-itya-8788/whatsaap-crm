@@ -123,7 +123,7 @@ export default function ContactDetail({ initialContact, customFields, onClose, o
           <button className="icon-button" type="button" onClick={onClose} disabled={sending || noteBusy || openingChat} aria-label="Close contact"><Icon name="close" /></button>
         </div>
         {!readOnly && <div className="contact-sheet-actions">
-          <button type="button" className="button button-sm button-primary" disabled={contact.consent_status === 'opted_out'} onClick={() => setPickerOpen(true)}><Icon name="template" size={16} /> Send template</button>
+          <button type="button" className="button button-sm button-primary" onClick={() => setPickerOpen(true)}><Icon name="template" size={16} /> Send template</button>
           <button type="button" className="button button-sm button-secondary" disabled={openingChat} onClick={async () => {
             setOpeningChat(true)
             try { await onOpenChat(contact) } finally { setOpeningChat(false) }
