@@ -21,6 +21,7 @@ class MessagingService
         private MetaCloudApiService $meta,
         private MessageStatusService $statuses,
         private TemplateSendBuilder $templateBuilder,
+        private RealtimeBroadcaster $realtime,
     ) {}
 
     public function send(Conversation $conversation, array $data, ?int $senderId): Message
@@ -147,6 +148,8 @@ class MessagingService
             return $this->replay($existing, $conversation, $idempotencyHash);
         }
 
+        $this->realtime->messageCreated($message->fresh());
+
         try {
             $mediaId = null;
             $mediaType = $data['header_media_type'] ?? strtolower($template?->header_type ?? $type);
@@ -157,6 +160,7 @@ class MessagingService
                     'media_type' => $file->getMimeType(),
                     'filename' => $file->getClientOriginalName(),
                 ]);
+                $this->realtime->messageUpdated($message->fresh());
             }
 
             if (is_array($data['payload'] ?? null)) {
@@ -222,12 +226,15 @@ class MessagingService
                     ? Carbon::createFromTimestamp((int) $timestamp)
                     : null,
             ]);
+            $this->realtime->messageStatusChanged($message->fresh());
         } catch (ConnectionException) {
             $message->update([
                 'status' => 'pending',
                 'error_title' => 'Delivery unconfirmed',
                 'error_details' => 'The provider response was not received. Check the message status before retrying.',
             ]);
+
+            $this->realtime->messageStatusChanged($message->fresh());
 
             Log::warning('whatsapp.message.outcome_unknown', [
                 'conversation_id' => $conversation->id,
@@ -247,6 +254,7 @@ class MessagingService
                 'error_title' => $e->acceptanceUnknown ? 'Delivery unconfirmed' : 'Send failed',
                 'error_details' => $e->getMessage(),
             ]);
+            $this->realtime->messageStatusChanged($message->fresh());
 
             throw new MessagingException(
                 $e->acceptanceUnknown
@@ -261,6 +269,7 @@ class MessagingService
                 'error_title' => 'Send failed',
                 'error_details' => $e->getMessage(),
             ]);
+            $this->realtime->messageStatusChanged($message->fresh());
 
             throw new MessagingException(
                 'WhatsApp could not send the message: '.$e->getMessage(),
@@ -302,6 +311,8 @@ class MessagingService
                 $message,
             );
         }
+
+        $this->realtime->messageCreated($message->fresh());
 
         return $message;
     }

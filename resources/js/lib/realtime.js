@@ -1,0 +1,112 @@
+import Echo from 'laravel-echo'
+import Pusher from 'pusher-js'
+
+let echoClient = null
+
+function cookieValue(name) {
+  const prefix = `${name}=`
+  const cookie = document.cookie.split('; ').find((item) => item.startsWith(prefix))
+  return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : ''
+}
+
+function csrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+  return meta || cookieValue('XSRF-TOKEN')
+}
+
+function config() {
+  const shared = typeof window !== 'undefined' ? window.__WACRM_REALTIME__ : null
+  const source = shared || {
+    key: import.meta.env.VITE_REVERB_APP_KEY,
+    host: import.meta.env.VITE_REVERB_HOST,
+    port: import.meta.env.VITE_REVERB_PORT,
+    scheme: import.meta.env.VITE_REVERB_SCHEME,
+  }
+  if (shared && shared.enabled === false) return null
+  if (!source.key) return null
+
+  const host = String(source.host || 'localhost')
+    .replace(/^https?:\/\//, '')
+    .replace(/\/$/, '')
+
+  return {
+    key: source.key,
+    host,
+    port: Number(source.port || 8080),
+    scheme: source.scheme || 'http',
+  }
+}
+
+function getEcho(settings) {
+  if (!echoClient) {
+    if (typeof window !== 'undefined') window.Pusher = Pusher
+    echoClient = new Echo({
+      broadcaster: 'reverb',
+      client: Pusher,
+      key: settings.key,
+      host: settings.host,
+      wsHost: settings.host,
+      wsPort: settings.port,
+      wssPort: settings.port,
+      forceTLS: settings.scheme === 'https',
+      enabledTransports: ['ws', 'wss'],
+      disableStats: true,
+      authEndpoint: '/broadcasting/auth',
+      auth: {
+        headers: {
+          Accept: 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRF-TOKEN': csrfToken(),
+        },
+      },
+    })
+  }
+
+  return echoClient
+}
+
+export function subscribeToRealtime(handlers = {}) {
+  const settings = config()
+  if (!settings) {
+    handlers.onConnectionChange?.(false)
+    return () => {}
+  }
+
+  let echo
+  try {
+    echo = getEcho(settings)
+  } catch {
+    handlers.onConnectionChange?.(false)
+    return () => {}
+  }
+
+  const channel = echo.private('account.default')
+  const listeners = {
+    'message.created': (payload) => handlers.onMessageCreated?.(payload),
+    'message.updated': (payload) => handlers.onMessageUpdated?.(payload),
+    'message.status': (payload) => handlers.onMessageStatusChanged?.(payload),
+    'message.deleted': (payload) => handlers.onMessageDeleted?.(payload),
+    'conversation.updated': (payload) => handlers.onConversationUpdated?.(payload),
+    'conversation.deleted': (payload) => handlers.onConversationDeleted?.(payload),
+  }
+
+  Object.entries(listeners).forEach(([event, listener]) => channel.listen(`.${event}`, listener))
+
+  const connection = echo.connector?.pusher?.connection
+  let previousState = connection?.state || ''
+  handlers.onConnectionChange?.(previousState === 'connected')
+
+  const onStateChange = ({ current } = {}) => {
+    const wasConnected = previousState === 'connected'
+    previousState = current || ''
+    handlers.onConnectionChange?.(current === 'connected')
+    if (!wasConnected && current === 'connected') handlers.onReconnected?.()
+  }
+  connection?.bind('state_change', onStateChange)
+
+  return () => {
+    Object.entries(listeners).forEach(([event, listener]) => channel.stopListening(`.${event}`, listener))
+    connection?.unbind('state_change', onStateChange)
+    echo.leaveChannel('account.default')
+  }
+}

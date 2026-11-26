@@ -32,8 +32,13 @@ class ContactController extends Controller
         $query = Contact::query()
             ->with(['tags', 'customFieldValues.customField'])
             ->withCount('tags')
-            ->addSelect(['conversation_id' => Conversation::query()
-                ->select('id')->whereColumn('contact_id', 'contacts.id')->limit(1)]);
+            ->addSelect([
+                'conversation_id' => Conversation::query()
+                    ->select('id')->whereColumn('contact_id', 'contacts.id')->limit(1),
+                'last_interaction_at' => Conversation::query()
+                    ->select('last_message_at')->whereColumn('contact_id', 'contacts.id')
+                    ->orderByDesc('last_message_at')->limit(1),
+            ]);
 
         if ($search = $request->string('search')->toString()) {
             $query->where(function ($q) use ($search) {
@@ -58,6 +63,12 @@ class ContactController extends Controller
         }
 
         $paginator = $query->orderByDesc('updated_at')->orderByDesc('id')->paginate($perPage);
+        $paginator->additional(['summary' => [
+            'total' => Contact::count(),
+            'with_conversation' => Contact::has('conversations')->count(),
+            'recently_added' => Contact::where('created_at', '>=', now()->subDays(7))->count(),
+            'tags' => Tag::count(),
+        ]]);
         $paginator->setCollection(
             $paginator->getCollection()->map(fn (Contact $contact) => $this->contactPayload($contact))
         );

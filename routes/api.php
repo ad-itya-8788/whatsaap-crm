@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\MemberPresenceController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\QuickReplyController;
+use App\Http\Controllers\Api\RealtimeSyncController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\TagController;
@@ -37,6 +38,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
 
     Route::prefix('app')->group(function () {
+        Route::get('/realtime/sync', [RealtimeSyncController::class, 'index']);
         Route::get('/presence', [MemberPresenceController::class, 'index']);
         Route::put('/presence', [MemberPresenceController::class, 'update'])->middleware('throttle:15,1');
         Route::get('/contacts/export', [ContactController::class, 'export']);

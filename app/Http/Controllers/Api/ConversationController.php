@@ -7,12 +7,15 @@ use App\Models\Conversation;
 use App\Models\Notification;
 use App\Models\User;
 use App\Services\InboundMediaMirror;
+use App\Services\RealtimeBroadcaster;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class ConversationController extends Controller
 {
+    public function __construct(private RealtimeBroadcaster $realtime) {}
+
     public function index(Request $request): JsonResponse
     {
         $perPage = min(max($request->integer('per_page', 50), 1), 100);
@@ -102,6 +105,8 @@ class ConversationController extends Controller
             $mediaMirror->deleteByMessageId($messageId);
         }
 
+        $this->realtime->conversationDeleted((int) $conversation->id);
+
         return response()->json(['ok' => true]);
     }
 
@@ -113,6 +118,7 @@ class ConversationController extends Controller
     public function markRead(Conversation $conversation): JsonResponse
     {
         $conversation->update(['unread_count' => 0]);
+        $this->realtime->conversationUpdated($conversation->fresh());
 
         return response()->json(['ok' => true]);
     }
@@ -146,21 +152,24 @@ class ConversationController extends Controller
             'assignee_id' => ['nullable', 'integer', 'exists:users,id'],
         ]);
 
-        $conversation->update(['assigned_agent_id' => $data['assignee_id'] ?? null]);
+        DB::transaction(function () use ($conversation, $data, $request) {
+            $conversation->update(['assigned_agent_id' => $data['assignee_id'] ?? null]);
 
-        if (! empty($data['assignee_id']) && (int) $data['assignee_id'] !== $request->user()->id) {
-            $contact = $conversation->contact;
-            $label = $contact?->name ?: $contact?->phone ?: 'a contact';
+            if (! empty($data['assignee_id']) && (int) $data['assignee_id'] !== $request->user()->id) {
+                $contact = $conversation->contact;
+                $label = $contact?->name ?: $contact?->phone ?: 'a contact';
 
-            Notification::create([
-                'user_id' => (int) $data['assignee_id'],
-                'type' => 'conversation_assigned',
-                'title' => 'Conversation assigned to you',
-                'body' => "{$label} was assigned to you.",
-                'data' => ['conversation_id' => $conversation->id],
-            ]);
+                Notification::create([
+                    'user_id' => (int) $data['assignee_id'],
+                    'type' => 'conversation_assigned',
+                    'title' => 'Conversation assigned to you',
+                    'body' => "{$label} was assigned to you.",
+                    'data' => ['conversation_id' => $conversation->id],
+                ]);
+            }
+        });
 
-        }
+        $this->realtime->conversationUpdated($conversation->fresh());
 
         return response()->json($conversation->load(['contact', 'assignedAgent']));
     }
@@ -175,6 +184,7 @@ class ConversationController extends Controller
             'status' => $data['status'],
             'closed_at' => $data['status'] === 'closed' ? now() : null,
         ]);
+        $this->realtime->conversationUpdated($conversation->fresh());
 
         return response()->json($conversation->load(['contact', 'assignedAgent']));
     }

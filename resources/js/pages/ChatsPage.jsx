@@ -14,6 +14,8 @@ import MediaViewer from '../components/chat/MediaViewer.jsx'
 import ChatComposer from '../components/chat/ChatComposer.jsx'
 import AiThreadBanner from '../components/chat/AiThreadBanner.jsx'
 import { fileType, hasWhatsApp, isIncoming, mediaItem, messageText } from '../components/chat/chatUtils.js'
+import { subscribeToRealtime } from '../lib/realtime.js'
+import { conversationMatchesFilters, mergeConversations, mergeMessageList, messagePreview, removeConversations, removeMessages } from '../lib/realtimeChat.js'
 
 function messageDate(message) {
   const value = message?.provider_timestamp || message?.created_at
@@ -87,6 +89,7 @@ export default function ChatsPage() {
   const [listError, setListError] = useState('')
   const [threadError, setThreadError] = useState('')
   const [mediaViewer, setMediaViewer] = useState(null)
+  const [realtimeConnected, setRealtimeConnected] = useState(false)
 
   const threadRef = useRef(null)
   const listAbortRef = useRef(null)
@@ -97,7 +100,19 @@ export default function ChatsPage() {
   const messagesConversationRef = useRef(selectedId)
   const scrollRestoreRef = useRef(null)
   const scrollToBottomRef = useRef(true)
+  const statusFilterRef = useRef(statusFilter)
+  const assigneeFilterRef = useRef(assigneeFilter)
+  const debouncedQueryRef = useRef(debouncedQuery)
+  const currentUserIdRef = useRef(user?.id)
+  const messagesRef = useRef(messages)
+  const realtimeSinceRef = useRef(null)
+  const recoveryInFlightRef = useRef(false)
   selectedIdRef.current = selectedId
+  statusFilterRef.current = statusFilter
+  assigneeFilterRef.current = assigneeFilter
+  debouncedQueryRef.current = debouncedQuery
+  currentUserIdRef.current = user?.id
+  messagesRef.current = messages
 
   const selected = conversations.find((item) => String(item.id) === String(selectedId))
     || (String(linkedConversation?.id) === selectedId ? linkedConversation : null)
@@ -245,6 +260,97 @@ export default function ChatsPage() {
     }
   }, [debouncedMessageSearch, toast])
 
+  const applyMessages = useCallback((incoming) => {
+    const rows = Array.isArray(incoming) ? incoming : [incoming]
+    const conversationId = rows[0]?.conversation_id
+    if (!rows.length || (conversationId && String(conversationId) !== String(selectedIdRef.current))) return
+
+    setMessages((current) => {
+      const next = mergeMessageList(current, rows)
+      if (next === current) return current
+      const node = threadRef.current
+      scrollToBottomRef.current = Boolean(node && node.scrollHeight - node.scrollTop - node.clientHeight < 140)
+      return next
+    })
+  }, [])
+
+  const applyConversations = useCallback((incoming) => {
+    const rows = Array.isArray(incoming) ? incoming : [incoming]
+    if (!rows.length) return
+
+    setConversations((current) => {
+      let next = current
+      rows.forEach((row) => {
+        if (!row?.id) return
+        const id = String(row.id)
+        const previous = next.find((item) => String(item.id) === id)
+        const merged = previous ? mergeConversations([previous], [row])[0] : row
+        const visible = conversationMatchesFilters(
+          merged,
+          statusFilterRef.current,
+          assigneeFilterRef.current,
+          debouncedQueryRef.current,
+          currentUserIdRef.current,
+        )
+        next = visible ? mergeConversations(next, [merged], statusFilterRef.current) : removeConversations(next, [id])
+      })
+      return next
+    })
+    setLinkedConversation((current) => {
+      if (!current) return current
+      const match = rows.find((row) => String(row.id) === String(current.id))
+      if (!match) return current
+      return { ...current, ...match, contact: match.contact || current.contact }
+    })
+  }, [])
+
+  const removeMessageItems = useCallback((ids) => {
+    setMessages((current) => removeMessages(current, ids))
+  }, [])
+
+  const removeConversationItems = useCallback((ids) => {
+    const removed = Array.isArray(ids) ? ids : [ids]
+    setConversations((current) => removeConversations(current, removed))
+    if (removed.some((id) => String(id) === String(selectedIdRef.current))) {
+      setSelectedId('')
+      setMessages([])
+      setLinkedConversation(null)
+      setParams((current) => {
+        const next = new URLSearchParams(current)
+        next.delete('conversation')
+        next.delete('c')
+        return next
+      }, { replace: true })
+    }
+  }, [setParams])
+
+  const recoverRealtime = useCallback(async () => {
+    if (recoveryInFlightRef.current) return
+    recoveryInFlightRef.current = true
+
+    try {
+      const conversationId = selectedIdRef.current || undefined
+      const highestMessageId = conversationId
+        ? messagesRef.current.reduce((highest, message) => Math.max(highest, Number(message.id) || 0), 0)
+        : 0
+      const { data } = await api.get('/api/app/realtime/sync', {
+        params: {
+          conversation_id: conversationId,
+          after_id: conversationId && highestMessageId ? highestMessageId : undefined,
+          since: realtimeSinceRef.current || undefined,
+        },
+      })
+
+      realtimeSinceRef.current = data?.server_time || null
+      if (conversationId && data?.messages?.length) applyMessages(data.messages)
+      if (data?.conversations?.length) applyConversations(data.conversations)
+    } catch {
+      // The normal polling fallback will retry on the next tick.
+    } finally {
+      recoveryInFlightRef.current = false
+    }
+  }, [applyConversations, applyMessages])
+
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 300)
     return () => clearTimeout(timer)
@@ -335,14 +441,54 @@ export default function ChatsPage() {
     return () => controller.abort()
   }, [sidePanel, selectedId, loadNotes])
 
+  useEffect(() => subscribeToRealtime({
+    onConnectionChange: setRealtimeConnected,
+    onMessageCreated: (payload) => {
+      if (payload?.message) applyMessages(payload.message)
+      if (payload?.conversation) applyConversations(payload.conversation)
+      window.dispatchEvent(new Event('wacrm:inbox-changed'))
+    },
+    onMessageUpdated: (payload) => {
+      if (payload?.message) applyMessages(payload.message)
+    },
+    onMessageStatusChanged: (payload) => {
+      if (payload?.message) applyMessages(payload.message)
+    },
+    onMessageDeleted: (payload) => {
+      if (payload?.message_id) removeMessageItems(payload.message_id)
+      if (payload?.conversation) applyConversations(payload.conversation)
+    },
+    onConversationUpdated: (payload) => {
+      if (payload?.conversation) applyConversations(payload.conversation)
+      window.dispatchEvent(new Event('wacrm:inbox-changed'))
+    },
+    onConversationDeleted: (payload) => {
+      if (payload?.conversation_id) removeConversationItems(payload.conversation_id)
+      window.dispatchEvent(new Event('wacrm:inbox-changed'))
+    },
+    onReconnected: () => {
+      void recoverRealtime()
+      window.dispatchEvent(new Event('wacrm:inbox-changed'))
+    },
+  }), [applyConversations, applyMessages, recoverRealtime, removeConversationItems, removeMessageItems])
+
   useEffect(() => {
-    const timer = window.setInterval(() => {
+    const poll = () => {
       if (document.visibilityState !== 'visible') return
+      if (realtimeConnected) {
+        void recoverRealtime()
+        return
+      }
       if (pagination.currentPage === 1) loadConversations(1, false, true)
       if (selectedId) loadMessages(selectedId, { background: true })
-    }, 5000)
-    return () => window.clearInterval(timer)
-  }, [loadConversations, loadMessages, pagination.currentPage, selectedId])
+    }
+    const timer = window.setInterval(poll, realtimeConnected ? 30_000 : 5_000)
+    document.addEventListener('visibilitychange', poll)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', poll)
+    }
+  }, [loadConversations, loadMessages, pagination.currentPage, realtimeConnected, recoverRealtime, selectedId])
 
   useLayoutEffect(() => {
     const node = threadRef.current
@@ -461,7 +607,6 @@ export default function ChatsPage() {
 
   const confirmDeleteMessage = async () => {
     if (!messageToDelete?.id || !selectedId) return
-    const conversationId = selectedId
     setDeletingMessage(true)
     try {
       await api.delete(`/api/app/messages/${messageToDelete.id}`)
@@ -469,10 +614,6 @@ export default function ChatsPage() {
       setReplyTo((item) => item?.id === messageToDelete.id ? null : item)
       setMessageToDelete(null)
       toast.success('Message deleted from this CRM.')
-      await Promise.all([
-        loadMessages(conversationId),
-        loadConversations(1, false, true),
-      ])
     } catch (requestError) {
       toast.error(errorMessage(requestError, 'Unable to delete the message.'))
     } finally {
@@ -504,7 +645,6 @@ export default function ChatsPage() {
       setDeleteConversationOpen(false)
       window.dispatchEvent(new Event('wacrm:inbox-changed'))
       toast.success('Conversation deleted from this CRM. The contact was kept.')
-      await loadConversations()
     } catch (requestError) {
       toast.error(errorMessage(requestError, 'Unable to delete the conversation.'))
     } finally {
@@ -551,14 +691,57 @@ export default function ChatsPage() {
     if (event?.preventDefault) event.preventDefault()
     const text = draft.trim()
     if ((!text && !selectedFile) || !selectedId || sending) return
+    const conversationId = selectedId
     setSending(true)
     setThreadError('')
     setUploadProgress(0)
-    const signature = `${selectedId}|${text}|${selectedFile?.name || ''}|${selectedFile?.size || ''}|${replyTo?.id || ''}`
+    const signature = `${conversationId}|${text}|${selectedFile?.name || ''}|${selectedFile?.size || ''}|${replyTo?.id || ''}`
     if (sendAttemptRef.current?.signature !== signature) {
       sendAttemptRef.current = { signature, key: createIdempotencyKey() }
     }
     const idempotencyKey = sendAttemptRef.current.key
+    const optimistic = {
+      id: `tmp-${idempotencyKey}`,
+      conversation_id: Number(conversationId),
+      sender_type: 'agent',
+      sender_id: user?.id,
+      content_type: selectedFile ? fileType(selectedFile) : 'text',
+      content_text: text || null,
+      filename: selectedFile?.name || null,
+      media_type: selectedFile?.type || null,
+      media_url: null,
+      status: 'sending',
+      created_at: new Date().toISOString(),
+      provider_timestamp: null,
+      reactions: [],
+      idempotency_key: idempotencyKey,
+      reply_to_message_id: replyTo?.id || null,
+      replyTo: replyTo ? {
+        id: replyTo.id,
+        content_text: messageText(replyTo),
+        sender_type: replyTo.sender_type,
+        content_type: replyTo.content_type,
+        filename: replyTo.filename,
+      } : null,
+    }
+    applyMessages([optimistic])
+
+    const finishSend = (saved) => {
+      sendAttemptRef.current = null
+      applyMessages([saved])
+      const activityAt = saved?.provider_timestamp || saved?.created_at
+      applyConversations([{
+        id: Number(conversationId),
+        last_message_text: messagePreview(saved),
+        last_message_at: activityAt,
+        last_reply_at: activityAt,
+      }])
+      setDraft('')
+      setSelectedFile(null)
+      setReplyTo(null)
+      setUploadProgress(100)
+      toast.success('Message sent.')
+    }
 
     try {
       if (selectedFile) {
@@ -568,29 +751,29 @@ export default function ChatsPage() {
         if (text) payload.append('content_text', text)
         if (replyTo?.id) payload.append('reply_to_message_id', replyTo.id)
         payload.append('idempotency_key', idempotencyKey)
-        await api.post(`/api/app/conversations/${selectedId}/messages`, payload, {
+        const { data } = await api.post(`/api/app/conversations/${conversationId}/messages`, payload, {
           onUploadProgress: (progressEvent) => {
             if (progressEvent.total) setUploadProgress(Math.round((progressEvent.loaded * 100) / progressEvent.total))
           },
         })
+        finishSend(data)
       } else {
-        await api.post(`/api/app/conversations/${selectedId}/messages`, {
+        const { data } = await api.post(`/api/app/conversations/${conversationId}/messages`, {
           content_type: 'text',
           content_text: text,
           ...(replyTo?.id ? { reply_to_message_id: replyTo.id } : {}),
           idempotency_key: idempotencyKey,
         })
+        finishSend(data)
       }
-      sendAttemptRef.current = null
-      setDraft('')
-      setSelectedFile(null)
-      setReplyTo(null)
-      setUploadProgress(100)
-      await Promise.all([loadMessages(selectedId), loadConversations(1, false, true)])
-      toast.success('Message sent.')
     } catch (requestError) {
-      setThreadError(errorMessage(requestError, 'Unable to send message.'))
-      toast.error(errorMessage(requestError, 'Unable to send message.'))
+      const failed = requestError.response?.data?.data
+      if (failed?.id) applyMessages([failed])
+      else removeMessageItems(optimistic.id)
+      sendAttemptRef.current = null
+      const message = errorMessage(requestError, 'Unable to send message.')
+      setThreadError(message)
+      toast.error(message)
     } finally {
       setSending(false)
       window.setTimeout(() => setUploadProgress(0), 600)
@@ -612,17 +795,38 @@ export default function ChatsPage() {
       setDraft(text)
       return
     }
-    if (!text) return
-    setRetryingId(String(message.id))
+    if (!text || !selectedId) return
+    const conversationId = selectedId
+    const key = createIdempotencyKey()
+    const optimistic = {
+      id: `tmp-${key}`,
+      conversation_id: Number(conversationId),
+      sender_type: 'agent',
+      sender_id: user?.id,
+      content_type: 'text',
+      content_text: text,
+      status: 'sending',
+      created_at: new Date().toISOString(),
+      reactions: [],
+      idempotency_key: key,
+    }
+    removeMessageItems(message.id)
+    applyMessages([optimistic])
+    setRetryingId(String(optimistic.id))
     try {
-      await api.post(`/api/app/conversations/${selectedId}/messages`, {
+      const { data } = await api.post(`/api/app/conversations/${conversationId}/messages`, {
         content_type: 'text',
         content_text: text,
-        idempotency_key: createIdempotencyKey(),
+        idempotency_key: key,
       })
-      await Promise.all([loadMessages(selectedId), loadConversations(1, false, true)])
+      applyMessages([data])
+      const activityAt = data?.provider_timestamp || data?.created_at
+      applyConversations([{ id: Number(conversationId), last_message_text: messagePreview(data), last_message_at: activityAt, last_reply_at: activityAt }])
       toast.success('Message sent.')
     } catch (requestError) {
+      const failed = requestError.response?.data?.data
+      if (failed?.id) applyMessages([failed])
+      else removeMessageItems(optimistic.id)
       toast.error(errorMessage(requestError, 'Retry failed.'))
     } finally {
       setRetryingId('')
@@ -636,22 +840,40 @@ export default function ChatsPage() {
     if (richSendAttemptRef.current?.signature !== attemptSignature) {
       richSendAttemptRef.current = { signature: attemptSignature, key: createIdempotencyKey() }
     }
+    const key = richSendAttemptRef.current.key
+    const payload = buildPayload(key, replyTo?.id)
+    const optimistic = {
+      id: `tmp-${key}`,
+      conversation_id: Number(conversationId),
+      sender_type: 'agent',
+      sender_id: user?.id,
+      content_type: payload.content_type || 'interactive',
+      content_text: payload.content_text || null,
+      template_name: payload.template_name || null,
+      interactive_payload: payload.interactive_payload || null,
+      status: 'sending',
+      created_at: new Date().toISOString(),
+      reactions: [],
+      idempotency_key: key,
+      reply_to_message_id: replyTo?.id || null,
+    }
+    applyMessages([optimistic])
     setSending(true)
     setThreadError('')
     try {
-      await api.post('/api/app/conversations/' + conversationId + '/messages', buildPayload(richSendAttemptRef.current.key, replyTo?.id))
+      const { data } = await api.post(`/api/app/conversations/${conversationId}/messages`, payload)
       richSendAttemptRef.current = null
-      if (selectedIdRef.current === conversationId) {
-        setReplyTo(null)
-        await loadMessages(conversationId)
-      }
-      await loadConversations(1, false, true)
+      applyMessages([data])
+      const activityAt = data?.provider_timestamp || data?.created_at
+      applyConversations([{ id: Number(conversationId), last_message_text: messagePreview(data), last_message_at: activityAt, last_reply_at: activityAt }])
+      if (selectedIdRef.current === conversationId) setReplyTo(null)
       toast.success('Message sent.')
       return true
     } catch (requestError) {
-      const failedMessage = requestError.response?.data?.data
-      if (failedMessage?.status === 'failed') richSendAttemptRef.current = null
-      if (failedMessage?.id && selectedIdRef.current === conversationId) await loadMessages(conversationId)
+      const failed = requestError.response?.data?.data
+      if (failed?.id) applyMessages([failed])
+      else removeMessageItems(optimistic.id)
+      if (failed?.status === 'failed') richSendAttemptRef.current = null
       toast.error(errorMessage(requestError, 'Unable to send message.'))
       return false
     } finally {

@@ -35,6 +35,7 @@ createInertiaApp({
     return Page
   },
   setup({ el, App, props }) {
+    if (props.initialPage.props.realtime) window.__WACRM_REALTIME__ = props.initialPage.props.realtime
     if (props.initialPage.props.auth?.user) startPrivateSession()
     createRoot(el).render(
       <StrictMode>

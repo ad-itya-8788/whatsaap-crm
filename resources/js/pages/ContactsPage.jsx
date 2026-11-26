@@ -7,9 +7,10 @@ import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
 import ContactDetail from '../components/contacts/ContactDetail.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
-import { errorMessage, extractList, extractPaginator } from '../lib/utils.js'
+import { errorMessage, extractList, extractPaginator, formatDate } from '../lib/utils.js'
 
 const blankContact = { name: '', phone: '', email: '', company: '' }
+const emptySummary = { total: 0, with_conversation: 0, recently_added: 0, tags: 0 }
 
 function fieldOptions(field) {
   if (Array.isArray(field?.options)) return field.options
@@ -27,12 +28,52 @@ function downloadBlob(blob, filename) {
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
+function getCount(value) {
+  const count = Number(value ?? 0)
+  return Number.isFinite(count) && count >= 0 ? count : 0
+}
+
+function tagStyle(tag) {
+  return tag?.color ? { backgroundColor: tag.color } : undefined
+}
+
+function parseDate(value) {
+  if (!value) return null
+  const text = String(value)
+  const date = new Date(/^\d{4}-\d{2}-\d{2} /.test(text) ? text.replace(' ', 'T') : text)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function displayDate(value) {
+  const date = parseDate(value)
+  return date ? date.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+}
+
+function dateTitle(value) {
+  const date = parseDate(value)
+  return date ? formatDate(date) : ''
+}
+
+function contactInitial(contact) {
+  const source = String(contact?.name || contact?.phone || contact?.phone_normalized || '?').trim()
+  return source ? source.charAt(0).toUpperCase() : '?'
+}
+
+function contactLabel(contact) {
+  return contact?.name || contact?.phone || contact?.phone_normalized || 'contact'
+}
+
 function ImportResult({ result }) {
   if (!result) return null
   const errors = Array.isArray(result.errors) ? result.errors : []
   return (
     <div className="alert alert-info alert-inline import-result">
-      <div>Processed {result.total ?? 0} rows · imported {result.imported ?? 0} · updated {result.updated ?? 0} · skipped {result.skipped ?? 0}</div>
+      <div className="import-result-counts">
+        <span>Processed <strong>{getCount(result.total)}</strong></span>
+        <span>Imported <strong>{getCount(result.imported)}</strong></span>
+        <span>Updated <strong>{getCount(result.updated)}</strong></span>
+        <span>Skipped <strong>{getCount(result.skipped)}</strong></span>
+      </div>
       {errors.length > 0 && (
         <ul>
           {errors.slice(0, 5).map((issue, index) => (
@@ -49,6 +90,7 @@ export default function ContactsPage() {
   const { user } = useAuth()
   const readOnly = user?.role === 'viewer'
   const [contacts, setContacts] = useState([])
+  const [summary, setSummary] = useState(emptySummary)
   const [tags, setTags] = useState([])
   const [customFields, setCustomFields] = useState([])
   const [search, setSearch] = useState('')
@@ -75,6 +117,10 @@ export default function ContactsPage() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleting, setDeleting] = useState(false)
+  const [selectedIds, setSelectedIds] = useState([])
+  const [actionMenu, setActionMenu] = useState(null)
+  const headerCheckbox = useRef(null)
 
   const buildParams = useCallback((withPaging = true) => {
     const params = {}
@@ -104,6 +150,12 @@ export default function ContactsPage() {
       if (controller.signal.aborted) return
       setContacts(extractList(data))
       setPaginator(extractPaginator(data))
+      setSummary({
+        total: getCount(data?.summary?.total),
+        with_conversation: getCount(data?.summary?.with_conversation),
+        recently_added: getCount(data?.summary?.recently_added),
+        tags: getCount(data?.summary?.tags),
+      })
     } catch (requestError) {
       if (requestError.code !== 'ERR_CANCELED') setError(errorMessage(requestError, 'Unable to load contacts.'))
     } finally {
@@ -128,6 +180,7 @@ export default function ContactsPage() {
     const timer = setTimeout(() => {
       setDebouncedSearch(search)
       setPage(1)
+      setSelectedIds([])
     }, 300)
     return () => clearTimeout(timer)
   }, [search])
@@ -150,9 +203,49 @@ export default function ContactsPage() {
     }
   }, [loadMeta])
 
+  useEffect(() => {
+    if (!showForm) return undefined
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && !saving) setShowForm(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showForm, saving])
+
+  useEffect(() => {
+    if (!actionMenu) return undefined
+    const close = (event) => {
+      if (event.type === 'keydown') {
+        if (event.key === 'Escape') setActionMenu(null)
+        return
+      }
+      if (event.target instanceof Element && event.target.closest('.contacts-action-menu, .contacts-more-button')) return
+      setActionMenu(null)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', close)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', close)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [actionMenu])
+
+  const selectedOnPage = contacts.filter((contact) => selectedIds.includes(contact.id))
+  const allOnPageSelected = contacts.length > 0 && selectedOnPage.length === contacts.length
+  const someOnPageSelected = selectedOnPage.length > 0 && !allOnPageSelected
+
+  useEffect(() => {
+    if (headerCheckbox.current) headerCheckbox.current.indeterminate = someOnPageSelected
+  }, [someOnPageSelected, contacts])
+
   const changeFilter = (setter, value) => {
     setter(value)
     setPage(1)
+    setSelectedIds([])
   }
 
   const toggleFilterTag = (id) => {
@@ -169,6 +262,20 @@ export default function ContactsPage() {
     setFieldFilterId('')
     setFieldFilterValue('')
     setPage(1)
+    setSelectedIds([])
+  }
+
+  const goToPage = (nextPage) => {
+    setPage(nextPage)
+    setSelectedIds([])
+  }
+
+  const toggleSelectAll = () => {
+    setSelectedIds(allOnPageSelected ? [] : contacts.map((contact) => contact.id))
+  }
+
+  const toggleSelect = (id) => {
+    setSelectedIds((current) => current.includes(id) ? current.filter((selectedId) => selectedId !== id) : [...current, id])
   }
 
   const resetForm = () => {
@@ -183,6 +290,7 @@ export default function ContactsPage() {
     setShowForm(true)
     setError('')
     setNotice('')
+    setActionMenu(null)
   }
 
   const startEdit = (contact) => {
@@ -198,6 +306,7 @@ export default function ContactsPage() {
     setShowForm(true)
     setError('')
     setNotice('')
+    setActionMenu(null)
   }
 
   const customFieldPayload = () => {
@@ -213,6 +322,8 @@ export default function ContactsPage() {
 
   const submit = async (event) => {
     event.preventDefault()
+    if (saving) return
+    const wasEditing = Boolean(editing)
     setSaving(true)
     setError('')
     setNotice('')
@@ -237,8 +348,8 @@ export default function ContactsPage() {
       await api.put(`/api/app/contacts/${contactId}/tags`, { tags: formTagIds })
       setShowForm(false)
       resetForm()
-      setNotice(editing ? 'Contact updated.' : 'Contact added.')
-      toast.success(editing ? 'Contact updated.' : 'Contact added.')
+      setNotice(wasEditing ? 'Contact updated.' : 'Contact added.')
+      toast.success(wasEditing ? 'Contact updated.' : 'Contact added.')
       await loadContacts()
     } catch (requestError) {
       const message = errorMessage(requestError, 'Unable to save contact.')
@@ -252,24 +363,55 @@ export default function ContactsPage() {
   const remove = (contact) => {
     setError('')
     setNotice('')
-    setDeleteTarget(contact)
+    setDeleteTarget({ kind: 'single', contact })
+    setActionMenu(null)
+  }
+
+  const requestBulkDelete = () => {
+    if (readOnly || !selectedIds.length || deleting) return
+    setError('')
+    setNotice('')
+    setDeleteTarget({ kind: 'bulk', ids: [...selectedIds] })
   }
 
   const confirmDelete = async () => {
-    if (!deleteTarget) return
-    const contact = deleteTarget
+    if (!deleteTarget || deleting) return
+    const target = deleteTarget
+    setDeleting(true)
     setError('')
     setNotice('')
+    let failureMessage = ''
     try {
-      await api.delete(`/api/app/contacts/${contact.id}`)
-      setNotice('Contact deleted.')
-      toast.success('Contact deleted.')
+      if (target.kind === 'bulk') {
+        const results = await Promise.allSettled(target.ids.map((id) => api.delete(`/api/app/contacts/${id}`)))
+        const failedIds = target.ids.filter((id, index) => results[index].status === 'rejected')
+        const deleted = target.ids.length - failedIds.length
+        setSelectedIds(failedIds)
+        if (deleted > 0) {
+          const message = `Deleted ${deleted} contact${deleted === 1 ? '' : 's'}.`
+          setNotice(message)
+          toast.success(message)
+        }
+        if (failedIds.length) {
+          failureMessage = `Could not delete ${failedIds.length} selected contact${failedIds.length === 1 ? '' : 's'}.`
+          toast.error(failureMessage)
+        }
+      } else {
+        const contact = target.contact
+        await api.delete(`/api/app/contacts/${contact.id}`)
+        setSelectedIds((current) => current.filter((id) => id !== contact.id))
+        setNotice('Contact deleted.')
+        toast.success('Contact deleted.')
+      }
       setDeleteTarget(null)
       await loadContacts()
+      if (failureMessage) setError(failureMessage)
     } catch (requestError) {
       const message = errorMessage(requestError, 'Unable to delete contact.')
       setError(message)
       toast.error(message)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -289,6 +431,31 @@ export default function ContactsPage() {
       setError(message)
       toast.error(message)
     }
+  }
+
+  const copyPhone = async (contact) => {
+    const value = contact.phone || contact.phone_normalized
+    if (!value) {
+      toast.error('No phone number to copy.')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(value)
+      toast.success('Phone number copied.')
+    } catch {
+      toast.error('Unable to copy phone number.')
+    }
+  }
+
+  const openActionMenu = (event, contact) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const width = 184
+    const height = readOnly ? 88 : 200
+    setActionMenu({
+      contact,
+      left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)),
+      top: Math.min(rect.bottom + 6, Math.max(8, window.innerHeight - height - 8)),
+    })
   }
 
   const exportContacts = async () => {
@@ -348,6 +515,10 @@ export default function ContactsPage() {
     }
   }
 
+  const hasFilters = Boolean(search || fieldFilterId || fieldFilterValue || selectedTagIds.length)
+  const loadFailed = Boolean(error && !contacts.length && !loading)
+  const columnCount = readOnly ? 8 : 9
+
   return (
     <>
       <PageHeader
@@ -356,22 +527,29 @@ export default function ContactsPage() {
         actions={
           <>
             <button type="button" className="button button-secondary" onClick={exportContacts} disabled={exporting}><Icon name="download" size={16} /> {exporting ? 'Exporting...' : 'Export'}</button>
-            {!readOnly && <button type="button" className="button button-secondary" onClick={() => { setShowImport((current) => !current); setError(''); setNotice('') }}><Icon name="plus" size={16} /> Import CSV</button>}
+            {!readOnly && <button type="button" className="button button-secondary" onClick={() => { setShowImport((current) => !current); setError(''); setNotice('') }}><Icon name="file" size={16} /> Import CSV</button>}
             {!readOnly && <button type="button" className="button button-primary" onClick={startCreate}><Icon name="plus" size={16} /> Add contact</button>}
           </>
         }
       />
       <section className="contacts-stats" aria-label="Contact summary">
-        <article className="contact-stat-card contact-stat-total">
-          <span className="stat-icon" aria-hidden="true">#</span>
-          <div className="stat-copy">
-            <span className="stat-label">Total Contacts</span>
-            <strong className="stat-value">{paginator.total.toLocaleString()}</strong>
-          </div>
-        </article>
+        {[
+          { key: 'total', label: 'Total Contacts', icon: 'contacts', value: summary.total },
+          { key: 'conversations', label: 'Contacts With Conversations', icon: 'chat', value: summary.with_conversation },
+          { key: 'recent', label: 'Added Last 7 Days', icon: 'plus', value: summary.recently_added },
+          { key: 'tags', label: 'Contact Tags', icon: 'tag', value: summary.tags },
+        ].map((card) => (
+          <article className="contact-stat-card" key={card.key}>
+            <span className="stat-icon" aria-hidden="true"><Icon name={card.icon} size={17} /></span>
+            <div className="stat-copy">
+              <span className="stat-label">{card.label}</span>
+              <strong className="stat-value">{card.value.toLocaleString()}</strong>
+            </div>
+          </article>
+        ))}
       </section>
-      {error && <div className="alert alert-error">{error}</div>}
-      {notice && <div className="alert alert-success">{notice}</div>}
+      {error && !showForm && <div className="alert alert-error">{error}</div>}
+      {notice && !showForm && <div className="alert alert-success">{notice}</div>}
 
       {showImport && (
         <section className="card import-panel">
@@ -379,119 +557,134 @@ export default function ContactsPage() {
             <h2>Import contacts</h2>
             <button type="button" className="icon-button" onClick={() => setShowImport(false)} aria-label="Close import panel"><Icon name="close" size={18} /></button>
           </header>
-          <div className="form-grid">
-            <div className="field">
-              <label className="field-label" htmlFor="contact-import-file">CSV file</label>
-              <input id="contact-import-file" className="input" type="file" accept=".csv,text/csv" onChange={(event) => setImportFile(event.target.files?.[0] || null)} />
-            </div>
-            <div className="field">
-              <label className="field-label" htmlFor="contact-import-dry-run">Validation only</label>
+          <div className="import-panel-body">
+            <label className="contacts-file-drop" htmlFor="contact-import-file">
+              <Icon name="file" size={22} />
+              <strong className="text-truncate">{importFile ? importFile.name : 'Choose a CSV file'}</strong>
+              <span className="muted">.csv or .txt · max 2 MB</span>
+              <input id="contact-import-file" className="visually-hidden" type="file" accept=".csv,.txt,text/csv,text/plain" onChange={(event) => setImportFile(event.target.files?.[0] || null)} />
+            </label>
+            <div className="import-options">
               <label className="checkbox-label" htmlFor="contact-import-dry-run">
-                <input id="contact-import-dry-run" type="checkbox" checked={dryRun} onChange={(event) => setDryRun(event.target.checked)} /> Dry run (do not save)
+                <input id="contact-import-dry-run" type="checkbox" checked={dryRun} onChange={(event) => setDryRun(event.target.checked)} /> Dry run (validate without saving)
               </label>
+              <button type="button" className="button button-sm button-secondary" onClick={downloadTemplate}><Icon name="download" size={15} /> Download template</button>
             </div>
+            <div className="settings-actions">
+              <button type="button" className="button button-primary" onClick={uploadImport} disabled={importing || !importFile}>
+                {importing && <span className="spinner spinner-sm" />}
+                {importing ? 'Uploading...' : 'Upload'}
+              </button>
+            </div>
+            <ImportResult result={importResult} />
           </div>
-          <div className="settings-actions">
-            <button type="button" className="button button-primary" onClick={uploadImport} disabled={importing || !importFile}>{importing ? 'Uploading...' : 'Upload'}</button>
-            <button type="button" className="button button-secondary" onClick={downloadTemplate}><Icon name="download" size={15} /> Download template</button>
-          </div>
-          <ImportResult result={importResult} />
         </section>
       )}
 
       {showForm && (
-        <section className="card contact-form">
-          <header className="panel-header">
-            <h2>{editing ? 'Edit contact' : 'New contact'}</h2>
-            <button type="button" className="icon-button" onClick={() => setShowForm(false)} aria-label="Close form"><Icon name="close" size={18} /></button>
-          </header>
-          <form onSubmit={submit}>
-            <div className="form-grid">
-              <div className="field">
-                <label className="field-label" htmlFor="contact-name">Name</label>
-                <input id="contact-name" className="input" required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-              </div>
-              <div className="field">
-                <label className="field-label" htmlFor="contact-phone">Phone</label>
-                <input id="contact-phone" className="input" type="tel" required value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
-              </div>
-              <div className="field">
-                <label className="field-label" htmlFor="contact-email">Email</label>
-                <input id="contact-email" className="input" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-              </div>
-              <div className="field">
-                <label className="field-label" htmlFor="contact-company">Company</label>
-                <input id="contact-company" className="input" value={form.company} onChange={(event) => setForm({ ...form, company: event.target.value })} />
-              </div>
-            </div>
-            <div className="field contact-tags-field">
-              <span className="field-label">Tags</span>
-              <div className="tag-picker">
-                {tags.map((tag) => (
-                  <button
-                    type="button"
-                    key={tag.id}
-                    className={`tag-chip${formTagIds.includes(tag.id) ? ' is-selected' : ''}`}
-                    style={{ backgroundColor: tag.color || '#2563eb' }}
-                    aria-pressed={formTagIds.includes(tag.id)}
-                    onClick={() => setFormTagIds((current) => current.includes(tag.id) ? current.filter((id) => id !== tag.id) : [...current, tag.id])}
-                  >
-                    {tag.name}
-                  </button>
-                ))}
-                {!tags.length && <span className="muted">No tags available yet.</span>}
-              </div>
-            </div>
-            {customFields.length > 0 && (
-              <div className="field custom-field-section">
-                <h3 className="settings-section-title">Custom fields</h3>
-                <div className="custom-field-grid">
-                  {customFields.map((field) => (
-                    <div className="field" key={field.id}>
-                      <label className="field-label" htmlFor={`custom-field-${field.id}`}>{field.label || field.name}{field.required ? ' *' : ''}</label>
-                      {field.type === 'select' ? (
-                        <select
-                          id={`custom-field-${field.id}`}
-                          className="select"
-                          required={field.required}
-                          value={customValues[field.id] ?? ''}
-                          onChange={(event) => setCustomValues({ ...customValues, [field.id]: event.target.value })}
-                        >
-                          <option value="">Select...</option>
-                          {fieldOptions(field).map((option) => <option key={option} value={option}>{option}</option>)}
-                        </select>
-                      ) : field.type === 'checkbox' ? (
-                        <input
-                          id={`custom-field-${field.id}`}
-                          type="checkbox"
-                          checked={Boolean(customValues[field.id])}
-                          onChange={(event) => setCustomValues({ ...customValues, [field.id]: event.target.checked })}
-                        />
-                      ) : (
-                        <input
-                          id={`custom-field-${field.id}`}
-                          className="input"
-                          type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
-                          required={field.required}
-                          value={customValues[field.id] ?? ''}
-                          onChange={(event) => setCustomValues({ ...customValues, [field.id]: event.target.value })}
-                        />
-                      )}
+        <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setShowForm(false) }}>
+          <div className="contacts-form-dialog" role="dialog" aria-modal="true" aria-labelledby="contact-form-title">
+            <header className="panel-header">
+              <h2 id="contact-form-title">{editing ? 'Edit contact' : 'New contact'}</h2>
+              <button type="button" className="icon-button" onClick={() => setShowForm(false)} disabled={saving} aria-label="Close form"><Icon name="close" size={18} /></button>
+            </header>
+            <form onSubmit={submit}>
+              <div className="contacts-form-body">
+                {error && <div className="alert alert-error">{error}</div>}
+                <section className="contacts-form-section">
+                  <h3>Contact details</h3>
+                  <div className="form-grid">
+                    <div className="field">
+                      <label className="field-label" htmlFor="contact-name">Name <span className="contacts-required" aria-hidden="true">*</span></label>
+                      <input id="contact-name" className="input" required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
                     </div>
-                  ))}
-                </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="contact-phone">Phone <span className="contacts-required" aria-hidden="true">*</span></label>
+                      <input id="contact-phone" className="input" type="tel" required value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="contact-email">Email</label>
+                      <input id="contact-email" className="input" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="contact-company">Company</label>
+                      <input id="contact-company" className="input" value={form.company} onChange={(event) => setForm({ ...form, company: event.target.value })} />
+                    </div>
+                  </div>
+                </section>
+                <section className="contacts-form-section">
+                  <h3>Tags</h3>
+                  <div className="tag-picker">
+                    {tags.map((tag) => (
+                      <button
+                        type="button"
+                        key={tag.id}
+                        className={`tag-chip${formTagIds.includes(tag.id) ? ' is-selected' : ''}`}
+                        style={tagStyle(tag)}
+                        aria-pressed={formTagIds.includes(tag.id)}
+                        onClick={() => setFormTagIds((current) => current.includes(tag.id) ? current.filter((id) => id !== tag.id) : [...current, tag.id])}
+                      >
+                        {tag.name}
+                      </button>
+                    ))}
+                    {!tags.length && <span className="muted">No tags available yet.</span>}
+                  </div>
+                </section>
+                {customFields.length > 0 && (
+                  <section className="contacts-form-section">
+                    <h3>Custom fields</h3>
+                    <div className="custom-field-grid">
+                      {customFields.map((field) => (
+                        <div className="field" key={field.id}>
+                          <label className="field-label" htmlFor={`custom-field-${field.id}`}>{field.label || field.name}{field.required ? ' *' : ''}</label>
+                          {field.type === 'select' ? (
+                            <select
+                              id={`custom-field-${field.id}`}
+                              className="select"
+                              required={field.required}
+                              value={customValues[field.id] ?? ''}
+                              onChange={(event) => setCustomValues({ ...customValues, [field.id]: event.target.value })}
+                            >
+                              <option value="">Select...</option>
+                              {fieldOptions(field).map((option) => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                          ) : field.type === 'checkbox' ? (
+                            <input
+                              id={`custom-field-${field.id}`}
+                              type="checkbox"
+                              checked={Boolean(customValues[field.id])}
+                              onChange={(event) => setCustomValues({ ...customValues, [field.id]: event.target.checked })}
+                            />
+                          ) : (
+                            <input
+                              id={`custom-field-${field.id}`}
+                              className="input"
+                              type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
+                              required={field.required}
+                              value={customValues[field.id] ?? ''}
+                              onChange={(event) => setCustomValues({ ...customValues, [field.id]: event.target.value })}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
               </div>
-            )}
-            <div className="settings-actions">
-              <button className="button button-primary" disabled={saving}>{saving ? 'Saving...' : 'Save contact'}</button>
-              <button type="button" className="button button-secondary" onClick={() => setShowForm(false)}>Cancel</button>
-            </div>
-          </form>
-        </section>
+              <footer className="contacts-form-footer">
+                <button type="button" className="button button-secondary" onClick={() => setShowForm(false)} disabled={saving}>Cancel</button>
+                <button className="button button-primary" disabled={saving}>
+                  {saving && <span className="spinner spinner-sm" />}
+                  {saving ? 'Saving...' : 'Save contact'}
+                </button>
+              </footer>
+            </form>
+          </div>
+        </div>
       )}
 
       <section className="card contacts-card">
-        <div className="card-toolbar">
+        <div className="card-toolbar contacts-toolbar">
           <div className="search-wrap search-wide">
             <Icon name="search" size={16} />
             <input
@@ -503,10 +696,17 @@ export default function ContactsPage() {
               onChange={(event) => changeFilter(setSearch, event.target.value)}
             />
           </div>
-          <span className="muted">{paginator.total} contacts</span>
+          <span className="muted contacts-count">{paginator.total} contacts</span>
+          {!readOnly && selectedIds.length > 0 && (
+            <div className="bulk-actions">
+              <span className="bulk-count">{selectedIds.length} selected</span>
+              <button type="button" className="button button-sm button-danger" onClick={requestBulkDelete} disabled={deleting}><Icon name="trash" size={15} /> Delete selected</button>
+              <button type="button" className="button button-sm button-ghost" onClick={() => setSelectedIds([])} disabled={deleting}>Clear selection</button>
+            </div>
+          )}
         </div>
         <div className="filter-row">
-          <div className="field">
+          <div className="field contacts-filter-tags">
             <span className="field-label">Tags</span>
             <div className="tag-picker">
               {tags.map((tag) => (
@@ -514,7 +714,7 @@ export default function ContactsPage() {
                   type="button"
                   key={tag.id}
                   className={`tag-chip${selectedTagIds.includes(tag.id) ? ' is-selected' : ''}`}
-                  style={{ backgroundColor: tag.color || '#2563eb' }}
+                  style={tagStyle(tag)}
                   aria-pressed={selectedTagIds.includes(tag.id)}
                   onClick={() => toggleFilterTag(tag.id)}
                 >
@@ -545,53 +745,121 @@ export default function ContactsPage() {
           <button type="button" className="button button-sm button-ghost filter-clear" onClick={clearFilters}>Clear filters</button>
         </div>
         <div className="table-wrap">
-          <table className="data-table">
+          <table className="data-table contacts-table">
             <thead>
-              <tr><th>Name</th><th>Phone</th><th>Email / Company</th><th>WhatsApp ID</th><th>Tags</th><th>Actions</th></tr>
+              <tr>
+                {!readOnly && <th className="contacts-select-cell" scope="col"><input ref={headerCheckbox} type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAll} aria-label={allOnPageSelected ? 'Clear page selection' : 'Select all contacts on this page'} /></th>}
+                <th scope="col">Name</th>
+                <th scope="col">Phone</th>
+                <th scope="col">Email / Company</th>
+                <th scope="col" className="col-tags">Tags</th>
+                <th scope="col" className="col-wa">WhatsApp ID</th>
+                <th scope="col" className="col-last">Last interaction</th>
+                <th scope="col" className="col-created">Created</th>
+                <th scope="col" className="contacts-actions-heading">Actions</th>
+              </tr>
             </thead>
             <tbody>
-              {contacts.map((contact) => (
-                <tr key={contact.id}>
-                  <td>
-                    <button type="button" className="link-button" onClick={() => setDetailContact(contact)}>
-                      {contact.name || 'Unnamed contact'}
-                    </button>
-                  </td>
-                  <td>{contact.phone || contact.phone_normalized || '—'}</td>
-                  <td>
-                    <div>{contact.email || '—'}</div>
-                    {contact.company && <div className="muted">{contact.company}</div>}
-                  </td>
-                  <td>{contact.wa_user_id ? <span className="wa-id">{contact.wa_user_id}</span> : '—'}</td>
-                  <td>
-                    <div className="contact-tags">
-                      {(contact.tags || []).map((tag) => (
-                        <span key={tag.id} className="tag-chip" style={{ backgroundColor: tag.color || '#2563eb' }}>{tag.name}</span>
+              {contacts.map((contact) => {
+                const selected = selectedIds.includes(contact.id)
+                const phone = contact.phone || contact.phone_normalized || ''
+                const visibleTags = (contact.tags || []).slice(0, 2)
+                const hiddenTags = Math.max(0, (contact.tags || []).length - visibleTags.length)
+                return (
+                  <tr key={contact.id} className={selected ? 'is-selected' : ''}>
+                    {!readOnly && <td className="contacts-select-cell"><input type="checkbox" checked={selected} onChange={() => toggleSelect(contact.id)} aria-label={`Select ${contactLabel(contact)}`} /></td>}
+                    <td>
+                      <button type="button" className="contact-name-button" onClick={() => setDetailContact(contact)} title={`View ${contactLabel(contact)}`}>
+                        <span className="contact-avatar" aria-hidden="true">{contactInitial(contact)}</span>
+                        <span className="contact-name-text text-truncate">{contact.name || 'Unnamed contact'}</span>
+                      </button>
+                    </td>
+                    <td className="contacts-phone-cell"><span className="text-truncate" title={phone || undefined}>{phone || '—'}</span></td>
+                    <td>
+                      <div className="contact-secondary-cell">
+                        <span className="text-truncate" title={contact.email || undefined}>{contact.email || '—'}</span>
+                        {contact.company && <span className="muted text-truncate" title={contact.company}>{contact.company}</span>}
+                      </div>
+                    </td>
+                    <td className="col-tags">
+                      <div className="contact-tags">
+                        {visibleTags.map((tag) => <span className="tag-chip" key={tag.id} style={tagStyle(tag)} title={tag.name}>{tag.name}</span>)}
+                        {hiddenTags > 0 && <span className="tag-chip tag-chip-more" title={(contact.tags || []).map((tag) => tag.name).join(', ')}>+{hiddenTags}</span>}
+                        {!visibleTags.length && '—'}
+                      </div>
+                    </td>
+                    <td className="col-wa"><span className="wa-id text-truncate" title={contact.wa_user_id || undefined}>{contact.wa_user_id || '—'}</span></td>
+                    <td className="col-last"><span className="text-truncate" title={dateTitle(contact.last_interaction_at) || undefined}>{displayDate(contact.last_interaction_at)}</span></td>
+                    <td className="col-created"><span className="text-truncate" title={dateTitle(contact.created_at) || undefined}>{displayDate(contact.created_at)}</span></td>
+                    <td className="contacts-actions-cell">
+                      <div className="actions-cell">
+                        <button type="button" className="icon-button" onClick={() => openChat(contact)} aria-label={`Open conversation with ${contactLabel(contact)}`} title="Open conversation"><Icon name="chat" size={16} /></button>
+                        {!readOnly && <button type="button" className="icon-button" onClick={() => startEdit(contact)} aria-label={`Edit ${contactLabel(contact)}`} title="Edit contact"><Icon name="edit" size={16} /></button>}
+                        <button type="button" className="icon-button contacts-more-button" onClick={(event) => openActionMenu(event, contact)} aria-haspopup="menu" aria-expanded={actionMenu?.contact?.id === contact.id} aria-label={`More actions for ${contactLabel(contact)}`} title="More actions"><Icon name="more" size={16} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+              {loading && (
+                <>
+                  <tr><td className="contacts-loading-status" colSpan={columnCount}><span className="spinner" /> Loading contacts...</td></tr>
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <tr className="contacts-loading-row" key={`skeleton-${index}`}>
+                      {Array.from({ length: columnCount }).map((__, cellIndex) => (
+                        <td key={`skeleton-cell-${cellIndex}`}><span className="skeleton" style={{ width: `${52 + ((index + cellIndex) % 3) * 14}%` }} /></td>
                       ))}
-                      {!contact.tags?.length && '—'}
+                    </tr>
+                  ))}
+                </>
+              )}
+              {!loading && !contacts.length && (
+                <tr>
+                  <td className="table-empty" colSpan={columnCount}>
+                    <div className="empty-state">
+                      <Icon name={loadFailed ? 'alert' : 'contacts'} size={20} />
+                      <strong>{loadFailed ? 'Contacts could not be loaded' : hasFilters ? 'No matching contacts' : 'No contacts yet'}</strong>
+                      <p>{loadFailed ? error : hasFilters ? 'Try changing or clearing your filters.' : 'Add your first contact to start tracking conversations.'}</p>
+                      {loadFailed && <button type="button" className="button button-sm button-secondary" onClick={loadContacts}><Icon name="refresh" size={15} /> Retry</button>}
+                      {!loadFailed && hasFilters && <button type="button" className="button button-sm button-secondary" onClick={clearFilters}>Clear filters</button>}
+                      {!loadFailed && !hasFilters && !readOnly && <button type="button" className="button button-sm button-primary" onClick={startCreate}><Icon name="plus" size={15} /> Add contact</button>}
                     </div>
                   </td>
-                  <td>
-                    {!readOnly && <div className="actions-cell">
-                      <button type="button" className="icon-button" onClick={() => startEdit(contact)} aria-label={`Edit ${contact.name || 'contact'}`}><Icon name="edit" size={16} /></button>
-                      <button type="button" className="icon-button is-danger" onClick={() => remove(contact)} aria-label={`Delete ${contact.name || 'contact'}`}><Icon name="trash" size={16} /></button>
-                    </div>}
-                  </td>
                 </tr>
-              ))}
-              {loading && <tr><td colSpan="6" className="table-empty"><span className="spinner" /> Loading contacts...</td></tr>}
-              {!loading && !contacts.length && <tr><td colSpan="6" className="table-empty">{search || fieldFilterValue || selectedTagIds.length ? 'No contacts match these filters.' : 'No contacts yet. Add your first contact to get started.'}</td></tr>}
+              )}
             </tbody>
           </table>
         </div>
         <div className="pagination">
           <span className="muted">{loading ? 'Loading contacts...' : `Page ${paginator.currentPage} of ${paginator.lastPage}`}</span>
           <div className="pagination-actions">
-            <button type="button" className="button button-sm button-secondary" disabled={loading || page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</button>
-            <button type="button" className="button button-sm button-secondary" disabled={loading || page >= paginator.lastPage} onClick={() => setPage((value) => value + 1)}>Next</button>
+            <button type="button" className="button button-sm button-secondary" disabled={loading || page <= 1} onClick={() => goToPage(page - 1)}>Previous</button>
+            <button type="button" className="button button-sm button-secondary" disabled={loading || page >= paginator.lastPage} onClick={() => goToPage(page + 1)}>Next</button>
           </div>
         </div>
       </section>
+
+      {actionMenu && (
+        <div
+          className="contacts-action-menu"
+          role="menu"
+          aria-label="Contact actions"
+          style={{ top: actionMenu.top, left: actionMenu.left }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <button type="button" role="menuitem" onClick={() => { setDetailContact(actionMenu.contact); setActionMenu(null) }}><Icon name="eye" size={15} /> View details</button>
+          <button type="button" role="menuitem" onClick={() => { const contact = actionMenu.contact; setActionMenu(null); openChat(contact) }}><Icon name="chat" size={15} /> Open conversation</button>
+          {!readOnly && (
+            <>
+              <div className="contacts-menu-divider" />
+              <button type="button" role="menuitem" onClick={() => startEdit(actionMenu.contact)}><Icon name="edit" size={15} /> Edit</button>
+              <button type="button" role="menuitem" onClick={() => { copyPhone(actionMenu.contact); setActionMenu(null) }}><Icon name="copy" size={15} /> Copy phone</button>
+              <button type="button" role="menuitem" className="is-danger" onClick={() => remove(actionMenu.contact)}><Icon name="trash" size={15} /> Delete</button>
+            </>
+          )}
+        </div>
+      )}
+
       {detailContact && <ContactDetail
         key={detailContact.id}
         initialContact={detailContact}
@@ -603,12 +871,14 @@ export default function ContactsPage() {
       />}
       <ConfirmDialog
         open={Boolean(deleteTarget)}
-        title="Delete contact?"
-        message={deleteTarget ? `${deleteTarget.name || deleteTarget.phone || 'This contact'} and its chat history will be removed. This cannot be undone.` : ''}
-        confirmLabel="Delete contact"
-        busy={false}
+        title={deleteTarget?.kind === 'bulk' ? 'Delete selected contacts?' : 'Delete contact?'}
+        message={deleteTarget?.kind === 'bulk'
+          ? `${deleteTarget.ids.length} selected contact${deleteTarget.ids.length === 1 ? '' : 's'} and their chat history will be removed. This cannot be undone.`
+          : deleteTarget ? `${contactLabel(deleteTarget.contact)} and its chat history will be removed. This cannot be undone.` : ''}
+        confirmLabel={deleteTarget?.kind === 'bulk' ? 'Delete selected' : 'Delete contact'}
+        busy={deleting}
         onConfirm={confirmDelete}
-        onCancel={() => setDeleteTarget(null)}
+        onCancel={() => { if (!deleting) { setDeleteTarget(null); setActionMenu(null) } }}
       />
     </>
   )

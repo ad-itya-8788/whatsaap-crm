@@ -14,6 +14,7 @@ use App\Models\WhatsappConfig;
 use App\Services\InboundMediaMirror;
 use App\Services\MessagingService;
 use App\Services\MetaCloudApiService;
+use App\Services\RealtimeBroadcaster;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +26,7 @@ class MessageController extends Controller
     public function __construct(
         private MessagingService $messaging,
         private MetaCloudApiService $meta,
+        private RealtimeBroadcaster $realtime,
     ) {}
 
     public function index(Request $request, Conversation $conversation): JsonResponse
@@ -98,12 +100,14 @@ class MessageController extends Controller
                 'last_message_at' => $latest?->provider_timestamp ?? $latest?->created_at,
             ])->save();
 
-            return ['media_message_id' => $mediaMessageId];
+            return ['media_message_id' => $mediaMessageId, 'conversation' => $conversation];
         });
 
         if ($result['media_message_id'] !== null) {
             $mediaMirror->deleteByMessageId($result['media_message_id']);
         }
+
+        $this->realtime->messageDeleted($message, $result['conversation']);
 
         return response()->json(['ok' => true]);
     }
@@ -150,6 +154,8 @@ class MessageController extends Controller
                 ]);
             }
         });
+
+        $this->realtime->messageUpdated($message->fresh());
 
         return response()->json([
             'reactions' => $message->reactions()->get()

@@ -7,7 +7,10 @@ import Icon from '../components/common/Icon.jsx'
 import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
-import { createIdempotencyKey, errorMessage, extractList, formatTime, isAdmin, placeholders, relativeTime, renderTemplate } from '../lib/utils.js'
+import { createIdempotencyKey, errorMessage, extractList, isAdmin, placeholders, relativeTime } from '../lib/utils.js'
+import TemplateCard from '../components/templates/TemplateCard.jsx'
+import TemplatePreview from '../components/templates/TemplatePreview.jsx'
+import TemplatePreviewModal from '../components/templates/TemplatePreviewModal.jsx'
 
 const blankForm = () => ({
   name: '',
@@ -36,13 +39,36 @@ const statuses = {
   APPROVED: 'Approved',
   PENDING: 'Pending',
   IN_REVIEW: 'In review',
+  PENDING_REVIEW: 'Pending review',
+  PENDING_DELETION: 'Pending deletion',
+  PENDING_DELETE: 'Pending deletion',
   REJECTED: 'Rejected',
   DISAPPROVED: 'Rejected',
   PAUSED: 'Paused',
 }
 
+const pendingStatuses = new Set(['PENDING', 'IN_REVIEW', 'PENDING_REVIEW', 'PENDING_DELETION', 'PENDING_DELETE'])
+const rejectedStatuses = new Set(['REJECTED', 'DISAPPROVED'])
+
 function templateStatus(template) {
   return String(template?.approval_status || template?.status || 'PENDING').toUpperCase()
+}
+
+function isPendingStatus(status) {
+  return pendingStatuses.has(status)
+}
+
+function isRejectedStatus(status) {
+  return rejectedStatuses.has(status)
+}
+
+function statusTone(status) {
+  if (status === 'APPROVED') return 'approved'
+  if (isPendingStatus(status)) return 'pending'
+  if (isRejectedStatus(status)) return 'rejected'
+  if (status === 'PAUSED') return 'paused'
+  if (status === 'DRAFT') return 'draft'
+  return 'neutral'
 }
 
 function variableRows(body, source = {}) {
@@ -55,14 +81,6 @@ function variableRows(body, source = {}) {
 
     return { key, value: value == null ? '' : String(value) }
   })
-}
-
-function previewValues(body, values) {
-  return placeholders(body).reduce((result, key, index) => {
-    const value = values[key] ?? values[String(Number(key))]
-    result[key] = String(value || (index === 0 ? 'Sample name' : `Sample ${index + 1}`))
-    return result
-  }, {})
 }
 
 function formFromTemplate(template) {
@@ -78,7 +96,9 @@ function formFromTemplate(template) {
     header_file: null,
     header_handle: template.header_handle || '',
     footer_text: template.footer_text || '',
-    buttons: Array.isArray(template.buttons) ? template.buttons.join('\n') : '',
+    buttons: Array.isArray(template.buttons)
+      ? template.buttons.map((button) => (typeof button === 'string' ? button : button?.text || button?.title || '')).filter(Boolean).join('\n')
+      : '',
     variables: variableRows(template.body_text || '', template.sample_values || {}),
   }
 }
@@ -98,52 +118,6 @@ function revisionTemplateName(name, templates) {
   return candidate
 }
 
-function TemplatePreview({ name, category, language, body, header, footer, values, mediaType, mediaUrl, mediaName, buttons }) {
-  const sampleValues = previewValues(body, values)
-  const actionButtons = buttons.split('\n').map((value) => value.trim()).filter(Boolean)
-
-  return (
-    <section className="template-preview-card" aria-label="Live WhatsApp template preview">
-      <div className="template-preview-title">
-        <div>
-          <h3>Live preview</h3>
-          <p>{name || 'Template name'} · {category} · {language}</p>
-        </div>
-        <span className="preview-live"><span /> Live</span>
-      </div>
-      <div className="whatsapp-preview">
-        <div className="preview-head">
-          <span className="preview-whatsapp-icon"><Icon name="whatsapp" size={18} /></span>
-          <div><strong>Aayojan AI CRM</strong><small>business account</small></div>
-        </div>
-        <div className="preview-body">
-          <div className="preview-bubble">
-            {header && mediaType === 'TEXT' && <div className="preview-header">{header}</div>}
-            {mediaType === 'IMAGE' && mediaUrl && <img className="preview-media" src={mediaUrl} alt="Template header preview" />}
-            {mediaType === 'VIDEO' && mediaUrl && <video className="preview-media" src={mediaUrl} controls />}
-            {mediaHeaderTypes.includes(mediaType) && !mediaUrl && (
-              <div className="preview-document">
-                <Icon name={mediaType.toLowerCase()} size={20} />
-                <span>{mediaName || `${mediaType.toLowerCase()} header`}</span>
-              </div>
-            )}
-            <p>{renderTemplate(body, sampleValues) || 'Your template message will appear here.'}</p>
-            {footer && <div className="preview-footer-text">{footer}</div>}
-            <span className="preview-time">{formatTime(new Date())}</span>
-          </div>
-          {!!actionButtons.length && (
-            <div className="preview-buttons">
-              {actionButtons.slice(0, 3).map((label, index) => (
-                <div className="preview-action" key={`${label}-${index}`}>{label}</div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </section>
-  )
-}
-
 const visitTemplates = (url, options) => router.visit(url, { preserveState: true, ...options })
 
 export default function TemplatesPage() {
@@ -161,7 +135,9 @@ export default function TemplatesPage() {
   const [form, setForm] = useState(blankForm)
   const [editingId, setEditingId] = useState(null)
   const [query, setQuery] = useState('')
+  const [searchInput, setSearchInput] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [languageFilter, setLanguageFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -173,11 +149,12 @@ export default function TemplatesPage() {
   const [sendHeaderFile, setSendHeaderFile] = useState(null)
   const [headerPreviewUrl, setHeaderPreviewUrl] = useState('')
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [previewTarget, setPreviewTarget] = useState(null)
   const sendAttempt = useRef(null)
   const initializedEditorRoute = useRef('')
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async ({ initial = false } = {}) => {
+    if (initial) setLoading(true)
     setError('')
     try {
       const [templateResult, contactResult] = await Promise.all([
@@ -189,11 +166,16 @@ export default function TemplatesPage() {
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to load message templates.'))
     } finally {
-      setLoading(false)
+      if (initial) setLoading(false)
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load({ initial: true }) }, [load])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(searchInput.trim()), 200)
+    return () => window.clearTimeout(timer)
+  }, [searchInput])
 
   useEffect(() => {
     if (!isEditor) {
@@ -277,6 +259,23 @@ export default function TemplatesPage() {
     return values
   }, {}), [form.variables])
 
+  const summary = useMemo(() => ({
+    total: templates.length,
+    approved: templates.filter((template) => templateStatus(template) === 'APPROVED').length,
+    pending: templates.filter((template) => isPendingStatus(templateStatus(template))).length,
+    rejected: templates.filter((template) => isRejectedStatus(templateStatus(template))).length,
+  }), [templates])
+
+  const categoryOptions = useMemo(() => [...new Set([
+    ...categories,
+    ...templates.map((template) => String(template.category || '').toUpperCase()).filter(Boolean),
+  ])], [templates])
+
+  const languageOptions = useMemo(() => {
+    const languages = ['en_US', ...templates.map((template) => String(template.language || '').trim()).filter(Boolean)]
+    return [...new Set(languages)]
+  }, [templates])
+
   const filteredTemplates = useMemo(() => {
     const search = query.trim().toLowerCase()
 
@@ -286,11 +285,40 @@ export default function TemplatesPage() {
         || String(template.name || '').toLowerCase().includes(search)
         || String(template.body_text || '').toLowerCase().includes(search)
       const matchesCategory = !categoryFilter || String(template.category || '').toUpperCase() === categoryFilter
-      const matchesStatus = !statusFilter || status === statusFilter
+      const matchesLanguage = !languageFilter || String(template.language || '').trim() === languageFilter
+      const matchesStatus = !statusFilter
+        || (statusFilter === 'PENDING' ? isPendingStatus(status)
+          : statusFilter === 'REJECTED' ? isRejectedStatus(status)
+            : status === statusFilter)
 
-      return matchesSearch && matchesCategory && matchesStatus
+      return matchesSearch && matchesCategory && matchesLanguage && matchesStatus
     })
-  }, [templates, query, categoryFilter, statusFilter])
+  }, [templates, query, categoryFilter, languageFilter, statusFilter])
+
+  const activePreview = useMemo(() => {
+    if (!previewTarget) return null
+    return templates.find((item) => String(item.id) === String(previewTarget.id)) || previewTarget
+  }, [previewTarget, templates])
+
+  const statusTabs = [
+    { label: 'All Templates', value: '', count: summary.total },
+    { label: 'Approved', value: 'APPROVED', count: summary.approved },
+    { label: 'Pending', value: 'PENDING', count: summary.pending },
+    { label: 'Rejected', value: 'REJECTED', count: summary.rejected },
+  ]
+
+  const summaryCards = [
+    { label: 'Total Templates', value: summary.total, icon: 'template', tone: 'primary' },
+    { label: 'Approved Templates', value: summary.approved, icon: 'checkCircle', tone: 'success' },
+    { label: 'Pending Review', value: summary.pending, icon: 'clock', tone: 'warning' },
+    { label: 'Rejected Templates', value: summary.rejected, icon: 'alertCircle', tone: 'danger' },
+  ]
+
+  const emptyState = !templates.length
+    ? { title: 'No templates yet', description: 'Create a template or sync from Meta to get started.' }
+    : statusFilter === 'APPROVED' && !summary.approved
+      ? { title: 'No approved templates', description: 'Submit a draft for review or sync approved templates from Meta.' }
+      : { title: 'No matching templates', description: 'Try a different search or filter.' }
 
   const updateVariable = (key, value) => {
     setForm((current) => ({
@@ -337,6 +365,12 @@ export default function TemplatesPage() {
   const createRevision = (template) => {
     if (!canManage) return
     visitTemplates(`/templates/create?revision=${encodeURIComponent(template.id)}`)
+  }
+
+  const openPreview = (template) => {
+    setPreviewTarget(template)
+    setError('')
+    setNotice('')
   }
 
   const saveTemplate = async (event) => {
@@ -419,6 +453,7 @@ export default function TemplatesPage() {
     if (!canManage) return
     setError('')
     setNotice('')
+    setPreviewTarget(null)
     setDeleteTarget(template)
   }
 
@@ -443,6 +478,7 @@ export default function TemplatesPage() {
       values[key] = source[key] ?? source[String(Number(key))] ?? ''
       return values
     }, {})
+    setPreviewTarget(null)
     setSendTarget(template)
     setSendContact('')
     setSendValues(initial)
@@ -513,109 +549,136 @@ export default function TemplatesPage() {
           ? revisionSource
             ? `Create a new draft based on ${revisionSource.name}; it will need Meta approval.`
             : 'Create your template and preview it as you work.'
-          : 'Create, submit and send approved WhatsApp message templates.'}
+          : 'Create, review, and send WhatsApp message templates.'}
         actions={isEditor ? (
           <button type="button" className="button button-secondary" onClick={() => visitTemplates('/templates')}>
             Back to templates
           </button>
         ) : (
-          <button type="button" className="button button-primary" onClick={() => visitTemplates('/templates/create')} disabled={!canManage}>
-            <Icon name="plus" size={15} /> New template
-          </button>
+          <>
+            <button type="button" className="button button-secondary" onClick={sync} disabled={busy === 'sync' || !canManage}>
+              <Icon name="sync" size={16} /> Sync from Meta
+            </button>
+            <button type="button" className="button button-primary" onClick={() => visitTemplates('/templates/create')} disabled={!canManage}>
+              <Icon name="plus" size={16} /> New Template
+            </button>
+          </>
         )}
       />
       {!canManage && <div className="alert alert-info">Only administrators can create, submit, sync, send, or delete message templates.</div>}
       {error && <div className="alert alert-error">{error}</div>}
       {notice && <div className="alert alert-success">{notice}</div>}
 
+      {!isEditor && (
+        <div className="template-summary" aria-label="Template summary">
+          {summaryCards.map((card) => (
+            <article className="template-stat" key={card.label}>
+              <span className={`template-stat-icon tone-${card.tone}`}><Icon name={card.icon} size={18} /></span>
+              <div className="template-stat-copy">
+                <span className="template-stat-label">{card.label}</span>
+                <strong className="template-stat-value">{card.value}</strong>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
       <div className={`templates-layout${isEditor ? ' template-editor-layout' : ''}${sendTarget && !isEditor ? ' has-send-target' : ''}`}>
         {!isEditor && (
-        <section className="card template-library">
-          <header className="panel-header">
-            <h2>Templates <span className="template-count">{templates.length}</span></h2>
-            <button type="button" className="button button-sm button-secondary" onClick={sync} disabled={busy === 'sync' || !canManage}><Icon name="sync" size={15} /> Sync from Meta</button>
-          </header>
-          <div className="template-tools">
-            <label className="search-wrap">
-              <Icon name="search" size={16} />
-              <input
-                className="input search-input"
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search name or message..."
-                aria-label="Search templates"
-              />
-            </label>
-            <select className="select" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} aria-label="Filter by category">
-              <option value="">All categories</option>
-              {categories.map((category) => <option value={category} key={category}>{category}</option>)}
-            </select>
-            <select className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter by approval status">
-              <option value="">All statuses</option>
-              {Object.entries(statuses).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-            </select>
-          </div>
-          <div className="template-list">
-            {loading && <div className="list-placeholder"><span className="spinner" /> Loading templates...</div>}
-            {!loading && filteredTemplates.map((template) => {
-              const status = templateStatus(template)
-              const approved = status === 'APPROVED'
-              return (
-                <article className={`template-card${editingId === template.id ? ' is-editing' : ''}`} key={template.id}>
-                  <header className="template-card-head">
-                    <div>
-                      <h3 className="template-name">{template.name}</h3>
-                      <div className="template-meta">
-                        {template.category || 'UTILITY'} · {template.language || 'en_US'}
-                        {template.quality_score && ` · Quality ${template.quality_score.toLowerCase()}`}
-                      </div>
-                    </div>
-                    <span className={`badge badge-${status.toLowerCase()}`}>{statuses[status] || status}</span>
-                  </header>
-                  <p className="template-preview">{renderTemplate(template.body_text, previewValues(template.body_text, template.sample_values || {}))}</p>
-                  {status === 'REJECTED' && template.rejection_reason && (
-                    <p className="rejection-reason"><Icon name="alert" size={14} /> {template.rejection_reason}</p>
-                  )}
-                  <div className="template-synced">
-                    Updated {relativeTime(template.updated_at || template.last_synced_at) || 'recently'}
-                  </div>
-                  <footer className="template-actions">
-                    {approved && (
-                      <button type="button" className="button button-sm button-ghost" onClick={() => createRevision(template)} disabled={!canManage}>
-                        Create revision
-                      </button>
-                    )}
-                    {!approved && (
-                      <button type="button" className="button button-sm button-secondary" onClick={() => submitTemplate(template)} disabled={busy === `submit-${template.id}` || !canManage}>
-                        Submit to Meta
-                      </button>
-                    )}
-                    {!approved && (
-                      <button type="button" className="button button-sm button-ghost" onClick={() => openEdit(template)} disabled={busy !== '' || !canManage}>
-                        <Icon name="edit" size={14} /> Edit
-                      </button>
-                    )}
-                    <button type="button" className="button button-sm button-secondary" onClick={() => openSend(template)} disabled={!approved || !contacts.length || !canManage}>
-                      <Icon name="send" size={14} /> Send
-                    </button>
-                    <button type="button" className="button button-sm button-ghost" onClick={() => deleteTemplate(template)} disabled={busy === `delete-${template.id}` || !canManage} aria-label={`Delete ${template.name}`}>
-                      <Icon name="trash" size={15} />
-                    </button>
-                  </footer>
-                </article>
-              )
-            })}
-            {!loading && !filteredTemplates.length && (
-              <div className="list-placeholder">
-                {templates.length ? 'No templates match these filters.' : 'No templates yet. Create one or sync from Meta.'}
+          <section className="card template-library">
+            <header className="panel-header template-library-header">
+              <h2>Template library <span className="template-count">{templates.length}</span></h2>
+            </header>
+            <div className="template-tabs-wrap">
+              <div className="tabs template-status-tabs" role="tablist" aria-label="Filter templates by status">
+                {statusTabs.map((tab) => (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={statusFilter === tab.value}
+                    key={tab.label}
+                    className={`tab template-status-tab${statusFilter === tab.value ? ' is-active' : ''}`}
+                    onClick={() => setStatusFilter(tab.value)}
+                  >
+                    {tab.label}<span className="tab-count">{tab.count}</span>
+                  </button>
+                ))}
               </div>
+            </div>
+            <div className="template-tools">
+              <label className="search-wrap">
+                <Icon name="search" size={16} />
+                <input
+                  className="input search-input"
+                  type="search"
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder="Search name or message..."
+                  aria-label="Search templates"
+                />
+              </label>
+              <select className="select" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} aria-label="Filter by category">
+                <option value="">All categories</option>
+                {categoryOptions.map((category) => <option value={category} key={category}>{category}</option>)}
+              </select>
+              <select className="select" value={languageFilter} onChange={(event) => setLanguageFilter(event.target.value)} aria-label="Filter by language">
+                <option value="">All languages</option>
+                {languageOptions.map((language) => <option value={language} key={language}>{language}</option>)}
+              </select>
+            </div>
+            <div className="template-list">
+              {loading && (
+                <div className="template-loading">
+                  <div className="inline-loading template-loading-label"><span className="spinner spinner-sm" /> Loading templates...</div>
+                  <div className="template-card-grid" aria-hidden="true">
+                    {Array.from({ length: 6 }, (_, index) => (
+                      <div className="template-card template-card-skeleton" key={index}>
+                        <div className="skeleton skeleton-line short" />
+                        <div className="skeleton skeleton-line full" />
+                        <div className="skeleton skeleton-block" />
+                        <div className="skeleton skeleton-line short" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {!loading && !!filteredTemplates.length && (
+                <div className="template-card-grid">
+                  {filteredTemplates.map((template) => {
+                    const status = templateStatus(template)
+                    return (
+                      <TemplateCard
+                        key={template.id}
+                        template={template}
+                        statusLabel={statuses[status] || status}
+                        statusTone={statusTone(status)}
+                        canManage={canManage}
+                        hasContacts={contacts.length > 0}
+                        busy={busy}
+                        isEditing={editingId === template.id}
+                        onPreview={openPreview}
+                        onSend={openSend}
+                        onRevision={createRevision}
+                        onSubmit={submitTemplate}
+                        onEdit={openEdit}
+                        onDelete={deleteTemplate}
+                      />
+                    )
+                  })}
+                </div>
+              )}
+              {!loading && !filteredTemplates.length && (
+                <div className="empty-state">
+                  <Icon name="template" size={20} />
+                  <strong>{emptyState.title}</strong>
+                  <p>{emptyState.description}</p>
+                </div>
+              )}
+            </div>
+            {!loading && templates.length > 0 && (
+              <div className="template-list-footer">Showing {filteredTemplates.length} of {templates.length} templates</div>
             )}
-          </div>
-          {!loading && templates.length > 0 && (
-            <div className="template-list-footer">Showing {filteredTemplates.length} of {templates.length} templates</div>
-          )}
-        </section>
+          </section>
         )}
 
         {isEditor && (
@@ -842,6 +905,22 @@ export default function TemplatesPage() {
           )}
         </div>
       </div>
+
+      <TemplatePreviewModal
+        template={activePreview}
+        statusLabel={activePreview ? statuses[templateStatus(activePreview)] || templateStatus(activePreview) : ''}
+        statusTone={activePreview ? statusTone(templateStatus(activePreview)) : 'neutral'}
+        canManage={canManage}
+        hasContacts={contacts.length > 0}
+        busy={busy}
+        onClose={() => setPreviewTarget(null)}
+        onSend={openSend}
+        onRevision={createRevision}
+        onSubmit={submitTemplate}
+        onEdit={openEdit}
+        onDelete={deleteTemplate}
+      />
+
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Delete message template?"

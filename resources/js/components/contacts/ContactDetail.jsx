@@ -8,6 +8,27 @@ import { templateMessagePayload } from '../../lib/whatsappPayloads.js'
 
 const tabs = ['Details', 'Tags', 'Notes', 'Custom fields']
 
+function parseDate(value) {
+  if (!value) return null
+  const text = String(value)
+  const date = new Date(/^\d{4}-\d{2}-\d{2} /.test(text) ? text.replace(' ', 'T') : text)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function displayDate(value) {
+  const date = parseDate(value)
+  return date ? date.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+}
+
+function dateTitle(value) {
+  const date = parseDate(value)
+  return date ? formatDate(date) : ''
+}
+
+function tagStyle(tag) {
+  return tag?.color ? { backgroundColor: tag.color } : undefined
+}
+
 export default function ContactDetail({ initialContact, customFields, onClose, onEdit, onOpenChat, readOnly }) {
   const toast = useToast()
   const dialog = useRef(null)
@@ -25,10 +46,13 @@ export default function ContactDetail({ initialContact, customFields, onClose, o
   const [openingChat, setOpeningChat] = useState(false)
   const contactPath = '/api/app/contacts/' + initialContact.id
   const phone = contact.phone || contact.phone_normalized
+  const conversationId = contact.conversation_id ?? initialContact.conversation_id
+  const lastInteractionAt = contact.last_interaction_at ?? initialContact.last_interaction_at
+  const initial = String(contact.name || phone || '?').trim().charAt(0).toUpperCase() || '?'
 
   useEffect(() => {
     const element = dialog.current
-    element.showModal()
+    if (!element.open) element.showModal()
     return () => element.close()
   }, [])
 
@@ -116,18 +140,20 @@ export default function ContactDetail({ initialContact, customFields, onClose, o
     >
       <header className="contact-sheet-header">
         <div className="contact-sheet-title">
-          <div>
+          <span className="contact-avatar contact-sheet-avatar" aria-hidden="true">{initial}</span>
+          <div className="contact-sheet-heading">
             <h2 id="contact-sheet-title">{contact.name || 'Unnamed contact'}</h2>
-            {phone && <button className="link-button" type="button" onClick={copyPhone}>{phone} <Icon name="copy" size={14} /></button>}
+            {phone && <button className="link-button contact-sheet-phone" type="button" onClick={copyPhone} title="Copy phone number">{phone} <Icon name="copy" size={14} /></button>}
           </div>
-          <button className="icon-button" type="button" onClick={onClose} disabled={sending || noteBusy || openingChat} aria-label="Close contact"><Icon name="close" /></button>
+          <button className="icon-button" type="button" onClick={onClose} disabled={sending || noteBusy || openingChat} aria-label="Close contact"><Icon name="close" size={18} /></button>
         </div>
         {!readOnly && <div className="contact-sheet-actions">
-          <button type="button" className="button button-sm button-primary" onClick={() => setPickerOpen(true)}><Icon name="template" size={16} /> Send template</button>
-          <button type="button" className="button button-sm button-secondary" disabled={openingChat} onClick={async () => {
+          <button type="button" className="button button-sm button-secondary" onClick={() => onEdit(contact)}><Icon name="edit" size={15} /> Edit</button>
+          <button type="button" className="button button-sm button-secondary" onClick={() => setPickerOpen(true)}><Icon name="template" size={15} /> Send template</button>
+          <button type="button" className="button button-sm button-primary" disabled={openingChat} onClick={async () => {
             setOpeningChat(true)
             try { await onOpenChat(contact) } finally { setOpeningChat(false) }
-          }}><Icon name="chat" size={16} /> Open inbox</button>
+          }}><Icon name="chat" size={15} /> Open inbox</button>
         </div>}
       </header>
       <nav className="contact-sheet-tabs" aria-label="Contact information">
@@ -138,29 +164,67 @@ export default function ContactDetail({ initialContact, customFields, onClose, o
       <div className="contact-sheet-content">
         {error && <div className="alert alert-error">{error}</div>}
         {tab === 'Details' && (
-          <dl className="contact-detail-list">
-            {[['Name', contact.name], ['Phone', phone], ['Email', contact.email], ['Company', contact.company]].map(([label, value]) => (
-              <div key={label}><dt>{label}</dt><dd>{value || '—'}</dd></div>
-            ))}
-          </dl>
+          <>
+            <section className="contact-detail-section">
+              <h3>Contact information</h3>
+              <dl className="contact-detail-list">
+                <div><dt>Name</dt><dd>{contact.name || '—'}</dd></div>
+                {parseDate(contact.created_at) && <div><dt>Added</dt><dd title={dateTitle(contact.created_at)}>{displayDate(contact.created_at)}</dd></div>}
+              </dl>
+            </section>
+            <section className="contact-detail-section">
+              <h3>WhatsApp phone</h3>
+              {phone ? (
+                <div className="contact-detail-phone">
+                  <span className="contact-detail-phone-value">{phone}</span>
+                  <button type="button" className="icon-button icon-button-sm" onClick={copyPhone} aria-label="Copy phone number" title="Copy phone number"><Icon name="copy" size={14} /></button>
+                </div>
+              ) : <p className="muted">No phone number on file.</p>}
+              {contact.wa_user_id && <dl className="contact-detail-list"><div><dt>WhatsApp ID</dt><dd className="wa-id">{contact.wa_user_id}</dd></div></dl>}
+            </section>
+            {(contact.email || contact.company) && (
+              <section className="contact-detail-section">
+                <h3>Email & company</h3>
+                <dl className="contact-detail-list">
+                  {contact.email && <div><dt>Email</dt><dd>{contact.email}</dd></div>}
+                  {contact.company && <div><dt>Company</dt><dd>{contact.company}</dd></div>}
+                </dl>
+              </section>
+            )}
+            {(conversationId || lastInteractionAt) && (
+              <section className="contact-detail-section">
+                <h3>Conversation information</h3>
+                <dl className="contact-detail-list">
+                  {conversationId && <div><dt>Conversation ID</dt><dd>{String(conversationId)}</dd></div>}
+                  {lastInteractionAt && <div><dt>Last interaction</dt><dd title={dateTitle(lastInteractionAt)}>{displayDate(lastInteractionAt)}</dd></div>}
+                </dl>
+              </section>
+            )}
+          </>
         )}
         {tab === 'Tags' && (
-          <div className="contact-tags">
-            {contact.tags?.map((tag) => <span className="tag-chip" key={tag.id} style={{ backgroundColor: tag.color || '#2563eb' }}>{tag.name}</span>)}
-            {!contact.tags?.length && <p className="muted">No tags</p>}
-          </div>
+          <section className="contact-detail-section">
+            <h3>Tags</h3>
+            <div className="contact-tags">
+              {contact.tags?.map((tag) => <span className="tag-chip" key={tag.id} style={tagStyle(tag)}>{tag.name}</span>)}
+              {!contact.tags?.length && <p className="muted">No tags</p>}
+            </div>
+          </section>
         )}
         {tab === 'Custom fields' && (
-          customFields.length ? <dl className="contact-detail-list">
-            {customFields.map((field) => {
-              const value = contact.custom_fields?.[field.id]
-              return <div key={field.id}><dt>{field.label || field.name}</dt><dd>{value == null || value === '' ? '—' : String(value)}</dd></div>
-            })}
-          </dl> : <p className="muted">No custom fields</p>
+          <section className="contact-detail-section">
+            <h3>Custom fields</h3>
+            {customFields.length ? <dl className="contact-detail-list">
+              {customFields.map((field) => {
+                const value = contact.custom_fields?.[field.id]
+                return <div key={field.id}><dt>{field.label || field.name}</dt><dd>{value == null || value === '' ? '—' : String(value)}</dd></div>
+              })}
+            </dl> : <p className="muted">No custom fields</p>}
+          </section>
         )}
-        {tab !== 'Notes' && !readOnly && <button className="button button-secondary button-sm" type="button" onClick={() => onEdit(contact)}><Icon name="edit" size={16} /> Edit contact</button>}
         {tab === 'Notes' && (
-          <>
+          <section className="contact-detail-section">
+            <h3>Notes</h3>
             {!readOnly && <form className="contact-note-form" onSubmit={saveNote}>
               <label className="field-label" htmlFor="contact-note">Add a note</label>
               <textarea id="contact-note" className="input" rows={3} maxLength={5000} value={draft} onChange={(event) => setDraft(event.target.value)} />
@@ -172,7 +236,7 @@ export default function ContactDetail({ initialContact, customFields, onClose, o
               <article className="contact-note" key={note.id}>
                 <div className="contact-sheet-title">
                   <small className="muted">{note.user?.name || 'Team member'} · {formatDate(note.created_at)}</small>
-                  {!readOnly && confirmNoteId !== note.id && <button type="button" className="icon-button is-danger" aria-label="Delete note" onClick={() => setConfirmNoteId(note.id)}><Icon name="trash" size={16} /></button>}
+                  {!readOnly && confirmNoteId !== note.id && <button type="button" className="icon-button icon-button-sm is-danger" aria-label="Delete note" onClick={() => setConfirmNoteId(note.id)}><Icon name="trash" size={14} /></button>}
                 </div>
                 <p>{note.body}</p>
                 {confirmNoteId === note.id && <div className="contact-sheet-actions">
@@ -181,7 +245,7 @@ export default function ContactDetail({ initialContact, customFields, onClose, o
                 </div>}
               </article>
             ))}
-          </>
+          </section>
         )}
       </div>
       {pickerOpen && <TemplatePicker open onClose={() => setPickerOpen(false)} onSend={sendTemplate} sending={sending} />}

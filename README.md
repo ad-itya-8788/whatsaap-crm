@@ -22,6 +22,41 @@ php artisan queue:work
 php artisan schedule:work
 ```
 
+## Real-time messaging
+
+The inbox uses Laravel Reverb over WebSockets. Laravel broadcasts only after a message or conversation change is saved successfully; the browser listens on the authenticated private `account.default` channel. If Reverb is not configured, the inbox keeps its slower polling fallback.
+
+For local development, copy the Reverb variables from [.env.example](.env.example) into `.env`, use the same `REVERB_APP_ID`, `REVERB_APP_KEY`, and `REVERB_APP_SECRET` values, and set `REVERB_ALLOWED_ORIGINS` to the origin you open in the browser. Then start one extra terminal:
+
+```powershell
+php artisan reverb:start
+```
+
+The browser receives the public Reverb connection details from Laravel shared props, so no `VITE_REVERB_*` rebuild is required. Keep `BROADCAST_CONNECTION=reverb` on the web process that answers HTTP requests; the Reverb process itself does not need to broadcast to another Reverb server.
+
+On Render, [render.yaml](render.yaml) creates `whatsapp-crm-reverb` as a second always-on web service. Set the same stable `APP_KEY`, `REVERB_APP_ID`, `REVERB_APP_KEY`, and `REVERB_APP_SECRET` on both services. `REVERB_HOST` and `REVERB_ALLOWED_ORIGINS` are filled automatically from the two service hostnames. Use an always-on plan for the WebSocket service; a sleeping free service will disconnect clients.
+
+Key files:
+
+- `config/broadcasting.php` and `config/reverb.php`: server and browser connection settings.
+- `routes/channels.php`: private channel authorization for active users in the default workspace.
+- `app/Events/`: small broadcast events for created, updated, deleted, and status-changed messages and conversations.
+- `app/Services/RealtimePayload.php`: serializes messages and conversations in the same shape as the existing APIs.
+- `app/Services/RealtimeBroadcaster.php`: broadcasts after commits and safely logs failures without breaking a send or webhook.
+- `app/Http/Controllers/Api/RealtimeSyncController.php`: recovers messages and conversations missed during a disconnect.
+- `resources/js/lib/realtime.js`: Laravel Echo setup, private channel subscription, and reconnect detection.
+- `resources/js/lib/realtimeChat.js`: duplicate-safe merge helpers used by `resources/js/pages/ChatsPage.jsx`.
+
+Quick verification:
+
+1. Sign in on two tabs and send a text message; it should appear immediately in both tabs without a refresh.
+2. Confirm a failed send shows the failure state, and a successful send replaces the optimistic bubble with the saved message.
+3. Trigger status webhooks and confirm pending/sent/delivered/read changes appear without waiting for polling.
+4. Stop and restart `php artisan reverb:start`; the next reconnect should fill any messages sent while the browser was offline.
+5. Keep older-message pagination, search, templates, reactions, and WhatsApp config working as before.
+
+This workspace is single-tenant: auth checks that the user is active and uses the one `default` account channel. If tenant columns are added later, `routes/channels.php` and the event channel names need to be updated together. Recovery restores messages and conversation updates; messages or conversations deleted while disconnected are not replayed because their rows no longer exist.
+
 For Apache deployments, point the virtual host's document root to this repository's `public/` directory. Set `APP_DEBUG=false` and use HTTPS with `SESSION_SECURE_COOKIE=true`. Use [the production environment example](.env.production.example) when configuring the deployment.
 
 ## Deploy on Render

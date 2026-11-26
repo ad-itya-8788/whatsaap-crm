@@ -11,6 +11,7 @@ use App\Models\WhatsappConfig;
 use App\Services\AiAutoReplyService;
 use App\Services\InboundMediaMirror;
 use App\Services\MessageStatusService;
+use App\Services\RealtimeBroadcaster;
 use App\Services\TemplateLifecycleService;
 use App\Support\Phone;
 use Carbon\Carbon;
@@ -31,6 +32,7 @@ class WhatsappWebhookController extends Controller
         private InboundMediaMirror $mediaMirror,
         private AiAutoReplyService $aiAutoReply,
         private TemplateLifecycleService $templates,
+        private RealtimeBroadcaster $realtime,
     ) {}
 
     public function verify(Request $request): JsonResponse|Response
@@ -143,6 +145,7 @@ class WhatsappWebhookController extends Controller
 
         if ($emoji === '') {
             $query->delete();
+            $this->realtime->messageUpdated($message->fresh());
 
             return;
         }
@@ -157,6 +160,7 @@ class WhatsappWebhookController extends Controller
                 'emoji' => $emoji,
             ],
         );
+        $this->realtime->messageUpdated($message->fresh());
     }
 
     private function ingestInbound(array $data, ?array $metaContact, WhatsappConfig $config): void
@@ -246,6 +250,10 @@ class WhatsappWebhookController extends Controller
             }
 
             return;
+        }
+
+        if ($message) {
+            $this->realtime->messageCreated($message->fresh());
         }
 
         if ($message && $text) {

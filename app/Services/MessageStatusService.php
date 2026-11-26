@@ -6,10 +6,13 @@ use App\Models\BroadcastRecipient;
 use App\Models\Message;
 use App\Models\PendingMessageStatus;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class MessageStatusService
 {
     private const STATUSES = ['sent', 'delivered', 'read', 'failed'];
+
+    public function __construct(private RealtimeBroadcaster $realtime) {}
 
     public function apply(Message $message, array $statusData): void
     {
@@ -60,14 +63,18 @@ class MessageStatusService
             $updates['provider_timestamp'] = $statusAt;
         }
 
-        $message->update($updates);
-        $this->syncBroadcastRecipient($message, $status, $updates);
+        DB::transaction(function () use ($message, $updates, $status) {
+            $message->update($updates);
+            $this->syncBroadcastRecipient($message, $status, $updates);
 
-        if ($message->message_id) {
-            PendingMessageStatus::where('wamid', $message->message_id)
-                ->where('status', $status)
-                ->delete();
-        }
+            if ($message->message_id) {
+                PendingMessageStatus::where('wamid', $message->message_id)
+                    ->where('status', $status)
+                    ->delete();
+            }
+        });
+
+        $this->realtime->messageStatusChanged($message->fresh());
     }
 
     public function buffer(string $wamid, array $statusData): void

@@ -11,7 +11,9 @@
   "dependencies": {
     "@inertiajs/react": "^2.3.29",
     "axios": "^1.7.9",
+    "laravel-echo": "^2.6.3",
     "opus-recorder": "^8.0.5",
+    "pusher-js": "^8.6.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
