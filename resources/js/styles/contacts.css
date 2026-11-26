@@ -372,32 +372,6 @@
   gap: var(--space-1);
 }
 
-.app-content:has(.contacts-card) .consent-badge {
-  display: inline-flex;
-  min-height: 24px;
-  align-items: center;
-  padding: 3px var(--space-2);
-  border: 1px solid color-mix(in srgb, #a45a08 28%, var(--contacts-surface));
-  border-radius: 999px;
-  background: color-mix(in srgb, #db8a19 12%, var(--contacts-surface));
-  color: color-mix(in srgb, #a45a08 86%, var(--contacts-text));
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.app-content:has(.contacts-card) .consent-badge.consent-opted_in {
-  border-color: color-mix(in srgb, #168043 28%, var(--contacts-surface));
-  background: color-mix(in srgb, #1b9a59 12%, var(--contacts-surface));
-  color: color-mix(in srgb, #168043 86%, var(--contacts-text));
-}
-
-.app-content:has(.contacts-card) .consent-badge.consent-opted_out {
-  border-color: color-mix(in srgb, #bd3545 28%, var(--contacts-surface));
-  background: color-mix(in srgb, #dc4653 12%, var(--contacts-surface));
-  color: color-mix(in srgb, #bd3545 86%, var(--contacts-text));
-}
-
 .app-content:has(.contacts-card) .contacts-card .actions-cell {
   gap: var(--space-2);
 }

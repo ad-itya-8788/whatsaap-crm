@@ -165,6 +165,10 @@
 .badge-paused, .badge-neutral, .badge-draft, .badge-closed, .badge-inactive { background: var(--secondary); color: var(--muted); }
 .badge-info, .badge-in_review { background: var(--info-soft); color: var(--info); }
 .role-badge { background: var(--primary-soft); color: var(--accent-ink); }
+.role-badge.role-owner { background: color-mix(in srgb, var(--primary) 16%, var(--surface)); color: var(--accent-ink); }
+.role-badge.role-admin { background: var(--info-soft); color: var(--info); }
+.role-badge.role-agent { background: var(--primary-soft); color: var(--accent-ink); }
+.role-badge.role-viewer { background: var(--secondary); color: var(--muted); }
 .is-disabled { opacity: .55; }
 
 .status-dot { display: inline-block; width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--muted); }
@@ -187,6 +191,23 @@
 .link-button { padding: 0; border: 0; background: transparent; color: var(--accent-ink); font-weight: 600; text-align: left; text-decoration: none; }
 .link-button:hover { text-decoration: underline; }
 .wa-id { color: var(--muted); font-size: var(--fs-sm); }
+
+.consent-badge {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--secondary);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 650;
+  white-space: nowrap;
+}
+.consent-opted_in { background: var(--success-soft); border-color: color-mix(in srgb, var(--success) 26%, var(--line)); color: var(--success); }
+.consent-opted_out { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 26%, var(--line)); color: var(--danger); }
+.consent-unknown { background: var(--warning-soft); border-color: color-mix(in srgb, var(--warning) 26%, var(--line)); color: var(--warning); }
 
 .pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 10px var(--space-4); border-top: 1px solid var(--line); color: var(--muted); font-size: var(--fs-sm); }
 .pagination-actions { display: flex; align-items: center; gap: var(--space-2); }

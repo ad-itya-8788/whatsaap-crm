@@ -66,8 +66,9 @@
 .bc-rate small { margin: 0; font-variant-numeric: tabular-nums; }
 .bc-rate .bc-progress { width: clamp(45px, 7vw, 110px); }
 .bc-progress-read, .bc-funnel-read { background: var(--info); }
+.bc-funnel-sent { background: var(--primary); }
 .bc-funnel-delivered { background: var(--accent); }
-.bc-funnel-replied { background: var(--primary); }
+.bc-funnel-replied { background: var(--success); }
 
 .bc-steps {
   display: flex;

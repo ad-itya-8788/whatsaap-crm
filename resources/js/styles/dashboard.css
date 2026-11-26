@@ -784,6 +784,11 @@
   color: var(--chart-2);
 }
 
+.dash-activity-customer {
+  background: var(--primary-soft);
+  color: var(--accent-ink);
+}
+
 .dash-failures svg { color: var(--status-critical); }
 .dash-activity time { color: var(--muted-foreground); font-size: var(--fs-xs); white-space: nowrap; }
 

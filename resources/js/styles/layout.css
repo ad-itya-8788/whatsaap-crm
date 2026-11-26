@@ -4,6 +4,8 @@
   border-right: 1px solid var(--sidebar-border); background: var(--sidebar); color: var(--sidebar-foreground);
 }
 .sidebar-backdrop, .sidebar-close, .topbar-menu-btn { display: none; }
+.sidebar-close { width: 32px; height: 32px; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; }
+.sidebar-close:hover { background: var(--hover); }
 .sidebar-brand { display: flex; height: var(--topbar-h); flex: 0 0 var(--topbar-h); align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 var(--space-3); border-bottom: 1px solid var(--sidebar-border); }
 .sidebar-brand a { display: flex; min-width: 0; align-items: center; gap: var(--space-2); overflow: hidden; color: var(--sidebar-foreground); font-size: 13px; font-weight: 650; text-decoration: none; white-space: nowrap; }
 .sidebar-logo { width: auto; height: 24px; max-width: 112px; object-fit: contain; }
@@ -55,7 +57,7 @@
 .topbar-account-name { max-width: 120px; overflow: hidden; color: var(--ink); font-size: var(--fs-sm); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .account-caret { color: var(--muted); opacity: .7; }
 .account-menu-wrap { position: relative; }
-.account-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; width: 212px; padding: var(--space-1); border: 1px solid var(--line); border-radius: var(--radius); background: var(--popover); box-shadow: var(--shadow-lg); }
+.account-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; width: 212px; padding: var(--space-1); border: 1px solid var(--line); border-radius: var(--radius); background: var(--popover); box-shadow: var(--shadow-lg); color: var(--ink); }
 .sidebar-footer .account-menu { inset: auto auto calc(100% + 4px) 8px; }
 .account-menu-head { padding: var(--space-2); }
 .account-menu-divider { height: 1px; margin: var(--space-1) 0; background: var(--line); }

@@ -317,6 +317,7 @@
   max-width: 82%;
 }
 
+.agents-message-assistant { align-self: flex-start; }
 .agents-message-user {
   margin-left: auto;
   flex-direction: row-reverse;
