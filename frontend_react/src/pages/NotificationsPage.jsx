@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api/client.js'
 import Icon from '../components/common/Icon.jsx'
@@ -12,28 +12,47 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const requestId = useRef(0)
 
-  const load = useCallback(async (page = 1) => {
-    setLoading(true)
-    setError('')
+  const load = useCallback(async (page = 1, background = false) => {
+    const id = ++requestId.current
+    if (!background) {
+      setLoading(true)
+      setError('')
+    }
     try {
       const { data } = await api.get('/api/app/notifications', { params: { per_page: 50, page } })
+      if (id !== requestId.current) return
+      setError('')
       setItems(extractList(data))
       setPagination(extractPaginator(data))
     } catch (requestError) {
-      setError(errorMessage(requestError, 'Unable to load notifications.'))
+      if (id === requestId.current && !background) setError(errorMessage(requestError, 'Unable to load notifications.'))
     } finally {
-      setLoading(false)
+      if (id === requestId.current) setLoading(false)
     }
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (busy || loading) return undefined
+    const refresh = () => {
+      if (document.visibilityState === 'visible') load(pagination.currentPage, true)
+    }
+    const timer = window.setInterval(refresh, 10000)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [busy, load, loading, pagination.currentPage])
 
   const markRead = async (item) => {
     if (item.read_at) return
     setBusy(true)
     try {
       await api.post(`/api/app/notifications/${item.id}/read`)
+      requestId.current++
       setItems((current) => current.map((row) => row.id === item.id ? { ...row, read_at: new Date().toISOString() } : row))
       window.dispatchEvent(new Event('wacrm:notifications-changed'))
     } catch (requestError) {
@@ -47,6 +66,7 @@ export default function NotificationsPage() {
     setBusy(true)
     try {
       await api.post('/api/app/notifications/read-all')
+      requestId.current++
       setItems((current) => current.map((row) => ({ ...row, read_at: row.read_at || new Date().toISOString() })))
       toast.success('All notifications marked as read.')
       window.dispatchEvent(new Event('wacrm:notifications-changed'))
@@ -73,7 +93,7 @@ export default function NotificationsPage() {
         ) : null}
       </header>
 
-      {error ? <div className="alert alert-error">{error}</div> : null}
+      {error ? <div className="alert alert-error">{error} <button type="button" className="link-button" onClick={() => load(pagination.currentPage)}>Retry</button></div> : null}
 
       <section className="dash-card">
         {loading ? (
@@ -81,7 +101,7 @@ export default function NotificationsPage() {
         ) : items.length ? (
           <ul className="note-list">
             {items.map((item) => {
-              const conversationId = item.data?.conversation_id
+              const conversationId = item.data?.conversation_id || item.conversation_id
               const content = (
                 <>
                   <span className={`dash-activity-icon${item.read_at ? ' is-read' : ''}`}>
@@ -99,7 +119,7 @@ export default function NotificationsPage() {
               return (
                 <li key={item.id} className={item.read_at ? '' : 'is-unread'}>
                   {conversationId ? (
-                    <Link className="note-link" to={`/inbox?conversation=${conversationId}`} onClick={() => markRead(item)}>
+                    <Link className="note-link" to={`/inbox?c=${conversationId}`} onClick={() => markRead(item)}>
                       {content}
                     </Link>
                   ) : (
@@ -116,9 +136,9 @@ export default function NotificationsPage() {
         )}
         {pagination.lastPage > 1 ? (
           <div className="note-pagination">
-            <button type="button" className="button button-secondary" disabled={pagination.currentPage <= 1} onClick={() => load(pagination.currentPage - 1)}>Previous</button>
+            <button type="button" className="button button-secondary" disabled={busy || loading || pagination.currentPage <= 1} onClick={() => load(pagination.currentPage - 1)}>Previous</button>
             <span>Page {pagination.currentPage} of {pagination.lastPage}</span>
-            <button type="button" className="button button-secondary" disabled={pagination.currentPage >= pagination.lastPage} onClick={() => load(pagination.currentPage + 1)}>Next</button>
+            <button type="button" className="button button-secondary" disabled={busy || loading || pagination.currentPage >= pagination.lastPage} onClick={() => load(pagination.currentPage + 1)}>Next</button>
           </div>
         ) : null}
       </section>

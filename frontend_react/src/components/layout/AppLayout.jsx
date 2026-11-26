@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import api from '../../api/client.js'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { extractPaginator } from '../../lib/utils.js'
 import BrandLogo from '../common/BrandLogo.jsx'
 import BrowserNotificationsListener from '../common/BrowserNotificationsListener.jsx'
+import { PresenceHeartbeat } from '../common/MemberPresence.jsx'
 import Icon from '../common/Icon.jsx'
 
 const mainNav = [
@@ -13,16 +13,10 @@ const mainNav = [
   { to: '/notifications', label: 'Notifications', icon: 'bell', notificationUnread: true },
   { to: '/contacts', label: 'Contacts', icon: 'contacts' },
   { to: '/broadcasts', label: 'Broadcasts', icon: 'radio' },
-  { to: '/automations', label: 'Automations', icon: 'bolt' },
-  { to: '/flows', label: 'Flows', icon: 'workflow' },
   { to: '/agents', label: 'AI Agents', icon: 'bot' },
 ]
 
 const manageNav = [
-  { to: '/workspace', label: 'Tags & fields', icon: 'tag' },
-  { to: '/templates', label: 'Templates', icon: 'template' },
-  { to: '/reports', label: 'Reports', icon: 'chart' },
-  { to: '/team', label: 'Team', icon: 'users' },
   { to: '/settings', label: 'Settings', icon: 'settings' },
 ]
 
@@ -32,8 +26,6 @@ const pageTitles = [
   ['/notifications', 'Notifications'],
   ['/contacts', 'Contacts'],
   ['/broadcasts', 'Broadcasts'],
-  ['/automations', 'Automations'],
-  ['/flows', 'Flows'],
   ['/agents', 'AI Agents'],
   ['/workspace', 'Tags & fields'],
   ['/templates', 'Message Templates'],
@@ -70,6 +62,36 @@ function useThemeMode() {
   return [mode, setMode]
 }
 
+function AccountAvatar({ user }) {
+  const initial = String(user?.name || user?.email || 'U').trim().charAt(0).toUpperCase()
+  return (
+    <span className="avatar" aria-hidden="true">
+      {initial}
+      {user?.avatar_url && <img key={user.avatar_url} src={user.avatar_url} alt="" onError={(event) => { event.currentTarget.hidden = true }} />}
+    </span>
+  )
+}
+
+function AccountMenu({ user, onClose, onLogout, showIdentity = true }) {
+  return (
+    <div className="account-menu">
+      {showIdentity && (
+        <>
+          <div className="account-menu-head">
+            <span className="account-menu-name">{user?.name || 'Agent'}</span>
+            <span className="account-menu-email">{user?.email || ''}</span>
+          </div>
+          <div className="account-menu-divider" />
+        </>
+      )}
+      <Link className="account-menu-item" to="/settings?tab=profile" onClick={onClose}><Icon name="user" size={16} /> Profile</Link>
+      <Link className="account-menu-item" to="/settings?tab=whatsapp" onClick={onClose}><Icon name="settings" size={16} /> Settings</Link>
+      <div className="account-menu-divider" />
+      <button type="button" className="account-menu-action" onClick={onLogout}><Icon name="logout" size={16} /> Sign out</button>
+    </div>
+  )
+}
+
 export default function AppLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -83,10 +105,8 @@ export default function AppLayout() {
 
   const loadUnread = useCallback(async () => {
     try {
-      const { data } = await api.get('/api/app/conversations', {
-        params: { status: 'unread', per_page: 1 },
-      })
-      setUnread(extractPaginator(data).total)
+      const { data } = await api.get('/api/app/inbox/unread-count')
+      setUnread(Number(data?.count || 0))
     } catch {
       setUnread(0)
     }
@@ -102,17 +122,21 @@ export default function AppLayout() {
   }, [])
 
   useEffect(() => {
-    loadUnread()
-    loadNotificationUnread()
-    const timer = window.setInterval(() => {
+    const refresh = () => {
+      if (document.hidden) return
       loadUnread()
       loadNotificationUnread()
-    }, 60000)
-    const refreshNotifications = () => loadNotificationUnread()
-    window.addEventListener('wacrm:notifications-changed', refreshNotifications)
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 60000)
+    document.addEventListener('visibilitychange', refresh)
+    window.addEventListener('wacrm:notifications-changed', loadNotificationUnread)
+    window.addEventListener('wacrm:inbox-changed', loadUnread)
     return () => {
       window.clearInterval(timer)
-      window.removeEventListener('wacrm:notifications-changed', refreshNotifications)
+      document.removeEventListener('visibilitychange', refresh)
+      window.removeEventListener('wacrm:notifications-changed', loadNotificationUnread)
+      window.removeEventListener('wacrm:inbox-changed', loadUnread)
     }
   }, [loadUnread, loadNotificationUnread])
 
@@ -144,8 +168,17 @@ export default function AppLayout() {
         setFooterMenuOpen(false)
       }
     }
+    const onKey = (event) => {
+      if (event.key !== 'Escape') return
+      setHeaderMenuOpen(false)
+      setFooterMenuOpen(false)
+    }
     document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [headerMenuOpen, footerMenuOpen])
 
   const onLogout = async () => {
@@ -179,7 +212,7 @@ export default function AppLayout() {
     )
   }
 
-  const initial = String(user?.name || user?.email || 'U').trim().charAt(0).toUpperCase()
+  const isInbox = location.pathname.startsWith('/inbox')
 
   return (
     <div className="app-shell">
@@ -208,29 +241,15 @@ export default function AppLayout() {
         </nav>
 
         <div className="sidebar-footer">
-          <button type="button" className="sidebar-user" onClick={() => { setFooterMenuOpen((open) => !open); setHeaderMenuOpen(false) }}>
-            <span className="avatar">{initial}</span>
+          <button type="button" className="sidebar-user" aria-expanded={footerMenuOpen} onClick={() => { setFooterMenuOpen((open) => !open); setHeaderMenuOpen(false) }}>
+            <AccountAvatar user={user} />
             <span className="sidebar-user-text">
               <span className="sidebar-user-name">{user?.name || 'Agent'}</span>
               <span className="sidebar-user-email">{user?.email || ''}</span>
             </span>
-            <Icon name="more" size={16} />
           </button>
           {footerMenuOpen ? (
-            <div className="account-menu">
-              <div className="account-menu-head">
-                <span className="account-menu-name">{user?.name || 'Agent'}</span>
-                <span className="account-menu-email">{user?.email || ''}</span>
-              </div>
-              <div className="account-menu-divider" />
-              <Link className="account-menu-item" to="/settings">
-                <Icon name="settings" size={16} /> Settings
-              </Link>
-              <div className="account-menu-divider" />
-              <button type="button" className="account-menu-action" onClick={onLogout}>
-                <Icon name="logout" size={16} /> Sign out
-              </button>
-            </div>
+            <AccountMenu user={user} onClose={() => setFooterMenuOpen(false)} onLogout={onLogout} showIdentity={false} />
           ) : null}
         </div>
       </aside>
@@ -246,7 +265,8 @@ export default function AppLayout() {
             >
               <Icon name="menu" size={20} />
             </button>
-            <h1 className="topbar-title">{pageTitle(location.pathname)}</h1>
+            {isInbox && <BrandLogo className="topbar-inbox-logo" />}
+            <h1 className={`topbar-title${isInbox ? ' topbar-inbox-title' : ''}`}>{pageTitle(location.pathname)}</h1>
           </div>
           <div className="topbar-actions">
             <button
@@ -264,30 +284,24 @@ export default function AppLayout() {
                 className="topbar-avatar"
                 onClick={() => { setHeaderMenuOpen((open) => !open); setFooterMenuOpen(false) }}
                 aria-label="Open account menu"
+                aria-expanded={headerMenuOpen}
               >
-                <span className="avatar">{initial}</span>
+                <AccountAvatar user={user} />
+                <span className="topbar-account-name">{user?.name || 'Agent'}</span>
               </button>
               {headerMenuOpen ? (
-                <div className="account-menu">
-                  <div className="account-menu-head">
-                    <span className="account-menu-name">{user?.name || 'Agent'}</span>
-                    <span className="account-menu-email">{user?.email || ''}</span>
-                  </div>
-                  <div className="account-menu-divider" />
-                  <Link className="account-menu-item" to="/settings">
-                    <Icon name="settings" size={16} /> Settings
-                  </Link>
-                  <div className="account-menu-divider" />
-                  <button type="button" className="account-menu-action" onClick={onLogout}>
-                    <Icon name="logout" size={16} /> Sign out
-                  </button>
-                </div>
+                <AccountMenu user={user} onClose={() => setHeaderMenuOpen(false)} onLogout={onLogout} />
               ) : null}
             </div>
           </div>
         </header>
         <BrowserNotificationsListener />
-        <main className="app-content"><Outlet /></main>
+        <PresenceHeartbeat userId={user?.id} />
+        <main className="app-content">
+          <Suspense fallback={<div className="app-loading app-content-loading"><span className="spinner" /> Loading...</div>}>
+            <Outlet />
+          </Suspense>
+        </main>
       </div>
     </div>
   )

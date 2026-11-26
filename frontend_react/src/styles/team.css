@@ -2,6 +2,9 @@
 .team-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
 .team-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-4); border-bottom: 1px solid var(--line); }
 .team-card-head h2 { margin: 0; font-size: 15px; }
+.team-invitations { margin-top: var(--space-4); }
+.member-invite-dialog { width: min(100%, 520px); }
+.member-invite-dialog .team-form { padding: 0; }
 .team-role { color: var(--muted); font-size: 12px; }
 .team-form { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
 .team-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }

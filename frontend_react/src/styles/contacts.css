@@ -583,3 +583,36 @@
     flex: 1;
   }
 }
+.contact-sheet {
+  inset: 0 0 0 auto;
+  margin: 0;
+  padding: 0;
+  width: min(100%, 32rem);
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-lg);
+}
+
+.contact-sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.contact-sheet::backdrop { background: rgb(0 0 0 / .45); }
+.contact-sheet-header, .contact-sheet-content { padding: 1rem; }
+.contact-sheet-header, .contact-sheet-tabs { border-bottom: 1px solid var(--border); }
+.contact-sheet-title { display: flex; align-items: start; justify-content: space-between; gap: .75rem; }
+.contact-sheet-title h2 { margin: 0 0 .25rem; overflow-wrap: anywhere; }
+.contact-sheet-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+.contact-sheet-tabs { display: flex; flex: 0 0 auto; overflow-x: auto; padding: .5rem; gap: .25rem; }
+.contact-sheet-tabs .button[aria-pressed="true"] { color: var(--primary); background: var(--primary-soft); }
+.contact-sheet-tabs .button { white-space: nowrap; }
+.contact-sheet-content { flex: 1; min-height: 0; overflow: auto; }
+.contact-note-form { display: grid; justify-items: start; gap: .5rem; margin-bottom: 1rem; }
+.contact-note { border: 1px solid var(--border); border-radius: var(--radius); padding: .75rem; margin-bottom: .5rem; }
+.contact-note p { margin: .5rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -43,28 +43,49 @@ class NotificationController extends Controller
 
     public function browserEvents(Request $request): JsonResponse
     {
-        $after = $request->integer('after', 0);
-
-        $messages = Message::query()
+        $user = $request->user();
+        $query = Message::query()
             ->where('sender_type', 'customer')
-            ->where('id', '>', $after)
-            ->with('conversation.contact:id,name,phone')
+            ->whereHas('conversation', function ($query) use ($user) {
+                if (in_array($user->role, ['admin', 'owner'], true)) {
+                    return;
+                }
+
+                $query->where('user_id', $user->id)
+                    ->orWhere('assigned_agent_id', $user->id);
+            });
+
+        if (! $request->has('after')) {
+            return response()->json(['latest_id' => (int) $query->max('id'), 'events' => []]);
+        }
+
+        $after = max(0, $request->integer('after'));
+        $messages = $query->where('id', '>', $after)
+            ->with('conversation.contact:id,name,wa_username,phone')
             ->orderBy('id')
             ->limit(20)
-            ->get(['id', 'conversation_id', 'content_text', 'created_at']);
+            ->get(['id', 'conversation_id', 'content_type', 'content_text', 'created_at']);
 
         return response()->json([
             'latest_id' => $messages->last()?->id ?: $after,
             'events' => $messages->map(fn (Message $message) => [
                 'id' => $message->id,
                 'conversation_id' => $message->conversation_id,
-                'contact_name' => $message->conversation?->contact?->name
-                    ?: $message->conversation?->contact?->phone
-                    ?: 'New message',
+                'contact_name' => $this->browserContactName($message),
+                'content_type' => $message->content_type,
                 'body' => $message->content_text,
                 'created_at' => $message->created_at,
             ]),
         ]);
+    }
+
+    private function browserContactName(Message $message): string
+    {
+        $contact = $message->conversation?->contact;
+        $name = trim((string) $contact?->name);
+        $username = trim((string) $contact?->wa_username);
+
+        return $name ?: ($username !== '' ? '@'.$username : (trim((string) $contact?->phone) ?: 'New message'));
     }
 
     public function markAllRead(Request $request): JsonResponse

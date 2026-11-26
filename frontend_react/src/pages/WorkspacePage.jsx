@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import api from '../api/client.js'
 import PageHeader from '../components/common/PageHeader.jsx'
 import Icon from '../components/common/Icon.jsx'
 import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
+import InteractiveBuilder from '../components/chat/InteractiveBuilder.jsx'
+import InteractivePreview from '../components/chat/InteractivePreview.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { errorMessage, extractList, isAdmin } from '../lib/utils.js'
@@ -10,12 +13,22 @@ import { errorMessage, extractList, isAdmin } from '../lib/utils.js'
 const tabs = [
   { key: 'tags', label: 'Tags', icon: 'tag' },
   { key: 'fields', label: 'Custom fields', icon: 'bolt' },
-  { key: 'replies', label: 'Quick replies', icon: 'note' },
+  { key: 'quick-replies', label: 'Quick replies', icon: 'note' },
 ]
 
 const blankTag = { name: '', color: '#2563eb' }
 const blankField = { name: '', label: '', type: 'text', options: '', required: false, is_active: true }
-const blankReply = { title: '', body: '' }
+const blankReply = { title: '', kind: 'text', body: '', interactive_payload: null }
+const tagColors = [
+  { name: 'Red', value: '#ef4444' },
+  { name: 'Orange', value: '#f97316' },
+  { name: 'Amber', value: '#f59e0b' },
+  { name: 'Emerald', value: '#10b981' },
+  { name: 'Cyan', value: '#06b6d4' },
+  { name: 'Blue', value: '#3b82f6' },
+  { name: 'Violet', value: '#8b5cf6' },
+  { name: 'Pink', value: '#ec4899' },
+]
 
 const fieldTypes = [
   { value: 'text', label: 'Text' },
@@ -38,7 +51,10 @@ export default function WorkspacePage() {
   const { user } = useAuth()
   const toast = useToast()
   const canManage = isAdmin(user)
-  const [tab, setTab] = useState('tags')
+  const canManageReplies = ['owner', 'admin', 'agent'].includes(user?.role)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+  const tab = tabs.some((item) => item.key === requestedTab) ? requestedTab : 'tags'
   const [tags, setTags] = useState([])
   const [fields, setFields] = useState([])
   const [replies, setReplies] = useState([])
@@ -55,6 +71,7 @@ export default function WorkspacePage() {
   const [replyForm, setReplyForm] = useState(blankReply)
   const [editReply, setEditReply] = useState(null)
   const [showReplyForm, setShowReplyForm] = useState(false)
+  const [showReplyBuilder, setShowReplyBuilder] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
 
   const load = useCallback(async () => {
@@ -175,7 +192,12 @@ export default function WorkspacePage() {
   const deleteField = (field) => setDeleteTarget({ type: 'field', item: field })
 
   const startReply = (reply) => {
-    setReplyForm(reply ? { title: reply.title || '', body: reply.body || '' } : blankReply)
+    setReplyForm(reply ? {
+      title: reply.title || '',
+      kind: reply.kind || 'text',
+      body: reply.kind === 'interactive' ? '' : reply.body || '',
+      interactive_payload: reply.interactive_payload || null,
+    } : blankReply)
     setEditReply(reply?.id || null)
     setShowReplyForm(true)
     setError('')
@@ -184,9 +206,15 @@ export default function WorkspacePage() {
 
   const saveReply = async (event) => {
     event.preventDefault()
-    const payload = { title: replyForm.title.trim(), body: replyForm.body.trim() }
-    if (!payload.title || !payload.body) {
-      setError('Enter both a title and a reply body.')
+    const isInteractive = replyForm.kind === 'interactive'
+    const payload = { title: replyForm.title.trim(), kind: replyForm.kind }
+    if (isInteractive) {
+      payload.interactive_payload = replyForm.interactive_payload
+    } else {
+      payload.body = replyForm.body.trim()
+    }
+    if (!payload.title || (isInteractive ? !payload.interactive_payload : !payload.body)) {
+      setError(isInteractive ? 'Enter a title and create an interactive message.' : 'Enter both a title and a reply body.')
       return
     }
     const done = await run(
@@ -234,7 +262,7 @@ export default function WorkspacePage() {
             role="tab"
             aria-selected={tab === item.key}
             className={`workspace-tab${tab === item.key ? ' is-active' : ''}`}
-            onClick={() => { setTab(item.key); setError(''); setNotice('') }}
+            onClick={() => { setSearchParams({ tab: item.key }); setError(''); setNotice('') }}
           >
             <Icon name={item.icon} size={16} /> {item.label}
           </button>
@@ -255,7 +283,20 @@ export default function WorkspacePage() {
                 <input className="input" required value={tagForm.name} onChange={(event) => setTagForm({ ...tagForm, name: event.target.value })} />
               </FieldRow>
               <FieldRow label="Colour">
-                <input type="color" className="input color-input" value={tagForm.color} onChange={(event) => setTagForm({ ...tagForm, color: event.target.value })} />
+                <div className="tag-color-options" role="group" aria-label="Tag colour">
+                  {tagColors.map((color) => (
+                    <button
+                      key={color.value}
+                      type="button"
+                      className="tag-color-swatch"
+                      style={{ backgroundColor: color.value }}
+                      aria-label={color.name}
+                      aria-pressed={tagForm.color === color.value}
+                      onClick={() => setTagForm({ ...tagForm, color: color.value })}
+                    />
+                  ))}
+                  <input type="color" aria-label="Custom tag colour" className="input color-input" value={tagForm.color} onChange={(event) => setTagForm({ ...tagForm, color: event.target.value })} />
+                </div>
               </FieldRow>
               <div className="workspace-form-actions">
                 <button type="submit" className="button button-primary" disabled={saving}>{saving ? 'Saving...' : 'Save tag'}</button>
@@ -346,20 +387,35 @@ export default function WorkspacePage() {
         </section>
       )}
 
-      {tab === 'replies' && (
+      {tab === 'quick-replies' && (
         <section className="card workspace-card">
           <header className="panel-header">
             <h2>Quick replies</h2>
-            <button type="button" className="button button-sm button-primary" onClick={() => startReply(null)}><Icon name="plus" size={15} /> New reply</button>
+            {canManageReplies && <button type="button" className="button button-sm button-primary" onClick={() => startReply(null)}><Icon name="plus" size={15} /> New reply</button>}
           </header>
-          {showReplyForm && (
+          {showReplyForm && canManageReplies && (
             <form className="workspace-form" onSubmit={saveReply}>
               <FieldRow label="Title">
-                <input className="input" required value={replyForm.title} onChange={(event) => setReplyForm({ ...replyForm, title: event.target.value })} />
+                <input className="input" aria-label="Quick reply title" required maxLength="255" value={replyForm.title} onChange={(event) => setReplyForm({ ...replyForm, title: event.target.value })} />
               </FieldRow>
-              <FieldRow label="Body" full>
-                <textarea className="textarea" rows="4" required value={replyForm.body} onChange={(event) => setReplyForm({ ...replyForm, body: event.target.value })} />
+              <FieldRow label="Type">
+                <select className="select" aria-label="Quick reply type" value={replyForm.kind} onChange={(event) => setReplyForm({ ...replyForm, kind: event.target.value })}>
+                  <option value="text">Text</option>
+                  <option value="interactive">Interactive</option>
+                </select>
               </FieldRow>
+              {replyForm.kind === 'text' ? (
+                <FieldRow label="Body" full>
+                  <textarea className="textarea" aria-label="Quick reply body" rows="4" required maxLength="5000" value={replyForm.body} onChange={(event) => setReplyForm({ ...replyForm, body: event.target.value })} />
+                </FieldRow>
+              ) : (
+                <FieldRow label="Interactive message" full>
+                  <InteractivePreview payload={replyForm.interactive_payload} />
+                  <button type="button" className="button button-sm button-secondary" onClick={() => setShowReplyBuilder(true)}>
+                    {replyForm.interactive_payload ? 'Edit interactive message' : 'Build interactive message'}
+                  </button>
+                </FieldRow>
+              )}
               <div className="workspace-form-actions">
                 <button type="submit" className="button button-primary" disabled={saving}>{saving ? 'Saving...' : 'Save reply'}</button>
                 <button type="button" className="button button-secondary" onClick={() => setShowReplyForm(false)}>Cancel</button>
@@ -374,12 +430,15 @@ export default function WorkspacePage() {
                   <div className="workspace-item-main">
                     <strong>{reply.title}</strong>
                     <span className="reply-body">{reply.body}</span>
+                    {reply.kind === 'interactive' && <span className="muted">Interactive</span>}
                     <span className="muted">{reply.is_global ? 'Shared with everyone' : 'Personal reply'}</span>
                   </div>
-                  <div className="workspace-item-actions">
-                    <button type="button" className="icon-button" onClick={() => startReply(reply)} aria-label={`Edit ${reply.title}`}><Icon name="edit" size={16} /></button>
-                    <button type="button" className="icon-button is-danger" onClick={() => deleteReply(reply)} aria-label={`Delete ${reply.title}`}><Icon name="trash" size={16} /></button>
-                  </div>
+                  {canManageReplies && (
+                    <div className="workspace-item-actions">
+                      <button type="button" className="icon-button" onClick={() => startReply(reply)} aria-label={`Edit ${reply.title}`}><Icon name="edit" size={16} /></button>
+                      <button type="button" className="icon-button is-danger" onClick={() => deleteReply(reply)} aria-label={`Delete ${reply.title}`}><Icon name="trash" size={16} /></button>
+                    </div>
+                  )}
                 </article>
               ))}
             </div>
@@ -387,6 +446,16 @@ export default function WorkspacePage() {
           {!loading && !replies.length && <div className="workspace-empty">No quick replies yet. Create one to reuse common answers.</div>}
         </section>
       )}
+      <InteractiveBuilder
+        open={tab === 'quick-replies' && showReplyBuilder}
+        initialPayload={replyForm.interactive_payload}
+        onClose={() => setShowReplyBuilder(false)}
+        onSend={(payload) => {
+          setReplyForm((current) => ({ ...current, interactive_payload: payload }))
+          setShowReplyBuilder(false)
+        }}
+        actionLabel="Use interactive message"
+      />
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Delete item?"

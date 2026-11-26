@@ -5,6 +5,30 @@ use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Laravel\Sanctum\Http\Middleware\AuthenticateSession;
 use Laravel\Sanctum\Sanctum;
 
+$statefulDomains = explode(',', env('SANCTUM_STATEFUL_DOMAINS', sprintf(
+    '%s%s',
+    'localhost,localhost:3000,127.0.0.1,127.0.0.1:8000,::1',
+    Sanctum::currentApplicationUrlWithPort(),
+)));
+
+$frontendDomains = [];
+foreach (explode(',', (string) env('FRONTEND_URL', '')) as $frontendUrl) {
+    $frontend = parse_url(trim($frontendUrl));
+    if (! is_array($frontend) || empty($frontend['host'])) {
+        continue;
+    }
+
+    $frontendDomains[] = $frontend['host'];
+    if (isset($frontend['port'])) {
+        $frontendDomains[] = $frontend['host'].':'.$frontend['port'];
+    }
+}
+
+$statefulDomains = array_values(array_unique(array_filter(array_map(
+    'trim',
+    array_merge($statefulDomains, $frontendDomains, ['localhost', '127.0.0.1', '::1']),
+))));
+
 return [
 
     /*
@@ -18,12 +42,7 @@ return [
     |
     */
 
-    'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', sprintf(
-        '%s%s',
-        'localhost,localhost:3000,127.0.0.1,127.0.0.1:8000,::1',
-        Sanctum::currentApplicationUrlWithPort(),
-        // Sanctum::currentRequestHost(),
-    ))),
+    'stateful' => $statefulDomains,
 
     /*
     |--------------------------------------------------------------------------

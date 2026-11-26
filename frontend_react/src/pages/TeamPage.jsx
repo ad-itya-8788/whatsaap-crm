@@ -5,6 +5,8 @@ import Icon from '../components/common/Icon.jsx'
 import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
+import { PresenceDot, useMemberPresence } from '../components/common/MemberPresence.jsx'
+import TeamInvitations from '../components/settings/TeamInvitations.jsx'
 import { errorMessage, extractList, extractPaginator, isAdmin } from '../lib/utils.js'
 
 const blankCreate = { name: '', email: '', password: '', password_confirmation: '', role: 'agent' }
@@ -16,11 +18,12 @@ function roleLabel(role) {
 }
 
 export default function TeamPage() {
-  const { user } = useAuth()
+  const { user, refresh } = useAuth()
+  const presence = useMemberPresence()
   const toast = useToast()
   const isOwner = String(user?.role || '').toLowerCase() === 'owner'
   const canManage = isAdmin(user)
-  const roles = isOwner ? ['agent', 'admin', 'owner'] : ['agent']
+  const roles = isOwner ? ['agent', 'admin', 'viewer'] : ['agent', 'viewer']
   const [users, setUsers] = useState([])
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -35,6 +38,8 @@ export default function TeamPage() {
   const [editId, setEditId] = useState(null)
   const [editForm, setEditForm] = useState(blankEdit)
   const [deactivationTarget, setDeactivationTarget] = useState(null)
+  const [transferTarget, setTransferTarget] = useState(null)
+  const [showInvite, setShowInvite] = useState(false)
 
   const loadUsers = useCallback(async () => {
     setLoading(true)
@@ -111,7 +116,7 @@ export default function TeamPage() {
     setEditForm({
       name: member.name || '',
       email: member.email || '',
-      role: roles.includes(member.role) ? member.role : roles[0],
+      role: member.role,
       password: '',
       password_confirmation: '',
       is_active: member.is_active !== false,
@@ -131,6 +136,21 @@ export default function TeamPage() {
   const confirmDeactivation = () => {
     setEditForm((current) => ({ ...current, is_active: false }))
     setDeactivationTarget(null)
+  }
+
+  const transferOwnership = async () => {
+    setSaving(true)
+    try {
+      await api.post(`/api/app/users/${transferTarget.id}/transfer-ownership`)
+      setTransferTarget(null)
+      await refresh()
+      await loadUsers()
+      toast.success('Ownership transferred.')
+    } catch (requestError) {
+      toast.error(errorMessage(requestError, 'Unable to transfer ownership.'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const update = async (event) => {
@@ -190,7 +210,10 @@ export default function TeamPage() {
       <PageHeader
         title="Team"
         subtitle="Manage team members, roles and access."
-        actions={<button type="button" className="button button-primary" onClick={startCreate}><Icon name="plus" size={16} /> Add member</button>}
+        actions={<div className="team-actions">
+          <button type="button" className="button button-secondary" onClick={startCreate}><Icon name="plus" size={16} /> Add member</button>
+          <button type="button" className="button button-primary" onClick={() => setShowInvite(true)}><Icon name="plus" size={16} /> Invite member</button>
+        </div>}
       />
       {error && <div className="alert alert-error">{error}</div>}
       {notice && <div className="alert alert-success">{notice}</div>}
@@ -273,7 +296,7 @@ export default function TeamPage() {
                             <div className="field">
                               <label className="field-label" htmlFor={`team-edit-role-${member.id}`}>Role</label>
                               <select id={`team-edit-role-${member.id}`} className="select" value={editForm.role} disabled={Number(user?.id) === Number(member.id)} onChange={(event) => setEditForm({ ...editForm, role: event.target.value })}>
-                                {roles.map((role) => <option key={role} value={role}>{roleLabel(role)}</option>)}
+                                {Array.from(new Set([...roles, member.role])).map((role) => <option key={role} value={role}>{roleLabel(role)}</option>)}
                               </select>
                             </div>
                             <div className="field">
@@ -298,13 +321,18 @@ export default function TeamPage() {
                     </tr>
                   ) : (
                     <tr key={member.id} className={member.is_active === false ? 'is-inactive' : ''}>
-                      <td><strong>{member.name || 'Unnamed member'}</strong>{Number(user?.id) === Number(member.id) && <span className="muted"> (you)</span>}</td>
+                      <td><PresenceDot member={presence[member.id]} /> <strong>{member.name || 'Unnamed member'}</strong>{Number(user?.id) === Number(member.id) && <span className="muted"> (you)</span>}</td>
                       <td>{member.email}</td>
                       <td><span className={`role-badge role-${String(member.role || 'agent').toLowerCase()}`}>{roleLabel(member.role)}</span></td>
                       <td><span className={`status-dot ${member.is_active === false ? 'is-offline' : 'is-online'}`} /> {member.is_active === false ? 'Inactive' : 'Active'}</td>
                       <td>
                         <div className="team-actions">
-                          <button type="button" className="button button-sm button-secondary" onClick={() => startEdit(member)}><Icon name="edit" size={14} /> Edit</button>
+                          {(member.id === user.id || (member.role !== 'owner' && (isOwner || member.role !== 'admin'))) && (
+                            <button type="button" className="button button-sm button-secondary" onClick={() => startEdit(member)}><Icon name="edit" size={14} /> Edit</button>
+                          )}
+                          {isOwner && member.role !== 'owner' && member.is_active && (
+                            <button type="button" className="button button-sm button-secondary" onClick={() => setTransferTarget(member)}>Transfer ownership</button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -324,6 +352,16 @@ export default function TeamPage() {
           </div>
         </section>
       </div>
+      <TeamInvitations showForm={showInvite} onClose={() => setShowInvite(false)} />
+      <ConfirmDialog
+        open={Boolean(transferTarget)}
+        title="Transfer ownership?"
+        message={transferTarget ? `${transferTarget.name} will become the owner of this workspace, and your role will change to Admin.` : ''}
+        confirmLabel="Transfer ownership"
+        busy={saving}
+        onConfirm={transferOwnership}
+        onCancel={() => setTransferTarget(null)}
+      />
       <ConfirmDialog
         open={Boolean(deactivationTarget)}
         title="Deactivate team member?"

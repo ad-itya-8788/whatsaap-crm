@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\DB;
 
 class BroadcastService
 {
-    public function create(array $data, int $userId): Broadcast
+    public function create(array $data, ?int $userId): Broadcast
     {
         return Broadcast::create([
             'user_id' => $userId,
@@ -26,6 +26,36 @@ class BroadcastService
             'audience' => $data['audience'],
             'personalization' => $data['personalization'] ?? [],
         ]);
+    }
+
+    public function sendToPhones(MessageTemplate $template, string $name, array $recipients, ?int $userId): Broadcast
+    {
+        $broadcast = DB::transaction(function () use ($template, $name, $recipients, $userId) {
+            $broadcast = $this->create([
+                'name' => $name,
+                'template_id' => $template->id,
+                'audience' => ['type' => 'csv', 'phones' => implode("\n", array_keys($recipients))],
+            ], $userId);
+
+            foreach ($recipients as $digits => $values) {
+                $contact = Contact::firstOrCreate(['phone_normalized' => (string) $digits], [
+                    'phone' => '+'.$digits,
+                    'user_id' => $userId,
+                ]);
+                if ($contact->consent_status !== 'opted_out') {
+                    $broadcast->recipients()->create(['contact_id' => $contact->id, 'variables' => $values]);
+                }
+            }
+
+            $count = $broadcast->recipients()->count();
+            $broadcast->update(['status' => $count ? 'sending' : 'sent', 'total' => $count]);
+
+            return $broadcast;
+        });
+
+        $this->dispatchJobs($broadcast);
+
+        return $broadcast;
     }
 
     public function preview(array $audience, int $limit = 5): array
@@ -45,9 +75,9 @@ class BroadcastService
     public function send(Broadcast $broadcast): Broadcast
     {
         $this->assertApproved($broadcast);
-        $broadcast = $this->prepare($broadcast);
+        [$broadcast, $prepared] = $this->prepare($broadcast);
 
-        if ($broadcast->status !== 'scheduled') {
+        if ($prepared && $broadcast->status === 'sending') {
             $this->dispatchJobs($broadcast);
         }
 
@@ -63,9 +93,10 @@ class BroadcastService
             ->whereNotNull('scheduled_at')
             ->where('scheduled_at', '<=', now())
             ->each(function (Broadcast $broadcast) use (&$count) {
-                $this->dispatchJobs($broadcast);
-                $broadcast->update(['status' => 'sending']);
-                $count++;
+                if (Broadcast::query()->whereKey($broadcast->id)->where('status', 'scheduled')->update(['status' => 'sending'])) {
+                    $this->dispatchJobs($broadcast);
+                    $count++;
+                }
             });
 
         return $count;
@@ -73,17 +104,33 @@ class BroadcastService
 
     public function retry(Broadcast $broadcast, string $status = 'failed'): int
     {
-        $recipients = $broadcast->recipients()->where('status', $status)->get();
+        $this->assertApproved($broadcast);
+        $ids = DB::transaction(function () use ($broadcast, $status) {
+            $current = Broadcast::query()->whereKey($broadcast->id)->lockForUpdate()->firstOrFail();
+            if (in_array($current->status, ['draft', 'scheduled'], true)) {
+                return [];
+            }
 
-        foreach ($recipients as $recipient) {
-            $recipient->update(['status' => 'pending', 'error' => null, 'provider_error' => null]);
-            SendBroadcastRecipient::dispatch($recipient->id);
+            $recipients = $current->recipients()->where('status', $status)->lockForUpdate()->get();
+            if ($recipients->isEmpty()) {
+                return [];
+            }
+            if ($status === 'failed') {
+                $current->recipients()->whereIn('id', $recipients->modelKeys())->update([
+                    'status' => 'pending', 'error' => null, 'provider_error' => null, 'message_id' => null,
+                    'attempt_version' => DB::raw('attempt_version + 1'),
+                ]);
+            }
+            $current->update(['status' => 'sending']);
+            $this->refreshCounters($current);
+
+            return $recipients->modelKeys();
+        });
+        foreach ($ids as $id) {
+            SendBroadcastRecipient::dispatch($id);
         }
 
-        $broadcast->update(['status' => 'sending']);
-        $this->refreshCounters($broadcast);
-
-        return $recipients->count();
+        return count($ids);
     }
 
     public function refreshCounters(Broadcast $broadcast): void
@@ -102,8 +149,8 @@ class BroadcastService
             'failed' => (int) ($counts['failed'] ?? 0),
         ]);
 
-        if ($broadcast->status === 'sending' && ! $counts->get('pending')) {
-            $broadcast->update(['status' => 'completed']);
+        if (! $counts->get('pending') && ! $counts->get('sending')) {
+            Broadcast::query()->whereKey($broadcast->id)->where('status', 'sending')->update(['status' => 'completed']);
         }
     }
 
@@ -130,19 +177,20 @@ class BroadcastService
         }
     }
 
-    private function prepare(Broadcast $broadcast): Broadcast
+    private function prepare(Broadcast $broadcast): array
     {
         $contacts = $this->resolveAudience($broadcast->audience);
         $template = $broadcast->template;
         $personalization = $broadcast->personalization ?: [];
 
-        DB::transaction(function () use ($broadcast, $contacts, $template, $personalization) {
-            $broadcast->recipients()->delete();
+        return DB::transaction(function () use ($broadcast, $contacts, $template, $personalization) {
+            $broadcast = Broadcast::query()->whereKey($broadcast->id)->lockForUpdate()->firstOrFail();
+            if ($broadcast->status !== 'draft') {
+                return [$broadcast, false];
+            }
 
             foreach ($contacts as $contact) {
-                BroadcastRecipient::create([
-                    'broadcast_id' => $broadcast->id,
-                    'contact_id' => $contact->id,
+                $broadcast->recipients()->firstOrCreate(['contact_id' => $contact->id], [
                     'variables' => $template ? $this->templateVariables($template, $contact, $personalization) : [],
                     'status' => 'pending',
                 ]);
@@ -152,16 +200,11 @@ class BroadcastService
 
             $broadcast->update([
                 'status' => $isScheduled ? 'scheduled' : 'sending',
-                'total' => $contacts->count(),
-                'sent' => 0,
-                'delivered' => 0,
-                'read' => 0,
-                'replied' => 0,
-                'failed' => 0,
             ]);
-        });
+            $this->refreshCounters($broadcast);
 
-        return $broadcast->refresh();
+            return [$broadcast->refresh(), true];
+        });
     }
 
     private function dispatchJobs(Broadcast $broadcast): void

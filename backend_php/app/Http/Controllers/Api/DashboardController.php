@@ -50,12 +50,17 @@ class DashboardController extends Controller
         return response()->json($this->dashboard->volume($this->days($request)));
     }
 
+    public function hourlyVolume(Request $request): JsonResponse
+    {
+        return response()->json($this->dashboard->hourlyVolume($this->days($request)));
+    }
+
     private function days(Request $request): int
     {
         $validated = $request->validate([
-            'days' => ['sometimes', 'integer', 'in:7,30,90'],
+            'days' => ['sometimes', 'integer', 'in:1,7,30,90'],
         ]);
 
-        return (int) ($validated['days'] ?? 30);
+        return (int) ($validated['days'] ?? 7);
     }
 }

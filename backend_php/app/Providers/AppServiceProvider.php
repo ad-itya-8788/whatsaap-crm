@@ -2,6 +2,10 @@
 
 namespace App\Providers;
 
+use App\Models\Conversation;
+use App\Models\Message;
+use App\Services\OutboundWebhookEvents;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -22,6 +26,17 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $webhooks = app(OutboundWebhookEvents::class);
+        Conversation::created($webhooks->conversationCreated(...));
+        Message::created($webhooks->messageCreated(...));
+        Message::updated($webhooks->messageUpdated(...));
+
+        ResetPassword::createUrlUsing(function ($user, string $token): string {
+            $frontend = rtrim(trim(explode(',', config('app.frontend_url'))[0]), '/');
+
+            return $frontend.'/reset-password?token='.rawurlencode($token).'&email='.rawurlencode($user->email);
+        });
+
         RateLimiter::for('login', function (Request $request) {
             return Limit::perMinute(5)->by(
                 $request->ip().'|'.strtolower((string) $request->input('email'))

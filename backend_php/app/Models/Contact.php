@@ -36,4 +36,9 @@ class Contact extends Model
     {
         return $this->hasMany(ConsentEvent::class);
     }
+
+    public function notes(): HasMany
+    {
+        return $this->hasMany(ContactNote::class);
+    }
 }

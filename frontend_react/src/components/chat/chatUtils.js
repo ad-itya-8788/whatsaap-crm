@@ -32,11 +32,13 @@ export function messageMediaUrl(message) {
 
 export function mediaItem(message) {
   const type = messageMediaType(message)
-  if (!message?.media_url || !['image', 'video', 'audio', 'document', 'sticker'].includes(type)) return null
+  const externalUrl = message?.meta?.external_media_url
+  const externalMedia = typeof externalUrl === 'string' && /^https:\/\//i.test(externalUrl)
+  if ((!message?.media_url && !externalMedia) || !['image', 'video', 'audio', 'document', 'sticker'].includes(type)) return null
   return {
     id: String(message.id),
     type: type === 'sticker' ? 'image' : type,
-    src: messageMediaUrl(message),
+    src: externalMedia ? externalUrl : messageMediaUrl(message),
     name: message.filename || `${type}-${message.id}`,
     mime: message.media_type || '',
   }

@@ -1,10 +1,14 @@
 <?php
 
+use App\Http\Middleware\EnsureActiveUser;
 use App\Http\Middleware\EnsureRole;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -15,7 +19,16 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->statefulApi();
+        $middleware->prependToPriorityList(
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            \App\Http\Middleware\AuthenticateApiKey::class,
+        );
+        $middleware->prependToPriorityList(
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            EnsureActiveUser::class,
+        );
         $middleware->alias([
+            'active' => EnsureActiveUser::class,
             'role' => EnsureRole::class,
         ]);
     })
@@ -23,13 +36,19 @@ return Application::configure(basePath: dirname(__DIR__))
             $schedule->command('broadcasts:dispatch-scheduled')
                 ->everyMinute()
                 ->withoutOverlapping();
-            $schedule->command('automations:dispatch-pending')
-                ->everyMinute()
-                ->withoutOverlapping();
-            $schedule->command('flows:sweep-timeouts')
-                ->everyFiveMinutes()
-                ->withoutOverlapping();
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        $exceptions->shouldRenderJsonWhen(fn (Request $request) => $request->is('api/*') || $request->expectsJson());
+        $exceptions->render(function (ValidationException $error, Request $request) {
+            if ($request->is('api/v1/*')) {
+                return response()->json(['error' => [
+                    'code' => 'bad_request', 'message' => $error->getMessage(), 'fields' => $error->errors(),
+                ]], 400);
+            }
+        });
+        $exceptions->render(function (HttpExceptionInterface $error, Request $request) {
+            if ($request->is('api/v1/*') && $error->getStatusCode() === 404) {
+                return response()->json(['error' => ['code' => 'not_found', 'message' => 'The requested resource was not found.']], 404);
+            }
+        });
     })->create();

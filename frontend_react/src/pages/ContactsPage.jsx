@@ -4,7 +4,9 @@ import api from '../api/client.js'
 import PageHeader from '../components/common/PageHeader.jsx'
 import Icon from '../components/common/Icon.jsx'
 import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
+import ContactDetail from '../components/contacts/ContactDetail.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import { errorMessage, extractList, extractPaginator } from '../lib/utils.js'
 
 const blankContact = { name: '', phone: '', email: '', company: '' }
@@ -56,6 +58,8 @@ function ImportResult({ result }) {
 export default function ContactsPage() {
   const navigate = useNavigate()
   const toast = useToast()
+  const { user } = useAuth()
+  const readOnly = user?.role === 'viewer'
   const [contacts, setContacts] = useState([])
   const [contactStats, setContactStats] = useState(null)
   const [conversations, setConversations] = useState([])
@@ -76,7 +80,7 @@ export default function ContactsPage() {
   const [editing, setEditing] = useState(null)
   const [editingContact, setEditingContact] = useState(null)
   const [showForm, setShowForm] = useState(false)
-  const [opening, setOpening] = useState(null)
+  const [detailContact, setDetailContact] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -298,22 +302,19 @@ export default function ContactsPage() {
     setError('')
     const existing = conversations.find((item) => String(item.contact?.id ?? item.contact_id) === String(contact.id))
     if (existing) {
-      navigate(`/chats?conversation=${existing.id}`)
+      navigate(`/inbox?c=${existing.id}`)
       return
     }
-    setOpening(contact.id)
     try {
       const { data } = await api.post('/api/app/conversations/start', { contact_id: contact.id })
       const created = data?.conversation || data?.data || data
       if (!created?.id) throw new Error('The conversation response did not include an id.')
       setConversations((items) => [...items, created])
-      navigate(`/chats?conversation=${created.id}`)
+      navigate(`/inbox?c=${created.id}`)
     } catch (requestError) {
       const message = errorMessage(requestError, 'Unable to open a conversation for this contact.')
       setError(message)
       toast.error(message)
-    } finally {
-      setOpening(null)
     }
   }
 
@@ -382,8 +383,8 @@ export default function ContactsPage() {
         actions={
           <>
             <button type="button" className="button button-secondary" onClick={exportContacts} disabled={exporting}><Icon name="download" size={16} /> {exporting ? 'Exporting...' : 'Export'}</button>
-            <button type="button" className="button button-secondary" onClick={() => { setShowImport((current) => !current); setError(''); setNotice('') }}><Icon name="plus" size={16} /> Import CSV</button>
-            <button type="button" className="button button-primary" onClick={startCreate}><Icon name="plus" size={16} /> Add contact</button>
+            {!readOnly && <button type="button" className="button button-secondary" onClick={() => { setShowImport((current) => !current); setError(''); setNotice('') }}><Icon name="plus" size={16} /> Import CSV</button>}
+            {!readOnly && <button type="button" className="button button-primary" onClick={startCreate}><Icon name="plus" size={16} /> Add contact</button>}
           </>
         }
       />
@@ -615,7 +616,7 @@ export default function ContactsPage() {
               {contacts.map((contact) => (
                 <tr key={contact.id}>
                   <td>
-                    <button type="button" className="link-button" onClick={() => openChat(contact)} disabled={opening === contact.id}>
+                    <button type="button" className="link-button" onClick={() => setDetailContact(contact)}>
                       {contact.name || 'Unnamed contact'}
                     </button>
                   </td>
@@ -635,10 +636,10 @@ export default function ContactsPage() {
                   </td>
                   <td><span className={`consent-badge consent-${contact.consent_status || 'unknown'}`}>{consentLabel(contact.consent_status)}</span></td>
                   <td>
-                    <div className="actions-cell">
+                    {!readOnly && <div className="actions-cell">
                       <button type="button" className="icon-button" onClick={() => startEdit(contact)} aria-label={`Edit ${contact.name || 'contact'}`}><Icon name="edit" size={16} /></button>
                       <button type="button" className="icon-button is-danger" onClick={() => remove(contact)} aria-label={`Delete ${contact.name || 'contact'}`}><Icon name="trash" size={16} /></button>
-                    </div>
+                    </div>}
                   </td>
                 </tr>
               ))}
@@ -655,6 +656,15 @@ export default function ContactsPage() {
           </div>
         </div>
       </section>
+      {detailContact && <ContactDetail
+        key={detailContact.id}
+        initialContact={detailContact}
+        customFields={customFields}
+        readOnly={readOnly}
+        onClose={() => setDetailContact(null)}
+        onEdit={(contact) => { setDetailContact(null); startEdit(contact) }}
+        onOpenChat={openChat}
+      />}
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Delete contact?"

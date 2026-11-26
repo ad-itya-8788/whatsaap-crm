@@ -7,10 +7,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class QuickReply extends Model
 {
-    protected $fillable = ['user_id', 'title', 'body', 'is_global'];
+    protected $fillable = ['user_id', 'title', 'body', 'is_global', 'kind', 'interactive_payload'];
 
     protected $casts = [
         'is_global' => 'boolean',
+        'interactive_payload' => 'array',
     ];
 
     public function user(): BelongsTo

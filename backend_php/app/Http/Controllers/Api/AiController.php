@@ -14,6 +14,7 @@ use App\Services\AiService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class AiController extends Controller
@@ -40,6 +41,10 @@ class AiController extends Controller
             'embeddings_api_key' => ['nullable', 'string'],
             'system_prompt' => ['nullable', 'string'],
             'is_active' => ['nullable', 'boolean'],
+            'auto_reply_enabled' => ['sometimes', 'boolean'],
+            'auto_reply_max_per_conversation' => ['sometimes', 'integer', 'min:1', 'max:50'],
+            'handoff_agent_id' => ['sometimes', 'nullable', 'integer', Rule::exists('users', 'id')->where(fn ($query) => $query
+                ->where('is_active', true)->whereIn('role', ['agent', 'admin', 'owner']))],
         ]);
 
         if ($data['api_key'] === AiConfigService::MASK && ! $this->configs->current()?->api_key) {
@@ -149,12 +154,34 @@ class AiController extends Controller
             'days' => $days,
             'total_tokens' => $logs->sum('total_tokens'),
             'llm_calls' => $logs->count(),
-            'auto_reply' => 0,
+            'auto_reply' => $logs->where('mode', 'auto_reply')->count(),
             'drafts' => $logs->where('mode', 'draft')->count(),
             'daily' => array_values($daily),
             'by_model' => array_values($byModel),
             'truncated' => $logs->count() >= 10000,
         ]);
+    }
+
+    public function updateAutoreply(Request $request, Conversation $conversation): JsonResponse
+    {
+        $data = $request->validate([
+            'paused' => ['required', 'boolean'],
+            'assign_to_me' => ['sometimes', 'boolean'],
+        ]);
+        $paused = (bool) $data['paused'];
+        $updates = ['ai_autoreply_disabled' => $paused];
+
+        if ($paused && ($data['assign_to_me'] ?? false)) {
+            $updates['assigned_agent_id'] = $request->user()->id;
+        } elseif (! $paused) {
+            $updates['assigned_agent_id'] = null;
+            $updates['ai_reply_count'] = 0;
+            $updates['ai_handoff_summary'] = null;
+        }
+
+        $conversation->update($updates);
+
+        return response()->json($conversation->load(['contact.tags', 'assignedAgent']));
     }
 
     public function knowledge(): JsonResponse

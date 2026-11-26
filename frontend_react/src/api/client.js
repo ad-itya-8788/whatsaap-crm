@@ -13,9 +13,18 @@ const api = axios.create({
 })
 
 let csrfPromise = null
+let sessionRequest = null
+
+export function fetchSession() {
+  if (!sessionRequest) {
+    sessionRequest = api.get('/api/user', { timeout: 8000 }).finally(() => { sessionRequest = null })
+  }
+  return sessionRequest
+}
+
 export async function csrf() {
   if (!csrfPromise) {
-    csrfPromise = api.get('/sanctum/csrf-cookie').finally(() => { csrfPromise = null })
+    csrfPromise = api.get('/sanctum/csrf-cookie', { timeout: 8000 }).finally(() => { csrfPromise = null })
   }
   return csrfPromise
 }

@@ -88,7 +88,8 @@ class BroadcastController extends Controller
             ->paginate(min(max(request()->integer('per_page', 50), 1), 100));
 
         return response()->json([
-            'broadcast' => $broadcast->load(['creator:id,name', 'template']),
+            'broadcast' => $broadcast->load(['creator:id,name', 'template'])
+                ->loadCount(['recipients as pending' => fn ($query) => $query->where('status', 'pending')]),
             'recipients' => $recipients,
         ]);
     }
@@ -106,17 +107,29 @@ class BroadcastController extends Controller
 
     public function resume(Broadcast $broadcast): JsonResponse
     {
-        return response()->json(['queued' => $this->broadcasts->retry($broadcast, 'failed')]);
+        return $this->retry($broadcast, 'failed');
     }
 
     public function retryPending(Broadcast $broadcast): JsonResponse
     {
-        return response()->json(['queued' => $this->broadcasts->retry($broadcast, 'pending')]);
+        return $this->retry($broadcast, 'pending');
+    }
+
+    private function retry(Broadcast $broadcast, string $status): JsonResponse
+    {
+        try {
+            return response()->json(['queued' => $this->broadcasts->retry($broadcast, $status)]);
+        } catch (MessagingException $exception) {
+            return response()->json(['message' => $exception->getMessage()], $exception->status);
+        }
     }
 
     public function destroy(Broadcast $broadcast): JsonResponse
     {
-        $broadcast->delete();
+        $deleted = Broadcast::query()->whereKey($broadcast->id)->where('status', '!=', 'sending')->delete();
+        if (! $deleted) {
+            return response()->json(['message' => 'A broadcast that is sending cannot be deleted.'], 409);
+        }
 
         return response()->json(['ok' => true]);
     }

@@ -1,5 +1,5 @@
 ﻿import { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import api, { csrf } from '../api/client'
+import api, { csrf, fetchSession } from '../api/client'
 
 const AuthContext = createContext(null)
 
@@ -14,7 +14,7 @@ export function AuthProvider({ children }) {
 
   const refresh = useCallback(async () => {
     try {
-      const { data } = await api.get('/api/user')
+      const { data } = await fetchSession()
       setUser(normalizeUser(data.user || data))
     } catch {
       setUser(null)

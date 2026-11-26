@@ -25,6 +25,9 @@ class AiConfigService
             'base_url' => $config?->base_url,
             'system_prompt' => $config?->system_prompt,
             'is_active' => (bool) $config?->is_active,
+            'auto_reply_enabled' => (bool) $config?->auto_reply_enabled,
+            'auto_reply_max_per_conversation' => $config?->auto_reply_max_per_conversation ?? 3,
+            'handoff_agent_id' => $config?->handoff_agent_id,
             'has_api_key' => (bool) $config?->api_key,
             'has_embeddings_key' => (bool) $config?->embeddings_api_key,
             'api_key' => $config ? self::MASK : '',
@@ -55,6 +58,9 @@ class AiConfigService
                 : ($embeddingsKey === '' || $embeddingsKey === self::MASK ? null : Crypt::encryptString((string) $embeddingsKey)),
             'system_prompt' => $data['system_prompt'] ?? null,
             'is_active' => (bool) ($data['is_active'] ?? true),
+            'auto_reply_enabled' => $data['auto_reply_enabled'] ?? $config->auto_reply_enabled ?? false,
+            'auto_reply_max_per_conversation' => $data['auto_reply_max_per_conversation'] ?? $config->auto_reply_max_per_conversation ?? 3,
+            'handoff_agent_id' => array_key_exists('handoff_agent_id', $data) ? $data['handoff_agent_id'] : $config->handoff_agent_id,
         ]);
 
         $config->save();

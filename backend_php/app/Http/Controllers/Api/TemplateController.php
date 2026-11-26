@@ -12,6 +12,7 @@ use App\Models\MessageTemplate;
 use App\Models\WhatsappConfig;
 use App\Services\MessagingService;
 use App\Services\MetaCloudApiService;
+use App\Services\TemplateLifecycleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 
@@ -92,7 +93,7 @@ class TemplateController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $status = strtoupper($response['status'] ?? 'PENDING');
+        $status = TemplateLifecycleService::status($response['status'] ?? '') ?? 'PENDING';
         $message_template->update([
             'meta_template_id' => $response['id'] ?? $message_template->meta_template_id,
             'status' => $status,
@@ -120,7 +121,7 @@ class TemplateController extends Controller
 
         foreach ($items as $item) {
             $components = collect($item['components'] ?? []);
-            $status = strtoupper($item['status'] ?? 'PENDING');
+            $status = TemplateLifecycleService::status($item['status'] ?? '') ?? 'PENDING';
             $header = $components->firstWhere('type', 'HEADER');
             $body = $components->firstWhere('type', 'BODY');
 
@@ -142,6 +143,7 @@ class TemplateController extends Controller
                         ? array_values($body['example']['body_text'])
                         : null,
                     'rejection_reason' => $item['rejection_reason'] ?? null,
+                    'quality_score' => TemplateLifecycleService::quality($item['quality_score'] ?? null),
                     'last_synced_at' => now(),
                 ],
             );

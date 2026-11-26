@@ -8,6 +8,16 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (! Schema::hasTable('broadcasts')) {
+            $this->createBroadcasts();
+        }
+        if (! Schema::hasTable('broadcast_recipients')) {
+            $this->createRecipients();
+        }
+    }
+
+    private function createBroadcasts(): void
+    {
         Schema::create('broadcasts', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
@@ -26,7 +36,10 @@ return new class extends Migration
             $table->timestamps();
             $table->index(['status', 'created_at']);
         });
+    }
 
+    private function createRecipients(): void
+    {
         Schema::create('broadcast_recipients', function (Blueprint $table) {
             $table->id();
             $table->foreignId('broadcast_id')->constrained()->cascadeOnDelete();

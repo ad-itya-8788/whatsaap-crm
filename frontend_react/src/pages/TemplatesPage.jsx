@@ -560,7 +560,10 @@ export default function TemplatesPage() {
                   <header className="template-card-head">
                     <div>
                       <h3 className="template-name">{template.name}</h3>
-                      <div className="template-meta">{template.category || 'UTILITY'} · {template.language || 'en_US'}</div>
+                      <div className="template-meta">
+                        {template.category || 'UTILITY'} · {template.language || 'en_US'}
+                        {template.quality_score && ` · Quality ${template.quality_score.toLowerCase()}`}
+                      </div>
                     </div>
                     <span className={`badge badge-${status.toLowerCase()}`}>{statuses[status] || status}</span>
                   </header>

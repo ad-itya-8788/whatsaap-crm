@@ -11,6 +11,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -25,11 +26,16 @@ class SendBroadcastRecipient implements ShouldQueue
 
     public function __construct(public int $recipientId) {}
 
+    public function middleware(): array
+    {
+        return [(new WithoutOverlapping('broadcast-recipient:'.$this->recipientId))->expireAfter(120)->dontRelease()];
+    }
+
     public function handle(MessagingService $messaging, BroadcastService $broadcasts): void
     {
         $recipient = BroadcastRecipient::with(['broadcast.template', 'contact'])->find($this->recipientId);
 
-        if (! $recipient || ! in_array($recipient->status, ['pending', 'failed'], true)) {
+        if (! $recipient || $recipient->status !== 'pending') {
             return;
         }
 
@@ -51,19 +57,22 @@ class SendBroadcastRecipient implements ShouldQueue
                 ['user_id' => $broadcast->user_id, 'status' => 'open'],
             );
 
+            $idempotencyKey = 'broadcast:'.$broadcast->id.':recipient:'.$recipient->id;
+            if ($recipient->attempt_version) {
+                $idempotencyKey .= ':attempt:'.$recipient->attempt_version;
+            }
             $message = $messaging->send($conversation, [
                 'content_type' => 'template',
-                'content_text' => $this->renderBody($template->body_text, $recipient->variables ?: []),
                 'template_name' => $template->name,
                 'template_language' => $template->language,
                 'template_params' => $variables,
-                'idempotency_key' => 'broadcast:'.$broadcast->id.':recipient:'.$recipient->id,
+                'idempotency_key' => $idempotencyKey,
             ], $broadcast->user_id);
 
             $recipient->update([
-                'status' => 'sent',
+                'status' => in_array($message->status, ['sent', 'delivered', 'read'], true) ? $message->status : 'pending',
                 'message_id' => $message->id,
-                'sent_at' => now(),
+                'sent_at' => $message->message_id ? now() : null,
                 'error' => null,
                 'provider_error' => null,
             ]);
@@ -73,7 +82,8 @@ class SendBroadcastRecipient implements ShouldQueue
             $failed = $exception->failedMessage;
 
             $recipient->update([
-                'status' => 'failed',
+                'status' => $failed?->status === 'pending' ? 'pending' : 'failed',
+                'message_id' => $failed?->id,
                 'error' => $exception->getMessage(),
                 'provider_error' => $failed ? [
                     'code' => $failed->error_code,
@@ -95,10 +105,4 @@ class SendBroadcastRecipient implements ShouldQueue
         }
     }
 
-    private function renderBody(string $body, array $variables): string
-    {
-        return preg_replace_callback('/\{\{(\d+)\}\}/', function (array $matches) use ($variables): string {
-            return array_key_exists($matches[1], $variables) ? (string) $variables[$matches[1]] : $matches[0];
-        }, $body) ?: $body;
-    }
 }

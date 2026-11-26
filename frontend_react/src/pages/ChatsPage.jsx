@@ -5,11 +5,14 @@ import Icon from '../components/common/Icon.jsx'
 import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
+import { PresenceDot, presenceStatus, useMemberPresence } from '../components/common/MemberPresence.jsx'
 import { createIdempotencyKey, errorMessage, extractList, extractPaginator, formatDate } from '../lib/utils.js'
+import { interactiveText, templateMessagePayload } from '../lib/whatsappPayloads.js'
 import ConversationList from '../components/chat/ConversationList.jsx'
 import MessageBubble from '../components/chat/MessageBubble.jsx'
 import MediaViewer from '../components/chat/MediaViewer.jsx'
 import ChatComposer from '../components/chat/ChatComposer.jsx'
+import AiThreadBanner from '../components/chat/AiThreadBanner.jsx'
 import { fileType, hasWhatsApp, isIncoming, mediaItem, messageText } from '../components/chat/chatUtils.js'
 
 function messageDate(message) {
@@ -26,11 +29,15 @@ function initials(value) {
   return String(value || '?').trim().slice(0, 1).toUpperCase()
 }
 
+const INBOX_FILTERS = ['all', 'waiting', 'unassigned', 'expiring', 'unread', 'open', 'pending', 'closed']
+
 export default function ChatsPage() {
   const [params, setParams] = useSearchParams()
   const { user } = useAuth()
+  const presence = useMemberPresence()
   const toast = useToast()
-  const urlConversation = params.get('conversation')
+  const urlConversation = params.get('c') || params.get('conversation')
+  const urlFilter = params.get('filter')
 
   const [conversations, setConversations] = useState([])
   const [pagination, setPagination] = useState({ currentPage: 1, lastPage: 1, total: 0 })
@@ -41,7 +48,7 @@ export default function ChatsPage() {
 
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState(INBOX_FILTERS.includes(urlFilter) ? urlFilter : 'all')
   const [assigneeFilter, setAssigneeFilter] = useState('all')
   const [messageSearch, setMessageSearch] = useState('')
   const [debouncedMessageSearch, setDebouncedMessageSearch] = useState('')
@@ -70,6 +77,7 @@ export default function ChatsPage() {
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [sending, setSending] = useState(false)
   const [retryingId, setRetryingId] = useState('')
+  const [reactingId, setReactingId] = useState(null)
   const [busyAction, setBusyAction] = useState('')
   const [listError, setListError] = useState('')
   const [threadError, setThreadError] = useState('')
@@ -78,6 +86,7 @@ export default function ChatsPage() {
   const threadRef = useRef(null)
   const threadAbortRef = useRef(null)
   const sendAttemptRef = useRef(null)
+  const richSendAttemptRef = useRef(null)
   const selectedIdRef = useRef(selectedId)
   const messagesConversationRef = useRef(selectedId)
   const scrollRestoreRef = useRef(null)
@@ -86,6 +95,8 @@ export default function ChatsPage() {
 
   const selected = conversations.find((item) => String(item.id) === String(selectedId)) || null
   const optedOut = selected?.contact?.consent_status === 'opted_out'
+  const readOnly = user?.role === 'viewer'
+  const windowOpen = Date.now() - Date.parse(selected?.last_inbound_at) < 24 * 60 * 60 * 1000
   const contactTags = selected?.contact?.tags || []
 
   const mediaItems = useMemo(() => messages.map(mediaItem).filter(Boolean), [messages])
@@ -230,6 +241,10 @@ export default function ChatsPage() {
   useEffect(() => { loadConversations() }, [loadConversations])
 
   useEffect(() => {
+    setStatusFilter(INBOX_FILTERS.includes(urlFilter) ? urlFilter : 'all')
+  }, [urlFilter])
+
+  useEffect(() => {
     if (!conversations.length) {
       setSelectedId('')
       return
@@ -295,7 +310,16 @@ export default function ChatsPage() {
 
   const changeFilter = (key, value) => {
     if (key === 'query') setQuery(value)
-    if (key === 'status') { setStatusFilter(value); setMobileView('list') }
+    if (key === 'status') {
+      setStatusFilter(value)
+      setMobileView('list')
+      setParams((current) => {
+        const next = new URLSearchParams(current)
+        if (value === 'all') next.delete('filter')
+        else next.set('filter', value)
+        return next
+      }, { replace: true })
+    }
     if (key === 'assignee') setAssigneeFilter(value)
   }
 
@@ -305,7 +329,8 @@ export default function ChatsPage() {
     setMobileView('thread')
     setParams((current) => {
       const next = new URLSearchParams(current)
-      next.set('conversation', value)
+      next.delete('conversation')
+      next.set('c', value)
       return next
     }, { replace: true })
   }
@@ -315,6 +340,7 @@ export default function ChatsPage() {
     setParams((current) => {
       const next = new URLSearchParams(current)
       next.delete('conversation')
+      next.delete('c')
       return next
     }, { replace: true })
   }
@@ -475,6 +501,14 @@ export default function ChatsPage() {
   }
 
   const retryMessage = async (message) => {
+    if (message.content_type === 'template') {
+      toast.info('Open the template picker to send this template again.')
+      return
+    }
+    if (message.content_type === 'interactive' && message.interactive_payload) {
+      await sendInteractive(message.interactive_payload)
+      return
+    }
     const text = messageText(message)
     if (message?.media_url) {
       toast.info('Select the attachment again to retry this media message.')
@@ -495,6 +529,66 @@ export default function ChatsPage() {
       toast.error(errorMessage(requestError, 'Retry failed.'))
     } finally {
       setRetryingId('')
+    }
+  }
+
+  const sendRichMessage = async (signature, buildPayload) => {
+    if (!selectedId || sending || optedOut || readOnly) return false
+    const conversationId = selectedId
+    const attemptSignature = JSON.stringify([conversationId, replyTo?.id, signature])
+    if (richSendAttemptRef.current?.signature !== attemptSignature) {
+      richSendAttemptRef.current = { signature: attemptSignature, key: createIdempotencyKey() }
+    }
+    setSending(true)
+    setThreadError('')
+    try {
+      await api.post('/api/app/conversations/' + conversationId + '/messages', buildPayload(richSendAttemptRef.current.key, replyTo?.id))
+      richSendAttemptRef.current = null
+      if (selectedIdRef.current === conversationId) {
+        setReplyTo(null)
+        await loadMessages(conversationId)
+      }
+      await loadConversations(1, false, true)
+      toast.success('Message sent.')
+      return true
+    } catch (requestError) {
+      const failedMessage = requestError.response?.data?.data
+      if (failedMessage?.status === 'failed') richSendAttemptRef.current = null
+      if (failedMessage?.id && selectedIdRef.current === conversationId) await loadMessages(conversationId)
+      toast.error(errorMessage(requestError, 'Unable to send message.'))
+      return false
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const sendInteractive = (payload) => sendRichMessage(payload, (key, replyToId) => ({
+    content_type: 'interactive',
+    content_text: interactiveText(payload),
+    interactive_payload: payload,
+    reply_to_message_id: replyToId,
+    idempotency_key: key,
+  }))
+
+  const sendTemplate = (template, values) => sendRichMessage([
+    template.id, values.body, values.headerText, values.buttonParams, values.headerFile?.name, values.headerFile?.lastModified,
+  ], (key, replyToId) => templateMessagePayload(template, values, key, replyToId))
+
+  const reactToMessage = async (message, emoji) => {
+    if (reactingId != null || readOnly) return
+    const businessReaction = message.reactions?.find((reaction) => reaction.actor_type === 'agent')
+    setReactingId(message.id)
+    try {
+      const { data } = await api.post('/api/app/messages/' + message.id + '/react', {
+        emoji: businessReaction?.emoji === emoji ? '' : emoji,
+      })
+      if (String(message.conversation_id) === selectedIdRef.current) {
+        setMessages((items) => items.map((item) => item.id === message.id ? { ...item, reactions: data.reactions } : item))
+      }
+    } catch (requestError) {
+      toast.error(errorMessage(requestError, 'Unable to save reaction.'))
+    } finally {
+      setReactingId(null)
     }
   }
 
@@ -560,7 +654,7 @@ export default function ChatsPage() {
                   className="select select-sm"
                   aria-label="Conversation status"
                   value={selected.status || 'open'}
-                  disabled={busyAction === 'status'}
+                  disabled={readOnly || busyAction === 'status'}
                   onChange={(event) => changeStatus(event.target.value)}
                 >
                   <option value="open">Open</option>
@@ -571,12 +665,12 @@ export default function ChatsPage() {
                   className="select select-sm assign-select"
                   aria-label="Conversation assignee"
                   value={selected.assignedAgent?.id ? String(selected.assignedAgent.id) : 'unassigned'}
-                  disabled={busyAction === 'assignee'}
+                  disabled={readOnly || busyAction === 'assignee'}
                   onChange={(event) => changeAssignee(event.target.value)}
                 >
                   <option value="unassigned">Unassigned</option>
                   <option value="me">Me</option>
-                  {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                  {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {presenceStatus(presence[agent.id])}</option>)}
                   {selected.assignedAgent && !agents.some((agent) => String(agent.id) === String(selected.assignedAgent.id)) && (
                     <option value={selected.assignedAgent.id}>{selected.assignedAgent.name}</option>
                   )}
@@ -596,6 +690,10 @@ export default function ChatsPage() {
                 </div>
               </div>
             </header>
+
+            {!optedOut && <AiThreadBanner conversation={selected} readOnly={readOnly} onChange={(data) => {
+              setConversations((items) => items.map((item) => item.id === data.id ? { ...item, ...data } : item))
+            }} />}
 
             {optedOut && <div className="consent-banner"><Icon name="alert" size={16} /> This contact opted out of WhatsApp messages. Sending is disabled.</div>}
 
@@ -617,7 +715,7 @@ export default function ChatsPage() {
                       <div><dt>WhatsApp ID</dt><dd>{selected.contact?.wa_user_id || 'Not linked'}</dd></div>
                       <div><dt>Consent</dt><dd><span className={`consent-badge consent-${String(selected.contact?.consent_status || 'unknown')}`}>{selected.contact?.consent_status || 'unknown'}</span></dd></div>
                       <div><dt>Status</dt><dd>{String(selected.status || 'open')}</dd></div>
-                      <div><dt>Assignee</dt><dd>{selected.assignedAgent?.name || 'Unassigned'}</dd></div>
+                      <div><dt>Assignee</dt><dd>{selected.assignedAgent ? <><PresenceDot member={presence[selected.assignedAgent.id]} />{selected.assignedAgent.name}</> : 'Unassigned'}</dd></div>
                     </dl>
                     <h3>Labels</h3>
                     <div className="tag-picker">
@@ -628,6 +726,7 @@ export default function ChatsPage() {
                           className={`tag-chip${selectedTagIds.includes(Number(tag.id)) ? ' is-selected' : ''}`}
                           style={{ backgroundColor: tag.color || '#2563eb' }}
                           onClick={() => toggleTag(tag.id)}
+                          disabled={readOnly}
                           aria-pressed={selectedTagIds.includes(Number(tag.id))}
                         >
                           {tag.name}
@@ -646,14 +745,14 @@ export default function ChatsPage() {
                         <div className="note-body">{note.body ?? note.note ?? note.content ?? ''}</div>
                         <div className="note-meta">
                           <span>{note.user?.name || note.author?.name || 'Team'} · {formatDate(note.created_at)}</span>
-                          <button type="button" className="icon-button is-danger" onClick={() => setDeleteNoteId(note.id)} aria-label="Delete note"><Icon name="trash" size={14} /></button>
+                          {!readOnly && (user?.id === note.user_id || ['admin', 'owner'].includes(user?.role)) && <button type="button" className="icon-button is-danger" onClick={() => setDeleteNoteId(note.id)} aria-label="Delete note"><Icon name="trash" size={14} /></button>}
                         </div>
                       </article>
                     ))}
-                    <form className="notes-compose" onSubmit={addNote}>
+                    {!readOnly && <form className="notes-compose" onSubmit={addNote}>
                       <textarea className="textarea" rows="2" aria-label="New note" placeholder="Write a note..." value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} />
                       <button type="submit" className="button button-sm button-primary" disabled={savingNote || !noteDraft.trim()}>{savingNote ? 'Adding...' : 'Add note'}</button>
-                    </form>
+                    </form>}
                   </div>
                 )}
               </aside>
@@ -689,8 +788,10 @@ export default function ChatsPage() {
                       incoming={incoming}
                       mediaItems={mediaItems}
                       onOpenMedia={openMediaViewer}
-                      onReply={setReplyTo}
-                      onRetry={retryMessage}
+                      onReply={readOnly ? undefined : setReplyTo}
+                      onRetry={readOnly ? undefined : retryMessage}
+                      onReact={!readOnly && reactingId == null && message.message_id ? reactToMessage : undefined}
+                      reactions={message.reactions}
                       retrying={retryingId === String(message.id)}
                       grouped={grouped}
                     />
@@ -711,6 +812,10 @@ export default function ChatsPage() {
               uploadProgress={uploadProgress}
               quickReplies={quickReplies}
               conversationId={selectedId}
+              readOnly={readOnly}
+              windowOpen={windowOpen}
+              onSendInteractive={sendInteractive}
+              onSendTemplate={sendTemplate}
             />
             {replyTo && <div className="reply-context"><Icon name="reply" size={14} /><span>{messageText(replyTo) || 'Attachment'}</span><button type="button" className="icon-button" onClick={() => setReplyTo(null)} aria-label="Cancel reply"><Icon name="close" size={14} /></button></div>}
           </>

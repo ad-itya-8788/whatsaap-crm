@@ -6,6 +6,8 @@ import Icon from '../common/Icon.jsx'
 import { useToast } from '../common/ToastProvider.jsx'
 import { errorMessage } from '../../lib/utils.js'
 import { fileSize, fileType } from './chatUtils.js'
+import TemplatePicker from './TemplatePicker.jsx'
+import InteractiveBuilder from './InteractiveBuilder.jsx'
 
 const ACCEPT = 'image/jpeg,image/png,video/mp4,video/3gpp,audio/aac,audio/amr,audio/mpeg,audio/mp4,audio/ogg,audio/opus,application/pdf,text/plain,text/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation'
 const LIMITS = {
@@ -27,7 +29,24 @@ const ALLOWED = {
 }
 const EMOJIS = ['😀', '😂', '😍', '👍', '🙏', '🎉', '✅', '👋', '❤️', '🔥', '😊', '🤝', '📌', '⏰', '📎', '🙂']
 
-export default function ChatComposer({
+export default function ChatComposer(props) {
+  const [savedReplies, setSavedReplies] = useState([])
+  const quickReplies = [...new Map([
+    ...(props.quickReplies || []),
+    ...savedReplies,
+  ].map((reply) => [reply.id, reply])).values()]
+
+  return (
+    <ConversationComposer
+      key={props.conversationId}
+      {...props}
+      quickReplies={quickReplies}
+      onQuickReplySaved={(reply) => setSavedReplies((current) => [...current, reply])}
+    />
+  )
+}
+
+function ConversationComposer({
   draft,
   onDraftChange,
   onSend,
@@ -39,6 +58,11 @@ export default function ChatComposer({
   uploadProgress = 0,
   quickReplies = [],
   conversationId = null,
+  windowOpen = true,
+  readOnly = false,
+  onSendInteractive,
+  onSendTemplate,
+  onQuickReplySaved,
 }) {
   const toast = useToast()
   const fileInputRef = useRef(null)
@@ -52,6 +76,8 @@ export default function ChatComposer({
   const [recordSeconds, setRecordSeconds] = useState(0)
   const [localError, setLocalError] = useState('')
   const [drafting, setDrafting] = useState(false)
+  const [dialog, setDialog] = useState(null)
+  const [savingReply, setSavingReply] = useState(false)
 
   useEffect(() => {
     if (!file) {
@@ -168,10 +194,34 @@ export default function ChatComposer({
   }
 
   const insertReply = (reply) => {
+    setOpenMenu('')
+    if (reply.kind === 'interactive' && reply.interactive_payload) {
+      setDialog({ type: 'interactive', payload: reply.interactive_payload })
+      return
+    }
     const body = String(reply.body || '')
     onDraftChange(draft ? `${draft}\n${body}` : body)
-    setOpenMenu('')
     composerRef.current?.focus()
+  }
+
+  const saveInteractiveReply = async (payload) => {
+    if (savingReply) return
+    const title = window.prompt('Name this quick reply')?.trim()
+    if (!title) return
+    setSavingReply(true)
+    try {
+      const { data } = await api.post('/api/app/quick-replies', {
+        title,
+        kind: 'interactive',
+        interactive_payload: payload,
+      })
+      onQuickReplySaved(data)
+      toast.success('Quick reply saved.')
+    } catch (error) {
+      toast.error(errorMessage(error, 'Unable to save quick reply.'))
+    } finally {
+      setSavingReply(false)
+    }
   }
 
   const draftWithAi = async () => {
@@ -192,13 +242,39 @@ export default function ChatComposer({
   }
 
   const onKeyDown = (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !window.matchMedia?.('(pointer: coarse)').matches) {
       event.preventDefault()
       if (!sending && !optedOut && (draft.trim() || file)) onSend()
     }
   }
 
   const disabled = sending || drafting || optedOut || (!draft.trim() && !file)
+  const templatePicker = (
+    <TemplatePicker
+      open={dialog?.type === 'template'}
+      sending={sending}
+      onClose={() => setDialog(null)}
+      onSend={async (template, values) => {
+        if (await onSendTemplate?.(template, values)) setDialog(null)
+      }}
+    />
+  )
+
+  if (readOnly) return <div className="composer"><span className="muted">Read-only access</span></div>
+  if (optedOut) return null
+  if (!windowOpen) {
+    return (
+      <div className="composer composer-window-closed">
+        <span className="muted">The 24-hour messaging window has closed.</span>
+        {onSendTemplate && (
+          <button type="button" className="button button-sm button-secondary" onClick={() => setDialog({ type: 'template' })}>
+            <Icon name="template" size={16} /> Send a template
+          </button>
+        )}
+        {templatePicker}
+      </div>
+    )
+  }
 
   return (
     <div className="composer" ref={popoverRef}>
@@ -247,11 +323,22 @@ export default function ChatComposer({
           </button>
         )}
         <div className="quick-reply-menu">
-          <button type="button" className={`icon-button${openMenu === 'replies' ? ' is-open' : ''}`} onClick={() => setOpenMenu((value) => value === 'replies' ? '' : 'replies')} disabled={optedOut} aria-label="Quick replies" aria-expanded={openMenu === 'replies'}>
-            <Icon name="bolt" size={19} />
+          <button type="button" className={`icon-button${openMenu === 'replies' ? ' is-open' : ''}`} onClick={() => setOpenMenu((value) => value === 'replies' ? '' : 'replies')} disabled={optedOut} aria-label="More message options" aria-expanded={openMenu === 'replies'}>
+            <Icon name="plus" size={19} />
           </button>
           {openMenu === 'replies' && (
             <div className="quick-reply-list">
+              {onSendInteractive && (
+                <button type="button" className="quick-reply-item" onClick={() => { setOpenMenu(''); setDialog({ type: 'interactive' }) }}>
+                  <strong>Interactive message</strong>
+                </button>
+              )}
+              {onSendTemplate && (
+                <button type="button" className="quick-reply-item" onClick={() => { setOpenMenu(''); setDialog({ type: 'template' }) }}>
+                  <strong>Send a template</strong>
+                </button>
+              )}
+              <div className="quick-reply-heading">Quick replies</div>
               {quickReplies.map((reply) => (
                 <button type="button" className="quick-reply-item" key={reply.id} onClick={() => insertReply(reply)}>
                   <strong>{reply.title}</strong>
@@ -286,6 +373,17 @@ export default function ChatComposer({
         <span className="composer-hint">Enter to send · Shift + Enter for a new line</span>
         <span className="composer-hint">Images 5 MB · video/audio 16 MB · documents 100 MB</span>
       </div>
+      {templatePicker}
+      <InteractiveBuilder
+        open={dialog?.type === 'interactive'}
+        initialPayload={dialog?.payload}
+        sending={sending || savingReply}
+        onClose={() => setDialog(null)}
+        onSave={saveInteractiveReply}
+        onSend={async (payload) => {
+          if (await onSendInteractive?.(payload)) setDialog(null)
+        }}
+      />
     </div>
   )
 }

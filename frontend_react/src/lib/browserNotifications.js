@@ -15,7 +15,9 @@ export function setEnabled(enabled) {
     localStorage.setItem(BROWSER_NOTIFY_STORAGE_KEY, '1')
   } else {
     localStorage.removeItem(BROWSER_NOTIFY_STORAGE_KEY)
-    localStorage.removeItem(LAST_MESSAGE_STORAGE_KEY)
+    for (const key of Object.keys(localStorage)) {
+      if (key === LAST_MESSAGE_STORAGE_KEY || key.startsWith(`${LAST_MESSAGE_STORAGE_KEY}:`)) localStorage.removeItem(key)
+    }
   }
   window.dispatchEvent(new Event(BROWSER_NOTIFY_EVENT))
 }
@@ -32,17 +34,21 @@ export async function requestPermission() {
 export function showNotification(title, body, url) {
   if (!notificationsSupported() || Notification.permission !== 'granted') return null
 
-  const notification = new Notification(title, {
-    body: body || 'New customer message',
-    tag: url || 'wacrm-message',
-    icon: '/favicon.ico',
-  })
+  try {
+    const notification = new Notification(title, {
+      body,
+      tag: url || 'wacrm-message',
+      icon: '/img/logo.png',
+    })
 
-  notification.onclick = () => {
-    window.focus()
-    if (url) window.location.assign(url)
-    notification.close()
+    notification.onclick = () => {
+      window.focus()
+      if (url) window.location.assign(url)
+      notification.close()
+    }
+
+    return notification
+  } catch {
+    return null
   }
-
-  return notification
 }

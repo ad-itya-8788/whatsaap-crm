@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('ai_configs', function (Blueprint $table) {
+        $this->createTableIfMissing('ai_configs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
             $table->string('provider')->default('openai');
@@ -21,7 +21,7 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        Schema::create('ai_knowledge_documents', function (Blueprint $table) {
+        $this->createTableIfMissing('ai_knowledge_documents', function (Blueprint $table) {
             $table->id();
             $table->string('title');
             $table->longText('content');
@@ -30,7 +30,7 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        Schema::create('ai_knowledge_chunks', function (Blueprint $table) {
+        $this->createTableIfMissing('ai_knowledge_chunks', function (Blueprint $table) {
             $table->id();
             $table->foreignId('document_id')->constrained('ai_knowledge_documents')->cascadeOnDelete();
             $table->unsignedInteger('chunk_index');
@@ -40,7 +40,7 @@ return new class extends Migration
             $table->index(['document_id', 'chunk_index']);
         });
 
-        Schema::create('ai_usage_logs', function (Blueprint $table) {
+        $this->createTableIfMissing('ai_usage_logs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
             $table->string('mode');
@@ -59,9 +59,13 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('ai_usage_logs');
-        Schema::dropIfExists('ai_knowledge_chunks');
-        Schema::dropIfExists('ai_knowledge_documents');
-        Schema::dropIfExists('ai_configs');
+        // Tables can already exist in installations upgraded from the earlier schema.
+    }
+
+    private function createTableIfMissing(string $name, Closure $definition): void
+    {
+        if (! Schema::hasTable($name)) {
+            Schema::create($name, $definition);
+        }
     }
 };

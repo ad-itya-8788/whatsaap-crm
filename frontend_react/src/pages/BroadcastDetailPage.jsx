@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/client.js'
+import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
 import Icon from '../components/common/Icon.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
-import { errorMessage, extractList, extractPaginator, relativeTime } from '../lib/utils.js'
+import { useAuth } from '../context/AuthContext.jsx'
+import { errorMessage, extractList, extractPaginator, isAdmin, relativeTime } from '../lib/utils.js'
 
 const STATS = [
   ['Total', 'total', 'users'],
@@ -14,26 +16,63 @@ const STATS = [
   ['Failed', 'failed', 'alertCircle'],
 ]
 
+function DeliveryFunnel({ broadcast }) {
+  const steps = STATS.slice(1, 5)
+  const max = Math.max(1, broadcast.total)
+
+  return (
+    <section className="dash-card bc-funnel">
+      <h2>Delivery funnel</h2>
+      <ul>
+        {steps.map(([label, key]) => (
+          <li key={key}>
+            <span>{label}</span>
+            <span className="bc-progress" aria-hidden="true"><span className={`bc-progress-bar bc-funnel-${key}`} style={{ width: `${Math.min(100, (broadcast[key] / max) * 100)}%` }} /></span>
+            <strong>{broadcast[key]}</strong>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 export default function BroadcastDetailPage() {
   const { id } = useParams()
   const toast = useToast()
+  const { user } = useAuth()
+  const navigate = useNavigate()
   const [broadcast, setBroadcast] = useState(null)
   const [recipients, setRecipients] = useState([])
   const [pagination, setPagination] = useState({ currentPage: 1, lastPage: 1, total: 0 })
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const requestId = useRef(0)
+  const canSend = user?.role !== 'viewer'
 
-  const load = useCallback(async (page = 1) => {
-    setError('')
+  const load = useCallback(async (page = 1, background = false) => {
+    const currentRequest = ++requestId.current
+    if (!background) {
+      setError('')
+      setLoading(true)
+    }
     try {
       const { data } = await api.get(`/api/app/broadcasts/${id}`, {
         params: { per_page: 50, page, status },
       })
+      if (currentRequest !== requestId.current) return
+      setError('')
       setBroadcast(data.broadcast)
       setRecipients(extractList(data.recipients))
       setPagination(extractPaginator(data.recipients))
     } catch (requestError) {
-      setError(errorMessage(requestError, 'Unable to load this broadcast.'))
+      if (currentRequest === requestId.current && !background) {
+        setError(errorMessage(requestError, 'Unable to load this broadcast.'))
+      }
+    } finally {
+      if (currentRequest === requestId.current) setLoading(false)
     }
   }, [id, status])
 
@@ -42,66 +81,103 @@ export default function BroadcastDetailPage() {
   const active = broadcast && ['sending', 'scheduled'].includes(broadcast.status)
   useEffect(() => {
     if (!active) return undefined
-    const timer = window.setInterval(() => load(pagination.currentPage), 5000)
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && !busy && !loading) load(pagination.currentPage, true)
+    }, 5000)
     return () => window.clearInterval(timer)
-  }, [active, pagination.currentPage, load])
+  }, [active, busy, loading, pagination.currentPage, load])
 
   const action = async (name) => {
+    if (busy) return
+    setBusy(name)
     try {
       const { data } = await api.post(`/api/app/broadcasts/${id}/${name}`)
-      toast.success(name === 'resume' ? `${data.queued} failed recipient(s) queued again.` : `${data.queued} pending recipient(s) queued again.`)
-      load(pagination.currentPage)
+      const messages = {
+        send: data.status === 'scheduled' ? 'Broadcast scheduled.' : 'Broadcast queued.',
+        resume: `${data.queued} failed recipient(s) queued again.`,
+        'retry-pending': `${data.queued} pending recipient(s) queued again.`,
+      }
+      toast.success(messages[name])
+      await load(pagination.currentPage)
     } catch (requestError) {
       toast.error(errorMessage(requestError, 'Unable to update this broadcast.'))
+    } finally {
+      setBusy('')
     }
   }
 
   const remove = async () => {
-    if (!window.confirm('Delete this broadcast and its recipient history?')) return
+    if (busy) return
+    setBusy('delete')
     try {
       await api.delete(`/api/app/broadcasts/${id}`)
       toast.success('Broadcast deleted.')
-      window.location.assign('/broadcasts')
+      navigate('/broadcasts')
     } catch (requestError) {
       toast.error(errorMessage(requestError, 'Unable to delete this broadcast.'))
+    } finally {
+      setBusy('')
     }
   }
+
+  const pending = broadcast?.pending ?? (broadcast?.status === 'sending' ? Math.max(0, broadcast.total - broadcast.sent - broadcast.failed) : 0)
+  const failed = broadcast?.failed || 0
 
   return (
     <div className="dash-page">
       <header className="dash-header">
         <div>
           <Link className="bc-back" to="/broadcasts"><Icon name="back" size={14} /> Broadcasts</Link>
-          <h1>{broadcast?.name || 'Broadcast'}</h1>
-          <p>{broadcast?.template?.name} · Created {broadcast ? relativeTime(broadcast.created_at) : '…'}</p>
+          <div className="bc-detail-title">
+            <h1>{broadcast?.name || 'Broadcast'}</h1>
+            {broadcast && <span className="badge badge-pending">{broadcast.status}</span>}
+          </div>
+          {broadcast && <p>{broadcast.template?.name || broadcast.template_name || 'Template unavailable'} · Created {relativeTime(broadcast.created_at)}</p>}
         </div>
         <div className="bc-detail-actions">
-          <a className="button button-secondary" href={`/api/app/broadcasts/${id}/export`}><Icon name="download" size={14} /> Export CSV</a>
-          {broadcast?.status === 'failed' || broadcast?.failed ? <button type="button" className="button button-secondary" onClick={() => action('resume')}>Retry failed</button> : null}
-          {broadcast?.status === 'draft' ? <button type="button" className="button button-primary" onClick={() => action('send')}>Send now</button> : null}
-          <button type="button" className="button button-danger" onClick={remove}><Icon name="trash" size={14} /></button>
+          {canSend && broadcast?.status === 'draft' && <button type="button" className="button button-primary" disabled={Boolean(busy)} onClick={() => action('send')}>Send now</button>}
+          {broadcast && isAdmin(user) && (
+            <button type="button" className="button button-danger" disabled={Boolean(busy) || broadcast.status === 'sending'} onClick={() => setConfirmDelete(true)}><Icon name="trash" size={14} /> Delete</button>
+          )}
         </div>
       </header>
 
-      {error ? <div className="alert alert-error">{error}</div> : null}
-      {broadcast ? <div className="badge badge-pending bc-status">Status: {broadcast.status}</div> : null}
+      {error && <div className="alert alert-error">{error} <button type="button" className="link-button" onClick={() => load(pagination.currentPage)}>Retry</button></div>}
+      {!broadcast && loading && <div className="dash-empty"><span className="spinner" /> Loading broadcast…</div>}
 
-      <div className="bc-stat-grid">
+      {broadcast && canSend && broadcast.status !== 'scheduled' && (pending > 0 || failed > 0) && (
+        <div className="dash-card bc-recovery">
+          <div>
+            <strong>Outstanding recipients</strong>
+            <p className="muted">{pending} pending · {failed} failed</p>
+          </div>
+          <div className="bc-detail-actions">
+            {pending > 0 && <button type="button" className="button button-sm button-primary" disabled={Boolean(busy)} onClick={() => action('retry-pending')}>Resume pending</button>}
+            {failed > 0 && <button type="button" className="button button-sm button-secondary" disabled={Boolean(busy)} onClick={() => action('resume')}>Retry failed</button>}
+          </div>
+        </div>
+      )}
+
+      {broadcast && <div className="bc-stat-grid">
         {STATS.map(([label, key, icon]) => (
           <div className="dash-card bc-stat" key={key}>
             <span><Icon name={icon} size={15} /> {label}</span>
             <strong>{broadcast?.[key] ?? 0}</strong>
           </div>
         ))}
-      </div>
+      </div>}
+      {broadcast && <DeliveryFunnel broadcast={broadcast} />}
 
-      <section className="dash-card">
+      {broadcast && <section className="dash-card">
         <header className="bc-recipients-header">
-          <h2>Recipients</h2>
-          <select className="input bc-filter" value={status} onChange={(event) => { setStatus(event.target.value); load(1) }}>
-            <option value="">All statuses</option>
-            {['pending', 'sent', 'delivered', 'read', 'replied', 'failed', 'skipped'].map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
+          <h2>Recipients ({pagination.total})</h2>
+          <div className="bc-detail-actions">
+            <select className="input bc-filter" aria-label="Filter recipients by status" value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="">All statuses</option>
+              {['pending', 'sent', 'delivered', 'read', 'replied', 'failed', 'skipped'].map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+            <a className="button button-secondary" href={`/api/app/broadcasts/${id}/export`}><Icon name="download" size={14} /> Export CSV</a>
+          </div>
         </header>
         <div className="bc-table-wrap">
           <table className="bc-table">
@@ -118,7 +194,7 @@ export default function BroadcastDetailPage() {
               ))}
             </tbody>
           </table>
-          {!recipients.length ? <div className="dash-empty">No recipients matched.</div> : null}
+          {loading ? <div className="dash-empty"><span className="spinner" /> Loading recipients…</div> : !recipients.length && <div className="dash-empty">No recipients matched.</div>}
         </div>
         {pagination.lastPage > 1 ? (
           <div className="note-pagination">
@@ -127,7 +203,16 @@ export default function BroadcastDetailPage() {
             <button type="button" className="button button-secondary" disabled={pagination.currentPage >= pagination.lastPage} onClick={() => load(pagination.currentPage + 1)}>Next</button>
           </div>
         ) : null}
-      </section>
+      </section>}
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete broadcast?"
+        message="Delete this broadcast and its recipient history?"
+        confirmLabel="Delete"
+        busy={busy === 'delete'}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={remove}
+      />
     </div>
   )
 }

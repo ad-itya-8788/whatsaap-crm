@@ -17,6 +17,7 @@ class AuthController extends Controller
 {
     public function login(Request $request)
     {
+        abort_unless($request->hasSession(), 419, 'Open the CRM to sign in.');
         $credentials = $request->validate([
             'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
@@ -43,6 +44,7 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
+        abort_unless($request->hasSession(), 419, 'Open the CRM to sign out.');
         Auth::guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
@@ -58,10 +60,9 @@ class AuthController extends Controller
     public function forgotPassword(Request $request)
     {
         $request->validate(['email' => ['required', 'email']]);
-        $status = Password::sendResetLink($request->only('email'));
+        Password::sendResetLink($request->only('email'));
 
-        // Always return success-style response to avoid account enumeration in production behavior parity where applicable.
-        return response()->json(['status' => __($status)]);
+        return response()->json(['status' => 'If the email belongs to an account, a reset link has been sent.']);
     }
 
     public function resetPassword(Request $request)

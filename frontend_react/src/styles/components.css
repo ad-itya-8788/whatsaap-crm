@@ -184,3 +184,13 @@
 @media (max-width: 480px) {
   .search-wide { max-width: none; }
 }
+.member-presence {
+  display: inline-block;
+  inline-size: .55rem;
+  block-size: .55rem;
+  margin-inline-end: .35rem;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+.member-presence.is-online { background: var(--success); }
+.member-presence.is-away { background: var(--warning); }

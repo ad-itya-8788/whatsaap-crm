@@ -413,6 +413,72 @@
   }
 }
 
+@media (min-width: 768px) and (max-width: 1365px) {
+  .app-shell.is-dashboard .app-sidebar {
+    width: 40px;
+    transform: translateX(0);
+    transition: none;
+  }
+
+  .app-shell.is-dashboard .sidebar-brand {
+    height: 48px;
+    flex-basis: 48px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .app-shell.is-dashboard .sidebar-brand a {
+    display: flex;
+    flex: 0 0 auto;
+  }
+
+  .app-shell.is-dashboard .sidebar-logo {
+    width: 24px;
+  }
+
+  .app-shell.is-dashboard .sidebar-close,
+  .app-shell.is-dashboard .sidebar-backdrop,
+  .app-shell.is-dashboard .sidebar-link-label,
+  .app-shell.is-dashboard .nav-count,
+  .app-shell.is-dashboard .sidebar-user-text,
+  .app-shell.is-dashboard .sidebar-user > svg {
+    display: none;
+  }
+
+  .app-shell.is-dashboard .sidebar-nav {
+    padding: 12px 4px;
+  }
+
+  .app-shell.is-dashboard .sidebar-link {
+    justify-content: center;
+    gap: 0;
+    padding: 10px 0;
+  }
+
+  .app-shell.is-dashboard .sidebar-section + .sidebar-section-divider {
+    margin: 12px 2px;
+  }
+
+  .app-shell.is-dashboard .sidebar-footer {
+    padding: 8px 4px;
+  }
+
+  .app-shell.is-dashboard .sidebar-user {
+    width: 32px;
+    height: 40px;
+    padding: 4px 0;
+  }
+
+  .app-shell.is-dashboard .topbar-menu-btn {
+    display: none;
+  }
+
+  .app-shell.is-dashboard .app-main {
+    width: calc(100% - 40px);
+    margin-left: 40px;
+  }
+}
+
 @media (max-width: 767px) {
   .chats-shell {
     height: calc(100vh - var(--topbar-h) - 24px);

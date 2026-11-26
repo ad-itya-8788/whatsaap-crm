@@ -12,33 +12,31 @@ use App\Models\Tag;
 use App\Models\User;
 use App\Models\WhatsappConfig;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class DashboardService
 {
-    public function overview(int $days = 30): array
+    public function overview(int $days = 7): array
     {
         [$from, $to, $previousFrom, $previousTo] = $this->range($days);
+        $target = $this->replyTargetMinutes();
+        $attention = $this->attentionSummary(10, $target);
+        $volume = $this->volumeRows($from, $to);
 
-        $newConversations = Conversation::query()->whereBetween('created_at', [$from, $to])->count();
         $previousConversations = Conversation::query()->whereBetween('created_at', [$previousFrom, $previousTo])->count();
-
-        $resolved = Conversation::query()->whereBetween('closed_at', [$from, $to])->count();
         $previousResolved = Conversation::query()->whereBetween('closed_at', [$previousFrom, $previousTo])->count();
 
         $outbound = Message::query()
             ->where('sender_type', 'agent')
-            ->whereBetween('created_at', [$from, $to])
-            ->selectRaw("COUNT(*) as total,
-                COALESCE(SUM(CASE WHEN status IN ('delivered', 'read') THEN 1 ELSE 0 END), 0) as delivered,
-                COALESCE(SUM(CASE WHEN status = 'read' THEN 1 ELSE 0 END), 0) as read_count,
-                COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed")
-            ->first();
-
-        $previousOutbound = Message::query()
-            ->where('sender_type', 'agent')
-            ->whereBetween('created_at', [$previousFrom, $previousTo])
-            ->selectRaw("COALESCE(SUM(CASE WHEN status IN ('delivered', 'read') THEN 1 ELSE 0 END), 0) as delivered,
-                COALESCE(SUM(CASE WHEN status = 'read' THEN 1 ELSE 0 END), 0) as read_count")
+            ->whereBetween('created_at', [$previousFrom, $to])
+            ->selectRaw("SUM(CASE WHEN created_at >= ? AND status IN ('delivered', 'read') THEN 1 ELSE 0 END) as delivered,
+                SUM(CASE WHEN created_at >= ? AND status = 'read' THEN 1 ELSE 0 END) as read_count,
+                SUM(CASE WHEN created_at >= ? AND status = 'failed' THEN 1 ELSE 0 END) as failed,
+                SUM(CASE WHEN created_at <= ? AND status IN ('delivered', 'read') THEN 1 ELSE 0 END) as previous_delivered,
+                SUM(CASE WHEN created_at <= ? AND status = 'read' THEN 1 ELSE 0 END) as previous_read_count",
+                [$from, $from, $from, $previousTo, $previousTo])
             ->first();
 
         $median = $this->medianReplyMinutes($from, $to);
@@ -48,14 +46,14 @@ class DashboardService
             'days' => $days,
             'generated_at' => now()->toIso8601String(),
             'kpis' => [
-                'newConversations' => $newConversations,
+                'newConversations' => array_sum(array_column($volume, 'newConversations')),
                 'newConversationsPrevious' => $previousConversations,
-                'resolved' => $resolved,
+                'resolved' => array_sum(array_column($volume, 'resolved')),
                 'resolvedPrevious' => $previousResolved,
                 'broadcastDelivered' => (int) $outbound->delivered,
                 'broadcastRead' => (int) $outbound->read_count,
-                'broadcastDeliveredPrevious' => (int) $previousOutbound->delivered,
-                'broadcastReadPrevious' => (int) $previousOutbound->read_count,
+                'broadcastDeliveredPrevious' => (int) $outbound->previous_delivered,
+                'broadcastReadPrevious' => (int) $outbound->previous_read_count,
                 'failedMessages' => (int) $outbound->failed,
             ],
             'replies' => [
@@ -63,62 +61,106 @@ class DashboardService
                 'medianHumanPrevious' => $previousMedian,
                 'team' => $this->team(),
             ],
-            'volume' => ['series' => $this->volumeRows($from, $to)],
+            'volume' => ['series' => $volume],
             'setup' => $this->setup(),
-            'replyTargetMinutes' => 15,
-            'attention' => $this->attention(),
+            'replyTargetMinutes' => $target,
+            'attention' => $attention,
+            'queue' => $attention['queue'],
         ];
     }
 
     public function attention(int $limit = 10): array
     {
-        return Conversation::query()
-            ->with(['contact:id,name,phone,consent_status', 'assignedAgent:id,name'])
-            ->whereIn('status', ['open', 'pending'])
-            ->where(function ($query) {
-                $query->where('unread_count', '>', 0)
-                    ->orWhere(function ($inner) {
-                        $inner->whereNotNull('last_inbound_at')
-                            ->where(function ($older) {
-                                $older->whereNull('last_reply_at')
-                                    ->orWhereColumn('last_inbound_at', '>', 'last_reply_at');
-                            });
-                    });
-            })
-            ->orderByDesc('last_message_at')
-            ->limit($limit)
-            ->get()
-            ->map(function (Conversation $conversation) {
-                $waiting = $conversation->last_inbound_at
-                    ? $conversation->last_inbound_at->diffInMinutes(now())
-                    : null;
+        return $this->attentionSummary($limit, $this->replyTargetMinutes());
+    }
 
+    private function attentionSummary(int $limit, int $target): array
+    {
+        $now = now();
+        $waitingQuery = Conversation::query()
+            ->whereIn('status', ['open', 'pending'])
+            ->whereNotNull('last_inbound_at')
+            ->where(function ($inner) {
+                $inner->whereNull('last_reply_at')
+                    ->orWhereColumn('last_reply_at', '<', 'last_inbound_at');
+            });
+
+        $waiting = (clone $waitingQuery)
+            ->selectRaw('COUNT(*) as total,
+                SUM(CASE WHEN last_inbound_at <= ? THEN 1 ELSE 0 END) as over_target,
+                SUM(CASE WHEN last_inbound_at BETWEEN ? AND ? THEN 1 ELSE 0 END) as windows_closing',
+                [$now->copy()->subMinutes($target), $now->copy()->subDay(), $now->copy()->subHours(22)])
+            ->first();
+        $unassigned = Conversation::query()
+            ->where('status', 'open')
+            ->whereNull('assigned_agent_id')
+            ->count();
+
+        $queue = (clone $waitingQuery)
+            ->with('contact:id,name,phone')
+            ->orderBy('last_inbound_at')
+            ->limit($limit)
+            ->get(['id', 'contact_id', 'assigned_agent_id', 'last_message_text', 'last_inbound_at', 'unread_count'])
+            ->map(function (Conversation $conversation) use ($now) {
                 return [
-                    'id' => $conversation->id,
-                    'contact' => $conversation->contact ? [
-                        'id' => $conversation->contact->id,
-                        'name' => $conversation->contact->name,
-                        'phone' => $conversation->contact->phone,
-                        'consent_status' => $conversation->contact->consent_status,
-                    ] : null,
-                    'status' => $conversation->status,
-                    'unread' => (int) $conversation->unread_count,
-                    'assignee' => $conversation->assignedAgent?->name,
+                    'conversationId' => $conversation->id,
+                    'contactName' => $conversation->contact?->name,
+                    'contactPhone' => $conversation->contact?->phone,
                     'preview' => $conversation->last_message_text,
-                    'lastInboundAt' => $conversation->last_inbound_at?->toIso8601String(),
-                    'waitingMinutes' => $waiting,
+                    'waitingSince' => $conversation->last_inbound_at?->toIso8601String(),
+                    'windowClosesAt' => $conversation->last_inbound_at?->copy()->addDay()->toIso8601String(),
+                    'assignedAgentId' => $conversation->assigned_agent_id,
+                    'handedOff' => $conversation->assigned_agent_id !== null,
+                    'unread' => (int) $conversation->unread_count,
+                    'waitingMinutes' => $conversation->last_inbound_at?->diffInMinutes($now),
                 ];
             })
             ->all();
+
+        $failedQuery = Message::query()
+            ->where('status', 'failed')
+            ->where('created_at', '>=', $now->copy()->subDay());
+        $failed = (clone $failedQuery)->count();
+        $failedMessages = (clone $failedQuery)
+            ->with(['conversation:id,contact_id', 'conversation.contact:id,name,phone'])
+            ->latest()
+            ->limit(10)
+            ->get(['id', 'conversation_id', 'content_text', 'template_name', 'error_code', 'error_title', 'created_at'])
+            ->map(function (Message $message) {
+                $contact = $message->conversation?->contact;
+
+                return [
+                    'id' => $message->id,
+                    'conversationId' => $message->conversation_id,
+                    'contactName' => $contact?->name,
+                    'contactPhone' => $contact?->phone,
+                    'preview' => $message->content_text ?: $message->template_name,
+                    'errorCode' => $message->error_code !== null ? (int) $message->error_code : null,
+                    'errorTitle' => $message->error_title,
+                    'at' => $message->created_at?->toIso8601String(),
+                ];
+            })
+            ->all();
+
+        return [
+            'waiting' => (int) $waiting->total,
+            'oldestWaitingSince' => $queue[0]['waitingSince'] ?? null,
+            'waitingOverTarget' => (int) $waiting->over_target,
+            'unassigned' => $unassigned,
+            'windowsClosing' => (int) $waiting->windows_closing,
+            'failed' => $failed,
+            'failedMessages' => $failedMessages,
+            'queue' => $queue,
+        ];
     }
 
     public function activity(int $limit = 50): array
     {
         return Message::query()
-            ->with(['conversation.contact:id,name,phone'])
+            ->with(['conversation:id,contact_id', 'conversation.contact:id,name,phone'])
             ->latest()
             ->limit($limit)
-            ->get()
+            ->get(['id', 'conversation_id', 'sender_type', 'status', 'content_text', 'template_name', 'media_type', 'provider_timestamp', 'created_at'])
             ->map(function (Message $message) {
                 $contact = $message->conversation?->contact;
 
@@ -135,7 +177,7 @@ class DashboardService
             ->all();
     }
 
-    public function campaigns(int $days = 30): array
+    public function campaigns(int $days = 7): array
     {
         [$from, $to] = $this->range($days);
 
@@ -149,11 +191,11 @@ class DashboardService
             ->first();
 
         $failures = Message::query()
-            ->with(['conversation.contact:id,name,phone'])
+            ->with(['conversation:id,contact_id', 'conversation.contact:id,name,phone'])
             ->where('status', 'failed')
             ->latest()
             ->limit(10)
-            ->get()
+            ->get(['id', 'conversation_id', 'error_code', 'error_title', 'created_at'])
             ->map(function (Message $message) {
                 return [
                     'id' => $message->id,
@@ -234,11 +276,28 @@ class DashboardService
         ];
     }
 
-    public function volume(int $days = 30): array
+    public function volume(int $days = 7): array
     {
         [$from, $to] = $this->range($days);
 
         return $this->volumeRows($from, $to);
+    }
+
+    public function hourlyVolume(int $days = 7): array
+    {
+        [$from, $to] = $this->range($days);
+        $messages = $this->messageVolumeBy($from, $to, 'SUBSTR(created_at, 12, 2)');
+        $hours = [];
+        for ($hour = 0; $hour < 24; $hour++) {
+            $row = $messages->get(sprintf('%02d', $hour));
+            $hours[] = [
+                'hour' => $hour,
+                'inbound' => (int) ($row->inbound ?? 0),
+                'outbound' => (int) ($row->outbound ?? 0),
+            ];
+        }
+
+        return $hours;
     }
 
     private function volumeRows(Carbon $from, Carbon $to): array
@@ -255,15 +314,7 @@ class DashboardService
             ->groupByRaw('DATE(closed_at)')
             ->pluck('total', 'day');
 
-        $messages = Message::query()
-            ->whereBetween('created_at', [$from, $to])
-            ->selectRaw("DATE(created_at) as day,
-                COALESCE(SUM(CASE WHEN sender_type = 'customer' THEN 1 ELSE 0 END), 0) as inbound,
-                COALESCE(SUM(CASE WHEN sender_type IN ('agent', 'bot') THEN 1 ELSE 0 END), 0) as outbound,
-                COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed")
-            ->groupByRaw('DATE(created_at)')
-            ->get()
-            ->keyBy('day');
+        $messages = $this->messageVolumeBy($from, $to, 'DATE(created_at)');
 
         $series = [];
         for ($day = $from->copy()->startOfDay(); $day->lte($to); $day->addDay()) {
@@ -281,6 +332,19 @@ class DashboardService
         }
 
         return $series;
+    }
+
+    private function messageVolumeBy(Carbon $from, Carbon $to, string $periodExpression): Collection
+    {
+        return Message::query()
+            ->whereBetween('created_at', [$from, $to])
+            ->selectRaw("{$periodExpression} as period,
+                SUM(CASE WHEN sender_type = 'customer' THEN 1 ELSE 0 END) as inbound,
+                SUM(CASE WHEN sender_type IN ('agent', 'bot') THEN 1 ELSE 0 END) as outbound,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed")
+            ->groupByRaw($periodExpression)
+            ->get()
+            ->keyBy('period');
     }
 
     private function medianReplyMinutes(Carbon $from, Carbon $to): ?float
@@ -304,6 +368,24 @@ class DashboardService
         return $minutes->count() % 2 === 1
             ? (float) $minutes[$middle]
             : round(($minutes[$middle - 1] + $minutes[$middle]) / 2, 1);
+    }
+
+    private function replyTargetMinutes(): int
+    {
+        if (!Schema::hasTable('crm_settings')) {
+            return 15;
+        }
+
+        $value = DB::table('crm_settings')->where('key', 'reply_target_minutes')->value('value');
+
+        if (!is_string($value)) {
+            return 15;
+        }
+
+        $decoded = json_decode($value, true);
+        $minutes = is_int($decoded) || is_float($decoded) ? $decoded : (is_numeric($value) ? $value : 15);
+
+        return max(1, min(1440, (int) $minutes));
     }
 
     private function range(int $days): array

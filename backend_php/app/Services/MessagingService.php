@@ -6,6 +6,7 @@ use App\Exceptions\MessagingException;
 use App\Exceptions\MetaApiException;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\MessageTemplate;
 use App\Models\WhatsappConfig;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
@@ -19,6 +20,7 @@ class MessagingService
     public function __construct(
         private MetaCloudApiService $meta,
         private MessageStatusService $statuses,
+        private TemplateSendBuilder $templateBuilder,
     ) {}
 
     public function send(Conversation $conversation, array $data, ?int $senderId): Message
@@ -34,10 +36,11 @@ class MessagingService
         }
 
         $type = $data['content_type'] ?? 'text';
-        $senderType = in_array($data['sender_type'] ?? 'agent', ['agent', 'bot', 'system'], true)
-            ? $data['sender_type']
-            : 'agent';
-        $file = $data['file'] ?? $data['header_media_file'] ?? null;
+        $senderType = $data['sender_type'] ?? 'agent';
+        if (! in_array($senderType, ['agent', 'bot', 'system'], true)) {
+            $senderType = 'agent';
+        }
+        $file = $data['file'] ?? $data['header_file'] ?? $data['header_media_file'] ?? null;
         $fileHash = $file instanceof UploadedFile ? hash_file('sha256', $file->getRealPath()) : null;
         $idempotencyKey = $data['idempotency_key'] ?? null;
         $replyTo = null;
@@ -58,8 +61,11 @@ class MessagingService
             'content_type' => $type,
             'content_text' => $data['content_text'] ?? null,
             'template_name' => $data['template_name'] ?? null,
+            'template_params' => $data['template_params'] ?? [],
             'template_language' => $data['template_language'] ?? null,
-            'template_params' => array_values($data['template_params'] ?? []),
+            'header_text' => $data['header_text'] ?? null,
+            'button_params' => $data['button_params'] ?? [],
+            'interactive_payload' => $data['interactive_payload'] ?? null,
             'media_type' => $data['header_media_type'] ?? $type,
             'file_hash' => $fileHash,
             'reply_to_message_id' => $replyTo?->id,
@@ -85,6 +91,22 @@ class MessagingService
             throw new MessagingException('This contact has no WhatsApp phone number.');
         }
 
+        $template = null;
+        if ($type === 'template') {
+            $template = MessageTemplate::query()
+                ->where('name', $data['template_name'] ?? '')
+                ->when($data['template_language'] ?? null, fn ($query, $language) => $query->where('language', $language))
+                ->first();
+            if (! $template || strtoupper((string) ($template->approval_status ?: $template->status)) !== 'APPROVED') {
+                throw new MessagingException('Choose an approved template in the requested language.', 422);
+            }
+
+            $parameters = $data['template_params'] ?? [];
+            $data['content_text'] ??= preg_replace_callback('/\{\{\s*(\d+)\s*\}\}/', function (array $match) use ($parameters) {
+                return (string) ($parameters[(int) $match[1] - 1] ?? $match[0]);
+            }, $template->body_text);
+        }
+
         if ($type !== 'template') {
             $lastInbound = $conversation->last_inbound_at;
             if (! $lastInbound || $lastInbound->lt(now()->subHours(24))) {
@@ -93,12 +115,12 @@ class MessagingService
         }
 
         try {
-            $message =                 DB::transaction(function () use ($conversation, $senderId, $senderType, $type, $data, $idempotencyKey, $idempotencyHash, $replyTo) {
-
+            $message = DB::transaction(function () use ($conversation, $senderId, $senderType, $type, $data, $idempotencyKey, $idempotencyHash, $replyTo) {
                 $message = Message::create([
                     'conversation_id' => $conversation->id,
                     'sender_type' => $senderType,
                     'sender_id' => $senderId,
+                    'ai_generated' => (bool) ($data['ai_generated'] ?? false),
                     'content_type' => $type,
                     'content_text' => $data['content_text'] ?? null,
                     'template_name' => $data['template_name'] ?? null,
@@ -107,6 +129,7 @@ class MessagingService
                     'interactive_reply_id' => $data['interactive_reply_id'] ?? null,
                     'interactive_payload' => $data['interactive_payload'] ?? null,
                     'meta' => $data['meta'] ?? null,
+                    'filename' => $data['filename'] ?? null,
                     'idempotency_key' => $idempotencyKey,
                     'idempotency_hash' => $idempotencyKey ? $idempotencyHash : null,
                 ]);
@@ -133,7 +156,7 @@ class MessagingService
 
         try {
             $mediaId = null;
-            $mediaType = $data['header_media_type'] ?? $type;
+            $mediaType = $data['header_media_type'] ?? strtolower($template?->header_type ?? $type);
             if ($file instanceof UploadedFile) {
                 $mediaId = $this->meta->uploadMessageMedia($config, $file);
                 $message->update([
@@ -145,17 +168,40 @@ class MessagingService
 
             if (is_array($data['payload'] ?? null)) {
                 $payload = $data['payload'];
+            } elseif ($type === 'interactive') {
+                $interactive = $data['interactive_payload'];
+                $payload = ($interactive['kind'] ?? '') === 'list'
+                    ? $this->meta->listPayload(
+                        (string) $data['content_text'],
+                        (string) ($interactive['button_label'] ?? 'View options'),
+                        (array) ($interactive['sections'] ?? []),
+                        $interactive['header'] ?? null,
+                        $interactive['footer'] ?? null,
+                    )
+                    : $this->meta->buttonsPayload(
+                        (string) $data['content_text'],
+                        (array) ($interactive['buttons'] ?? []),
+                        $interactive['header'] ?? null,
+                        $interactive['footer'] ?? null,
+                    );
             } elseif ($type === 'template') {
                 $headerMedia = $mediaId ? [
                     'id' => $mediaId,
+                    'url' => null,
                     'type' => $mediaType,
                     'filename' => $file->getClientOriginalName(),
                 ] : null;
+                $components = $this->templateBuilder->components($template, [
+                    'body' => $data['template_params'] ?? [],
+                    'header_text' => $data['header_text'] ?? null,
+                    'button_params' => $data['button_params'] ?? [],
+                ], $headerMedia);
                 $payload = $this->meta->templatePayload(
-                    $data['template_name'],
-                    $data['template_language'] ?? 'en_US',
-                    $data['template_params'] ?? [],
-                    $headerMedia,
+                    $template->name,
+                    $data['template_language'] ?? $template->language ?? 'en_US',
+                    [],
+                    null,
+                    $components,
                 );
             } elseif ($mediaId) {
                 $payload = $this->meta->messageMediaPayload(

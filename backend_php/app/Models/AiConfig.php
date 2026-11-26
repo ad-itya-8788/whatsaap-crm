@@ -16,11 +16,18 @@ class AiConfig extends Model
         'embeddings_api_key',
         'system_prompt',
         'is_active',
+        'auto_reply_enabled',
+        'auto_reply_max_per_conversation',
+        'handoff_agent_id',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'auto_reply_enabled' => 'boolean',
+        'auto_reply_max_per_conversation' => 'integer',
     ];
+
+    protected $hidden = ['api_key', 'embeddings_api_key'];
 
     public function editor(): BelongsTo
     {

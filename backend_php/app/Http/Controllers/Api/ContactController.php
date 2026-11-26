@@ -8,7 +8,6 @@ use App\Models\Contact;
 use App\Models\ConsentEvent;
 use App\Models\CustomField;
 use App\Models\Tag;
-use App\Services\AutomationEngine;
 use App\Services\ConsentService;
 use App\Support\Phone;
 use Illuminate\Http\JsonResponse;
@@ -117,17 +116,32 @@ class ContactController extends Controller
             $contact->tags()->sync($tagIds);
         }
 
-        app(AutomationEngine::class)->dispatch('new_contact_created', [
-            'contact_id' => $contact->id,
-            'contact_created' => true,
-        ]);
-
         return response()->json($this->contactPayload($contact), 201);
     }
 
     public function show(Contact $contact): JsonResponse
     {
         return response()->json($this->contactPayload($contact));
+    }
+
+    public function notes(Contact $contact): JsonResponse
+    {
+        return response()->json($contact->notes()->with('user:id,name')->latest()->get());
+    }
+
+    public function storeNote(Request $request, Contact $contact): JsonResponse
+    {
+        $data = $request->validate(['body' => ['required', 'string', 'max:5000']]);
+        $note = $contact->notes()->create($data + ['user_id' => $request->user()->id]);
+
+        return response()->json($note->load('user:id,name'), 201);
+    }
+
+    public function destroyNote(Contact $contact, int $note): Response
+    {
+        $contact->notes()->findOrFail($note)->delete();
+
+        return response()->noContent();
     }
 
     public function update(ContactRequest $request, Contact $contact): JsonResponse
@@ -178,17 +192,7 @@ class ContactController extends Controller
             'tags.*' => ['integer', 'exists:tags,id'],
         ]);
 
-        $before = $contact->tags()->pluck('tags.id')->all();
         $contact->tags()->sync($data['tags']);
-        $added = array_diff(array_map('intval', $data['tags']), array_map('intval', $before));
-
-        foreach ($added as $tagId) {
-            app(AutomationEngine::class)->dispatch('tag_added', [
-                'contact_id' => $contact->id,
-                'conversation_id' => $contact->conversations()->value('id'),
-                'tag_id' => $tagId,
-            ]);
-        }
 
         return response()->json(['tags' => $contact->load('tags')->tags]);
     }

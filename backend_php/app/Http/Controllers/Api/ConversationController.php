@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Services\AutomationEngine;
 use App\Models\Conversation;
 use App\Models\Notification;
 use App\Models\User;
@@ -17,7 +16,7 @@ class ConversationController extends Controller
         $perPage = min(max($request->integer('per_page', 50), 1), 100);
         $filters = $request->validate([
             'search' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'status' => ['sometimes', 'in:all,unread,open,pending,closed'],
+            'status' => ['sometimes', 'in:all,waiting,unassigned,expiring,unread,open,pending,closed'],
             'assigned' => ['sometimes', 'string', function ($attribute, $value, $fail) {
                 if (! in_array($value, ['all', 'me', 'unassigned'], true) && ! ctype_digit((string) $value)) {
                     $fail('The selected assigned filter is invalid.');
@@ -37,10 +36,28 @@ class ConversationController extends Controller
             });
         }
 
-        if (isset($filters['status']) && $filters['status'] === 'unread') {
+        $status = $filters['status'] ?? 'all';
+        $waitingFirst = false;
+
+        if ($status === 'unread') {
             $query->where('unread_count', '>', 0);
-        } elseif (isset($filters['status']) && $filters['status'] !== 'all') {
-            $query->where('status', $filters['status']);
+        } elseif ($status === 'waiting' || $status === 'expiring') {
+            $query->whereIn('status', ['open', 'pending'])
+                ->whereNotNull('last_inbound_at')
+                ->where(function ($inner) {
+                    $inner->whereNull('last_reply_at')
+                        ->orWhereColumn('last_reply_at', '<', 'last_inbound_at');
+                });
+
+            if ($status === 'expiring') {
+                $query->whereBetween('last_inbound_at', [now()->subDay(), now()->subHours(22)]);
+            }
+
+            $waitingFirst = true;
+        } elseif ($status === 'unassigned') {
+            $query->where('status', 'open')->whereNull('assigned_agent_id');
+        } elseif ($status !== 'all') {
+            $query->where('status', $status);
         }
 
         $assigned = $filters['assigned'] ?? 'all';
@@ -52,14 +69,21 @@ class ConversationController extends Controller
             $query->where('assigned_agent_id', (int) $assigned);
         }
 
-        return response()->json(
-            $query->orderByDesc('last_message_at')->orderByDesc('updated_at')->paginate($perPage)
-        );
+        $query = $waitingFirst
+            ? $query->orderBy('last_inbound_at')->orderByDesc('updated_at')
+            : $query->orderByDesc('last_message_at')->orderByDesc('updated_at');
+
+        return response()->json($query->paginate($perPage));
     }
 
     public function show(Conversation $conversation): JsonResponse
     {
         return response()->json($conversation->load(['contact', 'assignedAgent']));
+    }
+
+    public function unreadCount(): JsonResponse
+    {
+        return response()->json(['count' => Conversation::query()->where('unread_count', '>', 0)->count()]);
     }
 
     public function markRead(Conversation $conversation): JsonResponse
@@ -112,11 +136,6 @@ class ConversationController extends Controller
                 'data' => ['conversation_id' => $conversation->id],
             ]);
 
-            app(AutomationEngine::class)->dispatch('conversation_assigned', [
-                'contact_id' => $conversation->contact_id,
-                'conversation_id' => $conversation->id,
-                'agent_id' => (int) $data['assignee_id'],
-            ]);
         }
 
         return response()->json($conversation->load(['contact', 'assignedAgent']));

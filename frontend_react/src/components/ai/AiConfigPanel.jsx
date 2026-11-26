@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import api, { csrf } from '../../api/client.js'
 import Icon from '../common/Icon.jsx'
 import { useToast } from '../common/ToastProvider.jsx'
-import { errorMessage } from '../../lib/utils.js'
+import { errorMessage, extractList } from '../../lib/utils.js'
 
 const PROVIDERS = [
   { value: 'openai', label: 'OpenAI', model: 'gpt-4o-mini', base: 'https://api.openai.com' },
@@ -20,9 +20,22 @@ export default function AiConfigPanel({ config, onSaved, canManage }) {
     embeddings_api_key: config.embeddings_api_key || '',
     system_prompt: config.system_prompt || '',
     is_active: config.is_active !== false,
+    auto_reply_enabled: Boolean(config.auto_reply_enabled),
+    auto_reply_max_per_conversation: config.auto_reply_max_per_conversation ?? 3,
+    handoff_agent_id: config.handoff_agent_id ?? '',
   })
+  const [agents, setAgents] = useState([])
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
+
+  useEffect(() => {
+    if (!canManage) return
+    const controller = new AbortController()
+    api.get('/api/app/agents', { signal: controller.signal }).then(({ data }) => setAgents(extractList(data))).catch((error) => {
+      if (!controller.signal.aborted) toast.error(errorMessage(error, 'Unable to load handoff agents.'))
+    })
+    return () => controller.abort()
+  }, [canManage, toast])
 
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }))
   const chooseProvider = (provider) => {
@@ -116,6 +129,26 @@ export default function AiConfigPanel({ config, onSaved, canManage }) {
             <input type="checkbox" checked={form.is_active} onChange={(event) => update('is_active', event.target.checked)} disabled={!canManage} />
             <span>Enable AI features</span>
           </label>
+          <label className="check">
+            <input type="checkbox" checked={form.auto_reply_enabled} onChange={(event) => update('auto_reply_enabled', event.target.checked)} disabled={!canManage || !form.is_active} />
+            <span>Automatically reply to unassigned conversations</span>
+          </label>
+          {form.auto_reply_enabled && (
+            <>
+              <label className="field">
+                <span>Max auto-replies per conversation</span>
+                <input className="input" type="number" min="1" max="50" value={form.auto_reply_max_per_conversation}
+                  onChange={(event) => update('auto_reply_max_per_conversation', event.target.value)} disabled={!canManage} />
+              </label>
+              <label className="field">
+                <span>Handoff agent</span>
+                <select className="input" value={form.handoff_agent_id} onChange={(event) => update('handoff_agent_id', event.target.value)} disabled={!canManage}>
+                  <option value="">Leave in the shared inbox</option>
+                  {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                </select>
+              </label>
+            </>
+          )}
         </div>
         {canManage && (
           <div className="agents-card-actions">

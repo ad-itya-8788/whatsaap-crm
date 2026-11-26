@@ -38,6 +38,95 @@ class MetaCloudApiService
         return null;
     }
 
+    public function verifyWabaPhoneNumber(WhatsappConfig $config): ?string
+    {
+        $after = null;
+
+        do {
+            try {
+                $response = Http::withToken($config->access_token)
+                    ->connectTimeout(10)
+                    ->timeout(20)
+                    ->get($this->url($config->waba_id.'/phone_numbers'), array_filter([
+                        'fields' => 'id',
+                        'limit' => 100,
+                        'after' => $after,
+                    ]));
+            } catch (ConnectionException) {
+                return 'Could not reach the Meta Graph API';
+            }
+
+            if (! $response->successful()) {
+                return $this->errorMessage($response);
+            }
+
+            if (collect($response->json('data', []))->contains(
+                fn ($phone) => (string) data_get($phone, 'id') === (string) $config->phone_number_id
+            )) {
+                return null;
+            }
+
+            $next = $response->json('paging.next') ? $response->json('paging.cursors.after') : null;
+            if ($after === $next) {
+                break;
+            }
+            $after = $next;
+        } while ($after);
+
+        return 'The phone number is not listed under this WhatsApp Business Account.';
+    }
+
+    public function registerPhoneNumber(WhatsappConfig $config, string $pin): ?string
+    {
+        try {
+            $response = Http::withToken($config->access_token)
+                ->connectTimeout(10)
+                ->timeout(20)
+                ->post($this->url($config->phone_number_id.'/register'), [
+                    'messaging_product' => 'whatsapp',
+                    'pin' => $pin,
+                ]);
+        } catch (ConnectionException) {
+            return 'Could not reach the Meta Graph API';
+        }
+
+        if ($response->successful()) {
+            return null;
+        }
+
+        $error = $this->errorMessage($response);
+
+        return preg_match('/already.*registered/i', $error) ? null : $error;
+    }
+
+    public function verifyAppSubscription(WhatsappConfig $config): ?string
+    {
+        if (! $config->waba_id) {
+            return 'No WhatsApp Business Account ID is configured.';
+        }
+
+        try {
+            $response = Http::withToken($config->access_token)
+                ->connectTimeout(10)
+                ->timeout(20)
+                ->get($this->url($config->waba_id.'/subscribed_apps'));
+        } catch (ConnectionException) {
+            return 'Could not reach the Meta Graph API';
+        }
+
+        if (! $response->successful()) {
+            return $this->errorMessage($response);
+        }
+
+        $apps = collect($response->json('data', []));
+        $appId = (string) config('services.whatsapp.app_id');
+        $subscribed = $appId === ''
+            ? $apps->isNotEmpty()
+            : $apps->contains(fn ($app) => (string) data_get($app, 'whatsapp_business_api_data.id', data_get($app, 'id')) === $appId);
+
+        return $subscribed ? null : 'The Meta app is not subscribed to this WhatsApp Business Account.';
+    }
+
     public function subscribeApp(WhatsappConfig $config): ?string
     {
         if (! $config->waba_id) {
@@ -142,7 +231,7 @@ class MetaCloudApiService
         return $handle;
     }
 
-    public function downloadMessageMedia(WhatsappConfig $config, string $mediaId, string $type): array
+    public function downloadMessageMedia(WhatsappConfig $config, string $mediaId, string $type, ?int $maxBytes = null): array
     {
         try {
             $metadata = Http::withToken($config->access_token)
@@ -157,7 +246,7 @@ class MetaCloudApiService
             throw $this->metaException($metadata);
         }
 
-        $limit = WhatsappMedia::maxBytes($type);
+        $limit = min(WhatsappMedia::maxBytes($type), $maxBytes ?? PHP_INT_MAX);
         $reportedSize = $metadata->json('file_size');
         if (is_numeric($reportedSize) && (int) $reportedSize > $limit) {
             throw new \RuntimeException('This attachment exceeds the supported download size.');
@@ -253,16 +342,31 @@ class MetaCloudApiService
 
     public function fetchTemplates(WhatsappConfig $config): array
     {
-        $response = Http::withToken($config->access_token)
-            ->connectTimeout(10)
-            ->timeout(30)
-            ->get($this->url($config->waba_id.'/message_templates'), ['limit' => 200]);
+        $templates = [];
+        $after = null;
+        for ($page = 0; $page < 20; $page++) {
+            $response = Http::withToken($config->access_token)
+                ->connectTimeout(10)
+                ->timeout(30)
+                ->get($this->url($config->waba_id.'/message_templates'), array_filter([
+                    'limit' => 100,
+                    'fields' => 'id,name,language,status,category,components,quality_score',
+                    'after' => $after,
+                ]));
 
-        if (! $response->successful()) {
-            throw new \RuntimeException($this->errorMessage($response));
+            if (! $response->successful()) {
+                throw new \RuntimeException($this->errorMessage($response));
+            }
+
+            array_push($templates, ...($response->json('data') ?? []));
+            $next = $response->json('paging.next') ? $response->json('paging.cursors.after') : null;
+            if (! $next || $next === $after) {
+                break;
+            }
+            $after = $next;
         }
 
-        return $response->json('data') ?? [];
+        return $templates;
     }
 
     public function textPayload(string $body): array
@@ -352,7 +456,7 @@ class MetaCloudApiService
         ];
     }
 
-    public function templatePayload(string $name, string $language, array $variables, ?array $headerMedia = null): array
+    public function templatePayload(string $name, string $language, array $variables, ?array $headerMedia = null, ?array $sendComponents = null): array
     {
         $payload = [
             'type' => 'template',
@@ -361,6 +465,14 @@ class MetaCloudApiService
                 'language' => ['code' => $language],
             ],
         ];
+
+        if ($sendComponents !== null) {
+            if ($sendComponents) {
+                $payload['template']['components'] = $sendComponents;
+            }
+
+            return $payload;
+        }
 
         $components = [];
         if ($headerMedia) {

@@ -4,6 +4,9 @@ import { relativeTime } from '../../lib/utils.js'
 
 const statusTabs = [
   { value: 'all', label: 'All' },
+  { value: 'waiting', label: 'Waiting' },
+  { value: 'unassigned', label: 'Unassigned' },
+  { value: 'expiring', label: 'Expiring' },
   { value: 'unread', label: 'Unread' },
   { value: 'open', label: 'Open' },
   { value: 'pending', label: 'Pending' },

@@ -6,11 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\MessageReaction;
 use App\Models\WhatsappConfig;
-use App\Services\AutomationEngine;
+use App\Services\AiAutoReplyService;
 use App\Services\ConsentService;
-use App\Services\FlowEngine;
+use App\Services\InboundMediaMirror;
 use App\Services\MessageStatusService;
+use App\Services\TemplateLifecycleService;
 use App\Support\Phone;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
@@ -21,13 +23,16 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
+use function Illuminate\Support\defer;
+
 class WhatsappWebhookController extends Controller
 {
     public function __construct(
         private MessageStatusService $statuses,
         private ConsentService $consent,
-        private FlowEngine $flows,
-        private AutomationEngine $automations,
+        private InboundMediaMirror $mediaMirror,
+        private AiAutoReplyService $aiAutoReply,
+        private TemplateLifecycleService $templates,
     ) {}
 
     public function verify(Request $request): JsonResponse|Response
@@ -58,10 +63,27 @@ class WhatsappWebhookController extends Controller
             return response()->json(['error' => 'Invalid webhook signature'], 403);
         }
 
+        $config = WhatsappConfig::query()->latest('id')->first();
+        if (! $config || $config->status !== 'connected') {
+            return response()->json(['ok' => true]);
+        }
+
         try {
             foreach (($request->input('entry') ?? []) as $entry) {
                 foreach (($entry['changes'] ?? []) as $change) {
                     $value = $change['value'] ?? [];
+                    $field = $change['field'] ?? '';
+                    if (in_array($field, TemplateLifecycleService::WEBHOOK_FIELDS, true)) {
+                        if ($config->waba_id && (string) ($entry['id'] ?? '') === (string) $config->waba_id) {
+                            $this->templates->syncFromWebhook($config, $field, $value);
+                        }
+
+                        continue;
+                    }
+
+                    if ((string) data_get($value, 'metadata.phone_number_id') !== (string) $config->phone_number_id) {
+                        continue;
+                    }
 
                     foreach (($value['statuses'] ?? []) as $statusData) {
                         $wamid = $statusData['id'] ?? null;
@@ -81,7 +103,7 @@ class WhatsappWebhookController extends Controller
                         $this->ingestInbound(
                             $messageData,
                             $contacts->get($messageData['from'] ?? ''),
-                            $value['metadata']['phone_number_id'] ?? null,
+                            $config,
                         );
                     }
                 }
@@ -95,10 +117,61 @@ class WhatsappWebhookController extends Controller
         return response()->json(['ok' => true]);
     }
 
-    private function ingestInbound(array $data, $metaContact = null, $phoneNumberId = null): void
+    private function ingestReaction(array $data): void
+    {
+        $from = $data['from'] ?? null;
+        $normalized = Phone::normalize($from);
+        $targetId = data_get($data, 'reaction.message_id');
+        $emoji = trim((string) (data_get($data, 'reaction.emoji') ?? ''));
+
+        $contact = Contact::where('phone_normalized', $normalized)->first()
+            ?: ($from ? Contact::where('wa_user_id', $from)->first() : null);
+        if (! $contact || ! $targetId) {
+            return;
+        }
+
+        $message = Message::query()
+            ->where('message_id', $targetId)
+            ->whereHas('conversation', fn ($query) => $query->where('contact_id', $contact->id))
+            ->first();
+        if (! $message) {
+            return;
+        }
+
+        $query = MessageReaction::query()
+            ->where('message_id', $message->id)
+            ->where('actor_type', 'customer')
+            ->where('actor_id', $contact->id);
+
+        if ($emoji === '') {
+            $query->delete();
+
+            return;
+        }
+
+        MessageReaction::query()->updateOrCreate(
+            [
+                'message_id' => $message->id,
+                'actor_type' => 'customer',
+                'actor_id' => $contact->id,
+            ],
+            [
+                'conversation_id' => $message->conversation_id,
+                'emoji' => $emoji,
+            ],
+        );
+    }
+
+    private function ingestInbound(array $data, ?array $metaContact, WhatsappConfig $config): void
     {
         $wamid = $data['id'] ?? null;
         if ($wamid && Message::where('message_id', $wamid)->exists()) {
+            return;
+        }
+
+        if (($data['type'] ?? null) === 'reaction') {
+            $this->ingestReaction($data);
+
             return;
         }
 
@@ -111,12 +184,8 @@ class WhatsappWebhookController extends Controller
             ? Carbon::createFromTimestamp((int) $data['timestamp'])
             : now();
 
-        $created = null;
-        $contactCreated = false;
-        $firstInbound = false;
-
         try {
-            DB::transaction(function () use ($wamid, $from, $normalized, $name, $data, $type, $text, $media, $replyId, $phoneNumberId, $inboundAt, &$created, &$contactCreated, &$firstInbound) {
+            $message = DB::transaction(function () use ($wamid, $from, $normalized, $name, $data, $type, $text, $media, $replyId, $config, $inboundAt): ?Message {
                 $contact = Contact::where('phone_normalized', $normalized)->first()
                     ?: ($from ? Contact::where('wa_user_id', $from)->first() : null);
 
@@ -127,30 +196,22 @@ class WhatsappWebhookController extends Controller
                         'name' => $name ?: $from,
                         'wa_user_id' => $from,
                     ]);
-                    $contactCreated = true;
                 } elseif ($contact && $name && ! $contact->name) {
                     $contact->update(['name' => $name]);
                 }
 
                 if (! $contact) {
-                    return;
+                    return null;
                 }
 
                 if ($this->isOptOutKeyword($text) && $contact->consent_status !== 'opted_out') {
                     $this->consent->change($contact, 'opted_out', 'whatsapp_keyword');
                 }
 
-                $conversation = Conversation::firstOrCreate(
-                    ['contact_id' => $contact->id],
-                    ['status' => 'open'],
-                );
+                $conversation = Conversation::firstOrCreate(['contact_id' => $contact->id], ['status' => 'open']);
                 $conversation = Conversation::query()->lockForUpdate()->findOrFail($conversation->id);
-                $firstInbound = ! Message::query()
-                    ->where('conversation_id', $conversation->id)
-                    ->where('sender_type', 'customer')
-                    ->exists();
 
-                $created = Message::create([
+                $message = Message::create([
                     'conversation_id' => $conversation->id,
                     'sender_type' => 'customer',
                     'content_type' => $type,
@@ -163,7 +224,7 @@ class WhatsappWebhookController extends Controller
                     'provider_timestamp' => $inboundAt,
                     'interactive_reply_id' => $replyId,
                     'interactive_payload' => $data['interactive'] ?? null,
-                    'meta' => array_merge($data, $phoneNumberId ? ['phone_number_id' => $phoneNumberId] : []),
+                    'meta' => array_merge($data, ['phone_number_id' => $config->phone_number_id]),
                 ]);
 
                 $conversation->increment('unread_count');
@@ -183,44 +244,23 @@ class WhatsappWebhookController extends Controller
                 }
 
                 $conversation->update($updates);
+
+                return $message;
             });
         } catch (QueryException $e) {
             if (! $wamid || ! Message::where('message_id', $wamid)->exists()) {
                 throw $e;
             }
-        }
 
-        if (! $created) {
             return;
         }
 
-        $created->load('conversation.contact');
-        $contact = $created->conversation?->contact;
-        $event = [
-            'contact_id' => $contact?->id,
-            'conversation_id' => $created->conversation_id,
-            'message_id' => $created->id,
-            'text' => $text,
-            'interactive_reply_id' => $replyId,
-            'first_inbound' => $firstInbound,
-            'contact_created' => $contactCreated,
-        ];
+        if ($message && $text) {
+            defer(fn () => $this->aiAutoReply->dispatch($message))->always();
+        }
 
-        try {
-            $event['flow_consumed'] = $this->flows->dispatchInbound($created);
-
-            if (! $event['flow_consumed'] && $contact && $created->conversation) {
-                $this->automations->resumeAwaitingReply($contact, $created->conversation, $created);
-            }
-
-            foreach (['new_contact_created', 'first_inbound_message', 'new_message_received', 'keyword_match', 'interactive_reply'] as $trigger) {
-                $this->automations->dispatch($trigger, $event);
-            }
-        } catch (\Throwable $exception) {
-            Log::error('whatsapp.automation.dispatch.failed', [
-                'message_id' => $created->id,
-                'error' => $exception->getMessage(),
-            ]);
+        if ($message && $media && $config->mirror_inbound_media !== false) {
+            defer(fn () => $this->mediaMirror->store($message, $config))->always();
         }
     }
 
