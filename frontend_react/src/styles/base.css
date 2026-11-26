@@ -61,7 +61,7 @@ body {
 
 button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
-a { color: var(--accent-dark); }
+a { color: var(--accent-ink); }
 h1, h2, h3, p { margin-top: 0; }
 
 :focus-visible {

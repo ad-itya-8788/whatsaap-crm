@@ -1,17 +1,20 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-mode="dark" data-theme="emerald">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#075e54" />
     <link rel="icon" type="image/png" href="/img/logo.png" />
     <title>Aayojan AI CRM</title>
     <script>
       (function () {
-        var mode = localStorage.getItem('wacrm.mode');
-        var theme = localStorage.getItem('wacrm.theme');
-        if (['light', 'dark'].indexOf(mode) !== -1) document.documentElement.dataset.mode = mode;
-        if (['amber', 'violet', 'emerald', 'cobalt', 'rose'].indexOf(theme) !== -1) document.documentElement.dataset.theme = theme;
+        try {
+          var mode = localStorage.getItem('wacrm.mode');
+          var theme = localStorage.getItem('wacrm.theme');
+          if (['light', 'dark'].includes(mode)) document.documentElement.dataset.mode = mode;
+          if (['amber', 'violet', 'emerald', 'cobalt', 'rose'].includes(theme)) document.documentElement.dataset.theme = theme;
+        } catch {
+          // Use the default appearance if browser storage is unavailable.
+        }
       })();
     </script>
   </head>

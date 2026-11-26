@@ -6,6 +6,7 @@ import BrandLogo from '../common/BrandLogo.jsx'
 import BrowserNotificationsListener from '../common/BrowserNotificationsListener.jsx'
 import { PresenceHeartbeat } from '../common/MemberPresence.jsx'
 import Icon from '../common/Icon.jsx'
+import { changeAppearance, useColorMode } from '../../lib/appearance.js'
 
 const mainNav = [
   { to: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
@@ -39,27 +40,6 @@ function pageTitle(pathname) {
   if (exact) return exact[1]
   const prefix = pageTitles.find(([path]) => pathname.startsWith(path))
   return prefix ? prefix[1] : 'Dashboard'
-}
-
-function useThemeMode() {
-  const [mode, setMode] = useState(() => localStorage.getItem('wacrm.mode') || 'light')
-
-  useEffect(() => {
-    document.documentElement.dataset.mode = mode
-    document.documentElement.dataset.theme = localStorage.getItem('wacrm.theme') || 'amber'
-    localStorage.setItem('wacrm.mode', mode)
-  }, [mode])
-
-  useEffect(() => {
-    const syncAppearance = (event) => {
-      const nextMode = event.detail?.mode
-      if (nextMode === 'light' || nextMode === 'dark') setMode(nextMode)
-    }
-    window.addEventListener('wacrm:theme-changed', syncAppearance)
-    return () => window.removeEventListener('wacrm:theme-changed', syncAppearance)
-  }, [])
-
-  return [mode, setMode]
 }
 
 function AccountAvatar({ user }) {
@@ -101,7 +81,7 @@ export default function AppLayout() {
   const [footerMenuOpen, setFooterMenuOpen] = useState(false)
   const [unread, setUnread] = useState(0)
   const [notificationUnread, setNotificationUnread] = useState(0)
-  const [mode, setMode] = useThemeMode()
+  const mode = useColorMode()
 
   const loadUnread = useCallback(async () => {
     try {
@@ -272,7 +252,7 @@ export default function AppLayout() {
             <button
               type="button"
               className="mode-toggle"
-              onClick={() => setMode((current) => (current === 'dark' ? 'light' : 'dark'))}
+              onClick={() => changeAppearance({ mode: mode === 'dark' ? 'light' : 'dark' })}
               aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               title={mode === 'dark' ? 'Light mode' : 'Dark mode'}
             >
@@ -298,7 +278,7 @@ export default function AppLayout() {
         <BrowserNotificationsListener />
         <PresenceHeartbeat userId={user?.id} />
         <main className="app-content">
-          <Suspense fallback={<div className="app-loading app-content-loading"><span className="spinner" /> Loading...</div>}>
+          <Suspense fallback={<div className="app-loading app-content-loading" role="status"><span className="spinner" /> Loading...</div>}>
             <Outlet />
           </Suspense>
         </main>

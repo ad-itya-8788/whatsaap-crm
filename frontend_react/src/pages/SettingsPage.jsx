@@ -8,14 +8,15 @@ import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import ApiKeysPanel from '../components/settings/ApiKeysPanel.jsx'
+import { changeAppearance, useAccentTheme, useColorMode } from '../lib/appearance.js'
 import { errorMessage, extractList, isAdmin, relativeTime } from '../lib/utils.js'
 
 const blankConfig = { waba_id: '', phone_number_id: '', access_token: '', verify_token: '', pin: '' }
 
 const THEMES = [
+  { id: 'emerald', name: 'Emerald', tagline: 'Default green.', swatch: '#22c55e' },
   { id: 'amber', name: 'Gold', tagline: "Aayojan AI's gold accent.", swatch: 'oklch(0.745 0.16 65)' },
   { id: 'violet', name: 'Violet', tagline: 'Confident and playful.', swatch: 'oklch(0.526 0.247 293)' },
-  { id: 'emerald', name: 'Emerald', tagline: 'Growth-oriented green.', swatch: 'oklch(0.62 0.16 162)' },
   { id: 'cobalt', name: 'Cobalt', tagline: 'Clean B2B blue.', swatch: 'oklch(0.585 0.2 254)' },
   { id: 'rose', name: 'Rose', tagline: 'Bold and modern.', swatch: 'oklch(0.645 0.22 16)' },
 ]
@@ -387,8 +388,8 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [confirmDisconnect, setConfirmDisconnect] = useState(false)
-  const [mode, setMode] = useState(() => localStorage.getItem('wacrm.mode') || 'light')
-  const [theme, setTheme] = useState(() => localStorage.getItem('wacrm.theme') || 'amber')
+  const mode = useColorMode()
+  const theme = useAccentTheme()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -416,7 +417,9 @@ export default function SettingsPage() {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (tab === 'whatsapp') load()
+  }, [load, tab])
 
   const save = async (event) => {
     event.preventDefault()
@@ -500,18 +503,6 @@ export default function SettingsPage() {
     }
   }
 
-  const changeAppearance = (next = {}) => {
-    const nextMode = next.mode || mode
-    const nextTheme = next.theme || theme
-    setMode(nextMode)
-    setTheme(nextTheme)
-    document.documentElement.dataset.mode = nextMode
-    document.documentElement.dataset.theme = nextTheme
-    localStorage.setItem('wacrm.mode', nextMode)
-    localStorage.setItem('wacrm.theme', nextTheme)
-    window.dispatchEvent(new CustomEvent('wacrm:theme-changed', { detail: { mode: nextMode, theme: nextTheme } }))
-  }
-
   const connected = ['connected', 'ok', 'active'].includes(String(status).toLowerCase())
   const badgeTone = connectionError ? 'rejected' : connected ? 'approved' : 'pending'
 
@@ -537,10 +528,10 @@ export default function SettingsPage() {
                       <p className="field-hint">Choose how Aayojan AI CRM looks on this device.</p>
                     </div>
                     <div className="mode-switch" role="group" aria-label="Color mode">
-                      <button type="button" className={mode === 'light' ? 'is-active' : ''} onClick={() => changeAppearance({ mode: 'light' })}>
+                      <button type="button" aria-pressed={mode === 'light'} className={mode === 'light' ? 'is-active' : ''} onClick={() => changeAppearance({ mode: 'light' })}>
                         <Icon name="sun" size={15} /> Light
                       </button>
-                      <button type="button" className={mode === 'dark' ? 'is-active' : ''} onClick={() => changeAppearance({ mode: 'dark' })}>
+                      <button type="button" aria-pressed={mode === 'dark'} className={mode === 'dark' ? 'is-active' : ''} onClick={() => changeAppearance({ mode: 'dark' })}>
                         <Icon name="moon" size={15} /> Dark
                       </button>
                     </div>
@@ -548,7 +539,6 @@ export default function SettingsPage() {
                   <div className="appearance-row is-column">
                     <div>
                       <h3 className="settings-section-title">Accent color</h3>
-                      <p className="field-hint">Gold is the default Aayojan AI accent.</p>
                     </div>
                     <div className="theme-grid">
                       {THEMES.map((item) => (
