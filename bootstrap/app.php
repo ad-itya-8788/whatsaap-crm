@@ -20,6 +20,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        if (getenv('RENDER') === 'true') {
+            $middleware->trustProxies(at: '*', headers: Request::HEADER_X_FORWARDED_PROTO);
+        }
+
         $middleware->statefulApi();
         $middleware->api(replace: [EnsureFrontendRequestsAreStateful::class => StartStatefulApiSession::class]);
         $middleware->web(append: [HandleInertiaRequests::class]);

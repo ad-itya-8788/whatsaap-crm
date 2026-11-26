@@ -24,6 +24,30 @@ php artisan schedule:work
 
 For Apache deployments, point the virtual host's document root to this repository's `public/` directory. Set `APP_DEBUG=false` and use HTTPS with `SESSION_SECURE_COOKIE=true`. Use [the production environment example](.env.production.example) when configuring the deployment.
 
+## Deploy on Render
+
+1. Create an empty database on an external MySQL provider. Use a database host reachable from Render and allowlist the service's outbound ranges when required by the provider.
+2. With your local shell configured for that empty database, run `php artisan migrate --force` and `php artisan app:make-admin owner@example.com --role=owner`. These commands are separate from container startup. Verify the database name before running them.
+3. Run `php artisan key:generate --show` and save the resulting `base64:...` value in Render as `APP_KEY`. Reuse the same key on redeploys. When connecting a previously encrypted database, use its original key.
+4. Push this branch to GitHub. In Render choose **New → Blueprint** and connect the repository containing [render.yaml](render.yaml). You can also create a **Free Docker Web Service** using the root Dockerfile and set its HTTP health check path to `/up`.
+5. Open the HTTPS service URL, sign in, and enter the WhatsApp access token, phone number ID, WABA ID, and verify token in the CRM. In Meta, use `https://<your-service>.onrender.com/api/whatsapp/webhook` and the same verify token.
+
+| Render environment variable | Value |
+| --- | --- |
+| `APP_KEY` | Stable Laravel key from step 3 |
+| `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | External MySQL connection details |
+| `DB_PORT` | Defaults to `3306`. Override if your provider uses another port. |
+| `META_APP_SECRET` | Meta app secret required to validate webhook signatures |
+| `META_APP_ID` | Meta app ID required for template header uploads |
+| `APP_URL` | Optional for the default Render domain. Set it to the HTTPS origin if using a custom domain. |
+| `SANCTUM_STATEFUL_DOMAINS` | Optional for the primary app origin. If serving extra hostnames, set a comma-separated list of hosts without schemes. |
+| `MYSQL_ATTR_SSL_CA` | Set to the absolute path of the provider CA file when required for MySQL TLS. Mount the provider CA as a Render secret file, for example `/etc/secrets/mysql-ca.pem`. |
+| `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM_ADDRESS` | Configure for password reset email. Use an SMTP provider with a permitted port such as `2525`. The container defaults to `MAIL_MAILER=smtp`. |
+
+The image sets `APP_ENV=production`, `APP_DEBUG=false`, `LOG_CHANNEL=stderr`, `DB_CONNECTION=mysql`, `SESSION_DRIVER=database`, `SESSION_SECURE_COOKIE=true`, `CACHE_STORE=database`, and `QUEUE_CONNECTION=database`. It listens on Render's `PORT` with a default of `10000`. Queue processing and the scheduler run inside the web service while it is awake. Set `RENDER_RUN_BACKGROUND=false` if moving them to separate services.
+
+Render free services can sleep after 15 minutes idle. Webhook delivery can be delayed during a cold start, and queues and schedules pause while the service sleeps. MySQL data persists on the external provider. Uploaded avatars and locally mirrored attachments are stored on the container filesystem and can disappear on restart, spin-down, or deploy. For always-on webhook processing or durable local uploads, use a plan and storage configuration that support those requirements. [Render free plan limits](https://render.com/docs/free) · [Outbound IP ranges](https://render.com/docs/outbound-ip-addresses)
+
 ## Database schema
 
 Laravel records migrations in `migrations`. Each of the 34 application tables has its own initial migration. Filenames are ordered by foreign-key dependency. The migration files define the columns, foreign keys, unique constraints, and indexes.

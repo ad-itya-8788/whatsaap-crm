@@ -18,6 +18,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MessageController extends Controller
 {
@@ -113,7 +114,7 @@ class MessageController extends Controller
         ]);
     }
 
-    public function media(Message $message, InboundMediaMirror $mediaMirror): Response|JsonResponse
+    public function media(Message $message, InboundMediaMirror $mediaMirror): StreamedResponse|JsonResponse
     {
         $mediaId = (string) $message->media_url;
         if ($mediaId === '' || ! ctype_digit($mediaId)) {
@@ -153,7 +154,17 @@ class MessageController extends Controller
             || str_starts_with($mimeType, 'text/');
         $disposition = $previewable ? 'inline' : 'attachment';
 
-        return response($asset['body'])
+        $body = $asset['body'];
+
+        return response()->stream(static function () use ($body): void {
+            try {
+                while (! $body->eof()) {
+                    echo $body->read(8192);
+                }
+            } finally {
+                $body->close();
+            }
+        })
             ->header('Content-Type', $mimeType)
             ->header('Content-Disposition', $disposition.'; filename="'.$filename.'"')
             ->header('Cache-Control', 'private, no-store')

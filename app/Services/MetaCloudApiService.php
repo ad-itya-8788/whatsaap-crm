@@ -147,13 +147,15 @@ class MetaCloudApiService
 
     public function uploadMessageMedia(WhatsappConfig $config, UploadedFile $file): string
     {
+        $stream = \GuzzleHttp\Psr7\Utils::tryFopen($file->getPathname(), 'rb');
+
         try {
             $response = Http::withToken($config->access_token)
                 ->connectTimeout(10)
                 ->timeout(60)
                 ->attach(
                     'file',
-                    file_get_contents($file->getRealPath()),
+                    $stream,
                     $file->getClientOriginalName(),
                     ['Content-Type' => $file->getMimeType()],
                 )
@@ -163,6 +165,10 @@ class MetaCloudApiService
                 ]);
         } catch (ConnectionException) {
             throw new MetaApiException('Could not upload the attachment to Meta.', 502);
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
         }
 
         if (! $response->successful()) {
@@ -209,14 +215,20 @@ class MetaCloudApiService
             throw new MetaApiException('Meta did not return a template upload session.', $session->status());
         }
 
+        $stream = \GuzzleHttp\Psr7\Utils::tryFopen($file->getPathname(), 'rb');
+
         try {
             $upload = Http::withHeaders($authorization + ['file_offset' => '0'])
                 ->connectTimeout(10)
                 ->timeout(60)
-                ->withBody(file_get_contents($file->getRealPath()), $file->getMimeType())
+                ->withBody($stream, $file->getMimeType())
                 ->post($this->url($sessionId));
         } catch (ConnectionException) {
             throw new MetaApiException('Could not upload the template header to Meta.', 502);
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
         }
 
         if (! $upload->successful()) {
@@ -278,10 +290,13 @@ class MetaCloudApiService
             throw $this->metaException($download);
         }
 
-        $body = $download->body();
-        if (strlen($body) > $limit) {
+        $body = $download->toPsrResponse()->getBody();
+        $size = $body->getSize();
+        if ($size === null || $size > $limit) {
+            $body->close();
             throw new \RuntimeException('This attachment exceeds the supported download size.');
         }
+        $body->rewind();
 
         return [
             'body' => $body,

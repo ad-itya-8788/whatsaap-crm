@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Message;
 use App\Models\WhatsappConfig;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
@@ -23,8 +24,12 @@ class InboundMediaMirror
 
         try {
             $asset = $this->meta->downloadMessageMedia($config, $mediaId, $message->content_type, self::MAX_BYTES);
-            if (! Storage::disk('local')->put($this->path($message), $asset['body'])) {
-                Log::warning('whatsapp.inbound_media.storage_failed', ['message_id' => $message->id]);
+            try {
+                if (! Storage::disk('local')->put($this->path($message), $asset['body'])) {
+                    Log::warning('whatsapp.inbound_media.storage_failed', ['message_id' => $message->id]);
+                }
+            } finally {
+                $asset['body']->close();
             }
         } catch (Throwable) {
             Log::warning('whatsapp.inbound_media.mirror_failed', ['message_id' => $message->id]);
@@ -43,13 +48,13 @@ class InboundMediaMirror
             return null;
         }
 
-        $body = $disk->get($path);
+        $body = $disk->readStream($path);
         if ($body === null) {
             return null;
         }
 
         return [
-            'body' => $body,
+            'body' => Utils::streamFor($body),
             'mime_type' => $message->media_type ?: $disk->mimeType($path),
         ];
     }
