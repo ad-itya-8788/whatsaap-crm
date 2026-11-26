@@ -26,20 +26,39 @@ export function permission() {
   return notificationsSupported() ? Notification.permission : 'unsupported'
 }
 
-export async function requestPermission() {
-  if (!notificationsSupported()) return 'unsupported'
-  return Notification.requestPermission()
+let workerRegistration
+
+function notificationWorker() {
+  if (!window.isSecureContext || !navigator.serviceWorker) return null
+  workerRegistration ??= navigator.serviceWorker.register('/notification-worker.js')
+    .then(() => navigator.serviceWorker.ready)
+    .catch(() => { workerRegistration = null; return null })
+  return workerRegistration
 }
 
-export function showNotification(title, body, url) {
+export async function requestPermission() {
+  if (!notificationsSupported()) return 'unsupported'
+  const result = await Notification.requestPermission()
+  if (result === 'granted') void notificationWorker()
+  return result
+}
+
+export async function showNotification(title, body, url) {
   if (!notificationsSupported() || Notification.permission !== 'granted') return null
 
+  const options = { body, tag: url || 'wacrm-message', icon: '/img/logo.png', data: { url } }
+  const worker = await notificationWorker()
+  if (worker) {
+    try {
+      await worker.showNotification(title, options)
+      return true
+    } catch {
+      // Desktop browsers can still use the window notification API.
+    }
+  }
+
   try {
-    const notification = new Notification(title, {
-      body,
-      tag: url || 'wacrm-message',
-      icon: '/img/logo.png',
-    })
+    const notification = new Notification(title, options)
 
     notification.onclick = () => {
       window.focus()

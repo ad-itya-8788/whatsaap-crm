@@ -9,7 +9,7 @@ class MessageDeleted implements ShouldBroadcastNow
 {
     public function __construct(
         public int $conversationId,
-        public int $messageId,
+        public int $message_id,
         public array $conversation,
     ) {}
 

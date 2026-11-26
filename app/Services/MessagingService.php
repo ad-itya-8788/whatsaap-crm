@@ -280,7 +280,7 @@ class MessagingService
 
         $this->statuses->flushPending($message);
 
-        return $message;
+        return $message->refresh();
     }
 
     private function mediaLabel(string $type): string
@@ -311,8 +311,6 @@ class MessagingService
                 $message,
             );
         }
-
-        $this->realtime->messageCreated($message->fresh());
 
         return $message;
     }

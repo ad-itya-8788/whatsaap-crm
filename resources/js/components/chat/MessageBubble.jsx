@@ -84,8 +84,9 @@ function AudioMessage({ src, name, mediaId, onOpenMedia }) {
 
 function MessageStatus({ status }) {
   const value = String(status || '').toLowerCase()
-  if (!value) return null
-  const icon = value === 'failed' ? 'alert' : ['pending', 'queued', 'sending'].includes(value) ? 'clock' : ['delivered', 'read'].includes(value) ? 'checks' : 'check'
+  const icons = { failed: 'alert', pending: 'clock', queued: 'clock', sending: 'clock', sent: 'check', delivered: 'checks', read: 'checks' }
+  const icon = icons[value]
+  if (!icon) return null
   return (
     <span className={`status-label status-${value}`} title={value.charAt(0).toUpperCase() + value.slice(1)}>
       <Icon name={icon} size={value === 'failed' ? 14 : 15} />

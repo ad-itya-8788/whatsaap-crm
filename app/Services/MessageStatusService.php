@@ -24,28 +24,6 @@ class MessageStatusService
         $statusAt = ! empty($statusData['timestamp'])
             ? Carbon::createFromTimestamp((int) $statusData['timestamp'])
             : null;
-        $currentStatus = $message->status;
-        $successfulStatuses = ['sent' => 1, 'delivered' => 2, 'read' => 3];
-
-        if ($statusAt && $message->provider_timestamp && $statusAt->lt($message->provider_timestamp)) {
-            return;
-        }
-
-        if ($currentStatus === 'read' && $status !== 'read') {
-            return;
-        }
-
-        if (
-            isset($successfulStatuses[$currentStatus], $successfulStatuses[$status])
-            && $successfulStatuses[$status] < $successfulStatuses[$currentStatus]
-        ) {
-            return;
-        }
-
-        if ($status === 'failed' && isset($successfulStatuses[$currentStatus]) && $currentStatus !== 'sent') {
-            return;
-        }
-
         $updates = ['status' => $status];
 
         if (! empty($statusData['errors'][0])) {
@@ -63,18 +41,34 @@ class MessageStatusService
             $updates['provider_timestamp'] = $statusAt;
         }
 
-        DB::transaction(function () use ($message, $updates, $status) {
-            $message->update($updates);
-            $this->syncBroadcastRecipient($message, $status, $updates);
-
-            if ($message->message_id) {
-                PendingMessageStatus::where('wamid', $message->message_id)
-                    ->where('status', $status)
-                    ->delete();
+        $changed = DB::transaction(function () use ($message, $updates, $status, $statusAt) {
+            $current = Message::query()->lockForUpdate()->find($message->id);
+            if (! $current || $current->sender_type === 'customer') {
+                return null;
             }
+
+            $rank = ['sent' => 1, 'failed' => 2, 'delivered' => 3, 'read' => 4];
+            $currentRank = $rank[$current->status] ?? 0;
+            $newRank = $rank[$status];
+            $older = $statusAt && $current->provider_timestamp && $statusAt->lt($current->provider_timestamp);
+            if ($newRank < $currentRank || ($older && $newRank <= $currentRank)) {
+                return null;
+            }
+
+            $current->fill($updates);
+            if (! $current->isDirty()) {
+                return null;
+            }
+
+            $current->save();
+            $this->syncBroadcastRecipient($current, $status, $updates);
+
+            return $current;
         });
 
-        $this->realtime->messageStatusChanged($message->fresh());
+        if ($changed) {
+            $this->realtime->messageStatusChanged($changed);
+        }
     }
 
     public function buffer(string $wamid, array $statusData): void
@@ -92,7 +86,8 @@ class MessageStatusService
                     : now(),
                 'error_code' => $statusData['errors'][0]['code'] ?? null,
                 'error_title' => $statusData['errors'][0]['title'] ?? null,
-                'error_details' => $statusData['errors'][0]['message'] ?? null,
+                'error_details' => $statusData['errors'][0]['message']
+                    ?? ($statusData['errors'][0]['error_data']['details'] ?? null),
             ],
         );
     }
@@ -117,6 +112,7 @@ class MessageStatusService
                     'message' => $item->error_details,
                 ]],
             ]);
+            PendingMessageStatus::whereKey($item->id)->where('status_at', $item->status_at)->delete();
         }
     }
 

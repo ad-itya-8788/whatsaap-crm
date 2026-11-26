@@ -95,6 +95,12 @@ class WhatsappWebhookController extends Controller
                             $this->statuses->apply($message, $statusData);
                         } else {
                             $this->statuses->buffer($wamid, $statusData);
+
+                            // The send request may have saved the provider ID while we buffered the event.
+                            $message = Message::where('message_id', $wamid)->first();
+                            if ($message) {
+                                $this->statuses->flushPending($message);
+                            }
                         }
                     }
 

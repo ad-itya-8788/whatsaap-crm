@@ -89,6 +89,7 @@ export default function ChatsPage() {
   const [mediaViewer, setMediaViewer] = useState(null)
   const [realtimeConnected, setRealtimeConnected] = useState(false)
 
+  const realtimeConnectedRef = useRef(false)
   const threadRef = useRef(null)
   const threadMoreRef = useRef(null)
   const listAbortRef = useRef(null)
@@ -104,8 +105,12 @@ export default function ChatsPage() {
   const debouncedQueryRef = useRef(debouncedQuery)
   const currentUserIdRef = useRef(user?.id)
   const messagesRef = useRef(messages)
-  const realtimeSinceRef = useRef(null)
+  const realtimeSinceRef = useRef(new Date(Date.now() - 60_000).toISOString())
   const recoveryInFlightRef = useRef(false)
+  const readRequestRef = useRef(null)
+  const messageSearchRef = useRef(debouncedMessageSearch)
+  const loadedMessageSearchRef = useRef(debouncedMessageSearch)
+  messageSearchRef.current = debouncedMessageSearch
   selectedIdRef.current = selectedId
   statusFilterRef.current = statusFilter
   assigneeFilterRef.current = assigneeFilter
@@ -143,9 +148,13 @@ export default function ChatsPage() {
       if (controller.signal.aborted) return
       const rows = extractList(data)
       setConversations((current) => {
-        if (!append) return rows
-        const seen = new Set(current.map((item) => String(item.id)))
-        return [...current, ...rows.filter((item) => !seen.has(String(item.id)))]
+        if (append) {
+          const seen = new Set(current.map((item) => String(item.id)))
+          return [...current, ...rows.filter((item) => !seen.has(String(item.id)))]
+        }
+        const visibleIds = new Set(rows.map((item) => String(item.id)))
+        return mergeConversations(current, rows, statusFilterRef.current)
+          .filter((item) => visibleIds.has(String(item.id)))
       })
       setPagination(extractPaginator(data))
       setListError('')
@@ -221,17 +230,14 @@ export default function ChatsPage() {
           const seen = new Set(current.map((message) => String(message.id)))
           return [...batch.filter((message) => !seen.has(String(message.id))), ...current]
         })
-      } else if (background && messagesConversationRef.current === id) {
-        setMessages((current) => {
-          const map = new Map(current.map((message) => [String(message.id), message]))
-          batch.forEach((message) => map.set(String(message.id), message))
-          return [...map.values()].sort((left, right) => Number(left.id) - Number(right.id))
-        })
+      } else if (messagesConversationRef.current === id && loadedMessageSearchRef.current === search) {
+        setMessages((current) => mergeMessageList(current, batch))
       } else {
         setMessages(batch)
       }
 
       messagesConversationRef.current = id
+      loadedMessageSearchRef.current = search
       if (!background && !cursor) {
         setMessageCursor({ next: data.next_cursor || null, hasMore: Boolean(data.next_cursor) })
       }
@@ -240,7 +246,9 @@ export default function ChatsPage() {
         try {
           await api.post(`/api/app/conversations/${id}/read`, null, { signal: controller.signal })
           window.dispatchEvent(new Event('wacrm:inbox-changed'))
-          setConversations((items) => items.map((item) => String(item.id) === String(id) ? { ...item, unread_count: 0 } : item))
+          if (!realtimeConnectedRef.current) {
+            setConversations((items) => items.map((item) => String(item.id) === String(id) ? { ...item, unread_count: 0 } : item))
+          }
         } catch (requestError) {
           if (requestError.code !== 'ERR_CANCELED') toast.error(errorMessage(requestError, 'Unable to mark the conversation as read.'))
         }
@@ -259,13 +267,19 @@ export default function ChatsPage() {
     }
   }, [debouncedMessageSearch, toast])
 
-  const applyMessages = useCallback((incoming) => {
+  const applyMessages = useCallback((incoming, existingOnly = false) => {
     const rows = Array.isArray(incoming) ? incoming : [incoming]
     const conversationId = rows[0]?.conversation_id
     if (!rows.length || (conversationId && String(conversationId) !== String(selectedIdRef.current))) return
 
     setMessages((current) => {
-      const next = mergeMessageList(current, rows)
+      if (conversationId && String(conversationId) !== String(selectedIdRef.current)) return current
+      const matching = existingOnly || messageSearchRef.current
+        ? rows.filter((row) => current.some((message) => String(message.id) === String(row.id)
+          || (row.idempotency_key && row.idempotency_key === message.idempotency_key))
+          || (!existingOnly && [row.content_text, row.filename, row.template_name].some((value) => String(value || '').toLowerCase().includes(messageSearchRef.current.toLowerCase()))))
+        : rows
+      const next = mergeMessageList(current, matching)
       if (next === current) return current
       const node = threadRef.current
       scrollToBottomRef.current = Boolean(node && node.scrollHeight - node.scrollTop - node.clientHeight < 140)
@@ -303,6 +317,10 @@ export default function ChatsPage() {
     })
   }, [])
 
+  const failOptimisticMessage = (id) => {
+    setMessages((current) => current.map((message) => message.id === id ? { ...message, status: 'failed' } : message))
+  }
+
   const removeMessageItems = useCallback((ids) => {
     setMessages((current) => removeMessages(current, ids))
   }, [])
@@ -323,32 +341,44 @@ export default function ChatsPage() {
     }
   }, [setParams])
 
+  const markIncomingRead = useCallback((conversation) => {
+    if (!conversation?.unread_count || String(conversation.id) !== selectedIdRef.current
+      || document.visibilityState !== 'visible' || readOnly || readRequestRef.current) return
+    readRequestRef.current = window.setTimeout(() => {
+      readRequestRef.current = null
+      if (String(conversation.id) !== selectedIdRef.current || document.visibilityState !== 'visible') return
+      api.post(`/api/app/conversations/${conversation.id}/read`).catch(() => {})
+    }, 150)
+  }, [readOnly])
+
   const recoverRealtime = useCallback(async () => {
     if (recoveryInFlightRef.current) return
     recoveryInFlightRef.current = true
 
     try {
       const conversationId = selectedIdRef.current || undefined
-      const highestMessageId = conversationId
-        ? messagesRef.current.reduce((highest, message) => Math.max(highest, Number(message.id) || 0), 0)
-        : 0
+      const ids = conversationId && messagesConversationRef.current === conversationId
+        ? messagesRef.current.map((message) => Number(message.id)).filter(Number.isFinite)
+        : []
       const { data } = await api.get('/api/app/realtime/sync', {
         params: {
           conversation_id: conversationId,
-          after_id: conversationId && highestMessageId ? highestMessageId : undefined,
-          since: realtimeSinceRef.current || undefined,
+          after_id: ids.length ? Math.max(...ids) : undefined,
+          since: realtimeSinceRef.current,
         },
       })
-
-      realtimeSinceRef.current = data?.server_time || null
-      if (conversationId && data?.messages?.length) applyMessages(data.messages)
-      if (data?.conversations?.length) applyConversations(data.conversations)
+      if (data.messages?.length) applyMessages(data.messages)
+      if (data.conversations?.length) {
+        applyConversations(data.conversations)
+        markIncomingRead(data.conversations.find((row) => String(row.id) === selectedIdRef.current))
+      }
+      if (data.server_time) realtimeSinceRef.current = data.server_time
     } catch {
-      // The normal polling fallback will retry on the next tick.
+      void 0
     } finally {
       recoveryInFlightRef.current = false
     }
-  }, [applyConversations, applyMessages])
+  }, [applyConversations, applyMessages, markIncomingRead])
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 300)
@@ -456,20 +486,27 @@ export default function ChatsPage() {
   }, [sidePanel, selectedId, loadNotes])
 
   useEffect(() => subscribeToRealtime({
-    onConnectionChange: setRealtimeConnected,
+    onConnectionChange: (ready) => {
+      realtimeConnectedRef.current = ready
+      setRealtimeConnected(ready)
+    },
     onMessageCreated: (payload) => {
       if (payload?.message) applyMessages(payload.message)
-      if (payload?.conversation) applyConversations(payload.conversation)
+      if (payload?.conversation) {
+        applyConversations(payload.conversation)
+        if (payload.message?.sender_type === 'customer') markIncomingRead(payload.conversation)
+      }
+      if (payload.message?.sender_type !== 'customer') return
       window.dispatchEvent(new Event('wacrm:inbox-changed'))
     },
     onMessageUpdated: (payload) => {
-      if (payload?.message) applyMessages(payload.message)
+      if (payload?.message) applyMessages(payload.message, true)
     },
     onMessageStatusChanged: (payload) => {
-      if (payload?.message) applyMessages(payload.message)
+      if (payload?.message) applyMessages(payload.message, true)
     },
     onMessageDeleted: (payload) => {
-      if (payload?.message_id) removeMessageItems(payload.message_id)
+      if (payload?.message_id || payload?.messageId) removeMessageItems(payload.message_id || payload.messageId)
       if (payload?.conversation) applyConversations(payload.conversation)
     },
     onConversationUpdated: (payload) => {
@@ -477,32 +514,28 @@ export default function ChatsPage() {
       window.dispatchEvent(new Event('wacrm:inbox-changed'))
     },
     onConversationDeleted: (payload) => {
-      if (payload?.conversation_id) removeConversationItems(payload.conversation_id)
+      if (payload?.conversation_id || payload?.conversationId) removeConversationItems(payload.conversation_id || payload.conversationId)
       window.dispatchEvent(new Event('wacrm:inbox-changed'))
     },
     onReconnected: () => {
       void recoverRealtime()
       window.dispatchEvent(new Event('wacrm:inbox-changed'))
     },
-  }), [applyConversations, applyMessages, recoverRealtime, removeConversationItems, removeMessageItems])
+  }), [applyConversations, applyMessages, recoverRealtime, removeConversationItems, removeMessageItems, markIncomingRead])
 
   useEffect(() => {
-    const poll = () => {
-      if (document.visibilityState !== 'visible') return
-      if (realtimeConnected) {
-        void recoverRealtime()
-        return
-      }
-      if (pagination.currentPage === 1) loadConversations(1, false, true)
-      if (selectedId) loadMessages(selectedId, { background: true })
+    const recoverVisible = () => {
+      if (document.visibilityState === 'visible') void recoverRealtime()
     }
-    const timer = window.setInterval(poll, realtimeConnected ? 30_000 : 5_000)
-    document.addEventListener('visibilitychange', poll)
+    const timer = realtimeConnected ? null : window.setInterval(recoverVisible, 5_000)
+    document.addEventListener('visibilitychange', recoverVisible)
     return () => {
       window.clearInterval(timer)
-      document.removeEventListener('visibilitychange', poll)
+      document.removeEventListener('visibilitychange', recoverVisible)
     }
-  }, [loadConversations, loadMessages, pagination.currentPage, realtimeConnected, recoverRealtime, selectedId])
+  }, [realtimeConnected, recoverRealtime])
+
+  useEffect(() => () => window.clearTimeout(readRequestRef.current), [])
 
   useLayoutEffect(() => {
     const node = threadRef.current
@@ -562,14 +595,13 @@ export default function ChatsPage() {
     if (!loaded) scrollRestoreRef.current = null
   }
 
-  const patchConversation = async (path, payload, optimistic, key, successMessage) => {
+  const patchConversation = async (path, payload, optimistic, key) => {
     if (!selectedId) return
     setBusyAction(key)
     setConversations((items) => items.map((item) => String(item.id) === String(selectedId) ? { ...item, ...optimistic } : item))
     try {
       const { data } = await api.patch(`/api/app/conversations/${selectedId}/${path}`, payload)
       setConversations((items) => items.map((item) => String(item.id) === String(selectedId) ? { ...item, ...data, contact: item.contact, assignedAgent: item.assignedAgent } : item))
-      toast.success(successMessage)
     } catch (requestError) {
       setConversations((items) => items.map((item) => String(item.id) === String(selectedId) ? { ...item, ...optimistic, ...(key === 'status' ? { status: selected?.status } : { assignedAgent: selected?.assignedAgent }) } : item))
       toast.error(errorMessage(requestError, 'Unable to update the conversation.'))
@@ -579,12 +611,12 @@ export default function ChatsPage() {
     }
   }
 
-  const changeStatus = (status) => patchConversation('status', { status }, { status }, 'status', `Conversation marked ${status}.`)
+  const changeStatus = (status) => patchConversation('status', { status }, { status }, 'status')
 
   const changeAssignee = (value) => {
     const assigneeId = value === 'unassigned' ? null : value === 'me' ? user?.id ?? null : value
     const agent = agents.find((item) => String(item.id) === String(assigneeId))
-    patchConversation('assign', { assignee_id: assigneeId }, { assignedAgent: agent || null }, 'assignee', 'Assignee updated.')
+    patchConversation('assign', { assignee_id: assigneeId }, { assignedAgent: agent || null }, 'assignee')
   }
 
   const addNote = async (event) => {
@@ -596,7 +628,6 @@ export default function ChatsPage() {
       await api.post(`/api/app/conversations/${selectedId}/notes`, { body })
       setNoteDraft('')
       await loadNotes(selectedId)
-      toast.success('Note added.')
     } catch (requestError) {
       toast.error(errorMessage(requestError, 'Unable to add the note.'))
     } finally {
@@ -610,7 +641,6 @@ export default function ChatsPage() {
     try {
       await api.delete(`/api/app/conversations/${selectedId}/notes/${deleteNoteId}`)
       await loadNotes(selectedId)
-      toast.success('Note deleted.')
     } catch (requestError) {
       toast.error(errorMessage(requestError, 'Unable to delete the note.'))
     } finally {
@@ -627,7 +657,6 @@ export default function ChatsPage() {
       setMessages((items) => items.filter((item) => String(item.id) !== String(messageToDelete.id)))
       setReplyTo((item) => item?.id === messageToDelete.id ? null : item)
       setMessageToDelete(null)
-      toast.success('Message deleted from this CRM.')
     } catch (requestError) {
       toast.error(errorMessage(requestError, 'Unable to delete the message.'))
     } finally {
@@ -658,7 +687,6 @@ export default function ChatsPage() {
       }, { replace: true })
       setDeleteConversationOpen(false)
       window.dispatchEvent(new Event('wacrm:inbox-changed'))
-      toast.success('Conversation deleted from this CRM. The contact was kept.')
     } catch (requestError) {
       toast.error(errorMessage(requestError, 'Unable to delete the conversation.'))
     } finally {
@@ -677,7 +705,6 @@ export default function ChatsPage() {
       setConversations((items) => items.map((item) => String(item.id) === String(selectedId)
         ? { ...item, contact: { ...item.contact, tags: data.tags || [] } }
         : item))
-      toast.success('Contact labels updated.')
     } catch (requestError) {
       toast.error(errorMessage(requestError, 'Unable to update contact labels.'))
     }
@@ -687,7 +714,6 @@ export default function ChatsPage() {
     if (!selected?.contact?.phone) return
     try {
       await navigator.clipboard.writeText(selected.contact.phone)
-      toast.success('Phone number copied.')
     } catch {
       toast.error('Copy failed. Your browser blocked clipboard access.')
     }
@@ -739,11 +765,17 @@ export default function ChatsPage() {
       } : null,
     }
     applyMessages([optimistic])
+    applyConversations([{
+      id: Number(conversationId),
+      last_message_text: messagePreview(optimistic),
+      last_message_at: optimistic.created_at,
+      last_reply_at: optimistic.created_at,
+    }])
 
     const finishSend = (saved) => {
       sendAttemptRef.current = null
       applyMessages([saved])
-      const activityAt = saved?.provider_timestamp || saved?.created_at
+      const activityAt = saved?.created_at
       applyConversations([{
         id: Number(conversationId),
         last_message_text: messagePreview(saved),
@@ -754,7 +786,6 @@ export default function ChatsPage() {
       setSelectedFile(null)
       setReplyTo(null)
       setUploadProgress(100)
-      toast.success('Message sent.')
     }
 
     try {
@@ -783,7 +814,7 @@ export default function ChatsPage() {
     } catch (requestError) {
       const failed = requestError.response?.data?.data
       if (failed?.id) applyMessages([failed])
-      else removeMessageItems(optimistic.id)
+      else failOptimisticMessage(optimistic.id)
       sendAttemptRef.current = null
       const message = errorMessage(requestError, 'Unable to send message.')
       setThreadError(message)
@@ -826,6 +857,12 @@ export default function ChatsPage() {
     }
     removeMessageItems(message.id)
     applyMessages([optimistic])
+    applyConversations([{
+      id: Number(conversationId),
+      last_message_text: messagePreview(optimistic),
+      last_message_at: optimistic.created_at,
+      last_reply_at: optimistic.created_at,
+    }])
     setRetryingId(String(optimistic.id))
     try {
       const { data } = await api.post(`/api/app/conversations/${conversationId}/messages`, {
@@ -834,13 +871,12 @@ export default function ChatsPage() {
         idempotency_key: key,
       })
       applyMessages([data])
-      const activityAt = data?.provider_timestamp || data?.created_at
+      const activityAt = data?.created_at
       applyConversations([{ id: Number(conversationId), last_message_text: messagePreview(data), last_message_at: activityAt, last_reply_at: activityAt }])
-      toast.success('Message sent.')
     } catch (requestError) {
       const failed = requestError.response?.data?.data
       if (failed?.id) applyMessages([failed])
-      else removeMessageItems(optimistic.id)
+      else failOptimisticMessage(optimistic.id)
       toast.error(errorMessage(requestError, 'Retry failed.'))
     } finally {
       setRetryingId('')
@@ -872,21 +908,26 @@ export default function ChatsPage() {
       reply_to_message_id: replyTo?.id || null,
     }
     applyMessages([optimistic])
+    applyConversations([{
+      id: Number(conversationId),
+      last_message_text: messagePreview(optimistic),
+      last_message_at: optimistic.created_at,
+      last_reply_at: optimistic.created_at,
+    }])
     setSending(true)
     setThreadError('')
     try {
       const { data } = await api.post(`/api/app/conversations/${conversationId}/messages`, payload)
       richSendAttemptRef.current = null
       applyMessages([data])
-      const activityAt = data?.provider_timestamp || data?.created_at
+      const activityAt = data?.created_at
       applyConversations([{ id: Number(conversationId), last_message_text: messagePreview(data), last_message_at: activityAt, last_reply_at: activityAt }])
       if (selectedIdRef.current === conversationId) setReplyTo(null)
-      toast.success('Message sent.')
       return true
     } catch (requestError) {
       const failed = requestError.response?.data?.data
       if (failed?.id) applyMessages([failed])
-      else removeMessageItems(optimistic.id)
+      else failOptimisticMessage(optimistic.id)
       if (failed?.status === 'failed') richSendAttemptRef.current = null
       toast.error(errorMessage(requestError, 'Unable to send message.'))
       return false
@@ -1114,7 +1155,7 @@ export default function ChatsPage() {
                 const grouped = previous && currentDate === messageDate(previous) && isIncoming(previous) === incoming
                   && Math.abs(new Date(message.provider_timestamp || message.created_at).getTime() - new Date(previous.provider_timestamp || previous.created_at).getTime()) < 5 * 60 * 1000
                 return (
-                  <Fragment key={message.id || index}>
+                  <Fragment key={message.idempotency_key || message.id || index}>
                     {currentDate && currentDate !== previousDate && <div className="message-date">{formatDate(message.provider_timestamp || message.created_at)}</div>}
                     {unreadSeparatorIndex === index && <div className="unread-separator"><span>New messages</span></div>}
                     {replyTo?.id === message.id && <div className="reply-banner"><span>Replying to {incoming ? 'contact' : 'you'}</span><button type="button" className="icon-button" onClick={() => setReplyTo(null)} aria-label="Cancel reply"><Icon name="close" size={14} /></button></div>}

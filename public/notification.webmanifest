@@ -1,0 +1,7 @@
+{
+  "id": "/",
+  "name": "Aayojan AI CRM",
+  "short_name": "Aayojan CRM",
+  "start_url": "/inbox",
+  "display": "standalone"
+}

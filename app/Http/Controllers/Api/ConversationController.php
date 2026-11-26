@@ -117,8 +117,11 @@ class ConversationController extends Controller
 
     public function markRead(Conversation $conversation): JsonResponse
     {
-        $conversation->update(['unread_count' => 0]);
-        $this->realtime->conversationUpdated($conversation->fresh());
+        $changed = Conversation::query()->whereKey($conversation->id)
+            ->where('unread_count', '>', 0)->update(['unread_count' => 0]);
+        if ($changed) {
+            $this->realtime->conversationUpdated($conversation->fresh());
+        }
 
         return response()->json(['ok' => true]);
     }

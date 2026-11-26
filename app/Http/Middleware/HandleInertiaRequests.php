@@ -20,7 +20,9 @@ class HandleInertiaRequests extends Middleware
                     && filled(config('broadcasting.connections.reverb.key'))
                     && filled(config('broadcasting.connections.reverb.secret')),
                 'key' => config('broadcasting.connections.reverb.key'),
-                'host' => config('broadcasting.connections.reverb.options.host'),
+                'host' => in_array(config('broadcasting.connections.reverb.options.host'), ['localhost', '127.0.0.1'], true)
+                    ? $request->getHost()
+                    : config('broadcasting.connections.reverb.options.host'),
                 'port' => (int) config('broadcasting.connections.reverb.options.port'),
                 'scheme' => config('broadcasting.connections.reverb.options.scheme'),
             ],

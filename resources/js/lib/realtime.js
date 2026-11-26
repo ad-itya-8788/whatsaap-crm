@@ -2,6 +2,7 @@ import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
 
 let echoClient = null
+let subscribers = 0
 
 function cookieValue(name) {
   const prefix = `${name}=`
@@ -25,7 +26,7 @@ function config() {
   if (shared && shared.enabled === false) return null
   if (!source.key) return null
 
-  const host = String(source.host || 'localhost')
+  const host = String(source.host || window.location.hostname)
     .replace(/^https?:\/\//, '')
     .replace(/\/$/, '')
 
@@ -39,10 +40,9 @@ function config() {
 
 function getEcho(settings) {
   if (!echoClient) {
-    if (typeof window !== 'undefined') window.Pusher = Pusher
     echoClient = new Echo({
       broadcaster: 'reverb',
-      client: Pusher,
+      Pusher,
       key: settings.key,
       host: settings.host,
       wsHost: settings.host,
@@ -81,6 +81,8 @@ export function subscribeToRealtime(handlers = {}) {
   }
 
   const channel = echo.private('account.default')
+  const subscription = channel.subscription
+  subscribers += 1
   const listeners = {
     'message.created': (payload) => handlers.onMessageCreated?.(payload),
     'message.updated': (payload) => handlers.onMessageUpdated?.(payload),
@@ -92,21 +94,32 @@ export function subscribeToRealtime(handlers = {}) {
 
   Object.entries(listeners).forEach(([event, listener]) => channel.listen(`.${event}`, listener))
 
-  const connection = echo.connector?.pusher?.connection
-  let previousState = connection?.state || ''
-  handlers.onConnectionChange?.(previousState === 'connected')
-
-  const onStateChange = ({ current } = {}) => {
-    const wasConnected = previousState === 'connected'
-    previousState = current || ''
-    handlers.onConnectionChange?.(current === 'connected')
-    if (!wasConnected && current === 'connected') handlers.onReconnected?.()
+  const connection = echo.connector.pusher.connection
+  const onSubscribed = () => {
+    handlers.onConnectionChange?.(true)
+    handlers.onReconnected?.()
   }
-  connection?.bind('state_change', onStateChange)
+  const onStateChange = ({ current }) => {
+    if (current !== 'connected') handlers.onConnectionChange?.(false)
+  }
+  const onSubscriptionError = () => handlers.onConnectionChange?.(false)
+
+  subscription.bind('pusher:subscription_succeeded', onSubscribed)
+  subscription.bind('pusher:subscription_error', onSubscriptionError)
+  connection.bind('state_change', onStateChange)
+  if (subscription.subscribed) onSubscribed()
+  else handlers.onConnectionChange?.(false)
 
   return () => {
     Object.entries(listeners).forEach(([event, listener]) => channel.stopListening(`.${event}`, listener))
-    connection?.unbind('state_change', onStateChange)
-    echo.leaveChannel('account.default')
+    subscription.unbind('pusher:subscription_succeeded', onSubscribed)
+    subscription.unbind('pusher:subscription_error', onSubscriptionError)
+    connection.unbind('state_change', onStateChange)
+    subscribers -= 1
+    if (!subscribers) {
+      echo.leave('account.default')
+      echo.disconnect()
+      echoClient = null
+    }
   }
 }

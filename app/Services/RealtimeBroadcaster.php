@@ -70,7 +70,7 @@ class RealtimeBroadcaster
     private function dispatch(ShouldBroadcastNow $event): void
     {
         try {
-            broadcast($event);
+            event($event);
         } catch (Throwable $error) {
             Log::warning('realtime.broadcast_failed', [
                 'event' => $event::class,

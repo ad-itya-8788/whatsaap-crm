@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Message extends Model
 {
-    protected $hidden = ['idempotency_key', 'idempotency_hash'];
+    protected $hidden = ['idempotency_hash'];
 
     protected $fillable = [
         'conversation_id', 'sender_type', 'sender_id', 'content_type', 'content_text', 'media_url', 'media_type',

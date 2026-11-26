@@ -41,7 +41,7 @@ export default function BrowserNotificationsCard() {
     setCurrentPermission(result)
 
     if (result !== 'granted') {
-      toast.error('Browser permission is required before desktop alerts can be shown.')
+      toast.error('Browser permission is required before browser alerts can be shown.')
       return
     }
 
@@ -50,8 +50,8 @@ export default function BrowserNotificationsCard() {
     toast.success('Browser notifications turned on.')
   }
 
-  const sendTest = () => {
-    const notification = showNotification('Aayojan AI CRM', 'Desktop notifications are working.', '/notifications')
+  const sendTest = async () => {
+    const notification = await showNotification('Aayojan AI CRM', 'Browser notifications are working.', '/notifications')
     if (!notification) toast.error('Allow browser notifications first.')
     else toast.success('Test notification sent.')
   }
@@ -61,12 +61,12 @@ export default function BrowserNotificationsCard() {
       <header className="panel-header"><h2>Browser notifications</h2></header>
       <div className="appearance-body">
         {!notificationsSupported() ? (
-          <div className="alert alert-info">This browser does not support desktop notifications.</div>
+          <div className="alert alert-info">This browser does not support browser notifications.</div>
         ) : null}
         <div className="appearance-row">
           <div>
-            <h3 className="settings-section-title">Desktop alerts</h3>
-            <p className="field-hint">Show a notification for new customer messages when this device is online.</p>
+            <h3 className="settings-section-title">Device alerts</h3>
+            <p className="field-hint">Show a notification for new customer messages while the CRM is open on this device.</p>
             <p className="field-hint">Permission: {currentPermission}</p>
           </div>
           <button

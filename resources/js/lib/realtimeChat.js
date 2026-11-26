@@ -8,9 +8,14 @@ function sameValue(left, right) {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
-function messageKey(message) {
-  if (message?.idempotency_key) return `key:${message.idempotency_key}`
-  return `id:${String(message?.id)}`
+function messageKeys(message) {
+  const keys = []
+  if (message?.idempotency_key) keys.push(`key:${message.idempotency_key}`)
+  if (message?.message_id) keys.push(`wamid:${message.message_id}`)
+  if (message?.id !== undefined && message?.id !== null && !String(message.id).startsWith('tmp-')) {
+    keys.push(`id:${String(message.id)}`)
+  }
+  return keys.length ? keys : [`anon:${messageTime(message)}|${message?.content_text || ''}`]
 }
 
 function messageTime(message) {
@@ -51,22 +56,41 @@ export function sortConversations(conversations, filter = 'all') {
   })
 }
 
+function mergeMessage(previous, row) {
+  const merged = { ...previous, ...row }
+  const statusOrder = { sending: 0, queued: 0, pending: 0, sent: 1, failed: 2, delivered: 3, read: 4 }
+  if (statusOrder[previous.status] > statusOrder[row.status]) {
+    for (const field of ['status', 'provider_timestamp', 'error_code', 'error_title', 'error_details']) {
+      merged[field] = previous[field]
+    }
+  }
+  return merged
+}
+
 export function mergeMessageList(current, incoming) {
   const rows = normalizeList(incoming)
   if (!rows.length) return current
 
-  const byKey = new Map(current.map((message) => [messageKey(message), message]))
+  const byKey = new Map()
+  const unique = new Set()
+  const register = (message) => {
+    unique.add(message)
+    messageKeys(message).forEach((key) => byKey.set(key, message))
+  }
+
+  current.forEach(register)
   let changed = false
 
   rows.forEach((row) => {
-    const key = messageKey(row)
-    const previous = byKey.get(key)
-    const merged = previous ? { ...previous, ...row } : row
-    if (!previous || !sameValue(previous, merged)) changed = true
-    byKey.set(key, merged)
+    const matches = [...new Set(messageKeys(row).map((key) => byKey.get(key)).filter(Boolean))]
+    let merged = row
+    matches.forEach((message) => { merged = mergeMessage(message, merged) })
+    matches.forEach((message) => unique.delete(message))
+    if (!matches.length || matches.some((message) => !sameValue(message, merged))) changed = true
+    register(merged)
   })
 
-  return changed ? sortMessages([...byKey.values()]) : current
+  return changed ? sortMessages([...unique]) : current
 }
 
 export function mergeConversations(current, incoming, filter = 'all') {
@@ -94,7 +118,10 @@ export function mergeConversations(current, incoming, filter = 'all') {
 export function removeMessages(current, ids) {
   const removed = new Set(normalizeList(ids).map((id) => String(id)))
   if (!removed.size) return current
-  const next = current.filter((message) => !removed.has(String(message.id)))
+  const next = current.filter((message) => (
+    !removed.has(String(message.id))
+    && !messageKeys(message).some((key) => removed.has(key.slice(key.indexOf(':') + 1)))
+  ))
   return next.length === current.length ? current : next
 }
 

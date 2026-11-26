@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/img/logo.png" />
+    <link rel="manifest" href="/notification.webmanifest" />
     <title>Aayojan AI CRM</title>
     <script>
       (function () {

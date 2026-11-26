@@ -32,6 +32,39 @@ describe('realtimeChat', () => {
     expect(merged[0].status).toBe('sent')
   })
 
+  it('replaces an optimistic message when the saved row only shares the idempotency key', () => {
+    const optimistic = {
+      id: 'tmp-key-2',
+      idempotency_key: 'key-2',
+      content_text: 'Hello again',
+      status: 'sending',
+    }
+    const saved = {
+      id: 52,
+      idempotency_key: 'key-2',
+      content_text: 'Hello again',
+      status: 'sent',
+    }
+
+    const merged = mergeMessageList([optimistic], [saved])
+
+    expect(merged).toHaveLength(1)
+    expect(merged[0].id).toBe(52)
+    expect(merged[0].status).toBe('sent')
+  })
+
+  it('updates delivery status from a WhatsApp message id', () => {
+    const current = [{ id: 52, message_id: 'wamid.123', status: 'sent' }]
+    const incoming = [{ id: 52, message_id: 'wamid.123', status: 'read' }]
+
+    expect(mergeMessageList(current, incoming)[0].status).toBe('read')
+  })
+
+  it('removes an optimistic message by its temporary id', () => {
+    const messages = [{ id: 'tmp-key-3', idempotency_key: 'key-3', status: 'sending' }]
+    expect(removeMessages(messages, ['tmp-key-3'])).toHaveLength(0)
+  })
+
   it('does not duplicate messages received from polling and WebSocket', () => {
     const message = { id: 5, content_text: 'Hi', created_at: '2026-01-01T10:00:00.000Z' }
     const merged = mergeMessageList([message], [message])
