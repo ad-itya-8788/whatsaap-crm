@@ -83,7 +83,7 @@ class TemplateLifecycleService
             return [];
         }
 
-        $updates = ['status' => $status, 'approval_status' => $status];
+        $updates = ['status' => $status];
         if ($status === 'REJECTED') {
             $updates['rejection_reason'] = $value['reason'] ?? 'Rejected by Meta';
             $updates['submission_error'] = null;

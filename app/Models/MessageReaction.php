@@ -8,16 +8,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class MessageReaction extends Model
 {
     protected $fillable = [
-        'message_id', 'conversation_id', 'actor_type', 'actor_id', 'emoji',
+        'message_id', 'actor_type', 'actor_id', 'emoji',
     ];
 
     public function message(): BelongsTo
     {
         return $this->belongsTo(Message::class);
-    }
-
-    public function conversation(): BelongsTo
-    {
-        return $this->belongsTo(Conversation::class);
     }
 }

@@ -529,7 +529,7 @@ export default function DashboardPage() {
 
     const [campaignsResult, activityResult] = await Promise.allSettled([
       api.get('/api/app/dashboard/campaigns', { ...options, params: { days: range } }),
-      api.get('/api/app/dashboard/activity', { ...options, params: { limit: 50 } }),
+      api.get('/api/app/dashboard/activity', { ...options, params: { limit: 12 } }),
     ])
     if (signal?.aborted) return
     if (campaignsResult.status === 'fulfilled') setCampaigns(campaignsResult.value.data)
@@ -543,21 +543,21 @@ export default function DashboardPage() {
   useEffect(() => {
     if (volumeView !== 'hours') return undefined
 
-    let cancelled = false
+    const controller = new AbortController()
     setHourlyLoading(true)
     setHourlyError('')
-    api.get('/api/app/dashboard/hourly-volume', { params: { days: range }, timeout: 30_000 })
+    api.get('/api/app/dashboard/hourly-volume', { params: { days: range }, timeout: 30_000, signal: controller.signal })
       .then(({ data }) => {
-        if (!cancelled) setHourlyVolume(Array.isArray(data) ? data : [])
+        if (!controller.signal.aborted) setHourlyVolume(Array.isArray(data) ? data : [])
       })
       .catch((requestError) => {
-        if (!cancelled) setHourlyError(errorMessage(requestError, 'Unable to load hourly message volume.'))
+        if (!controller.signal.aborted) setHourlyError(errorMessage(requestError, 'Unable to load hourly message volume.'))
       })
       .finally(() => {
-        if (!cancelled) setHourlyLoading(false)
+        if (!controller.signal.aborted) setHourlyLoading(false)
       })
 
-    return () => { cancelled = true }
+    return () => controller.abort()
   }, [range, volumeView])
 
   useEffect(() => {
@@ -569,12 +569,13 @@ export default function DashboardPage() {
       await load(controller.signal)
       refreshing = false
     }
-    refresh()
+    const initial = window.setTimeout(refresh, 0)
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') refresh()
     }, 60000)
     return () => {
       controller.abort()
+      window.clearTimeout(initial)
       window.clearInterval(timer)
     }
   }, [load])

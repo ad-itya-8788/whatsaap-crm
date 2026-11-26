@@ -2,15 +2,34 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 
 class MessageTemplate extends Model
 {
     protected $fillable = [
         'user_id', 'name', 'category', 'language', 'header_type', 'header_content', 'header_media_url', 'header_handle',
-        'body_text', 'footer_text', 'buttons', 'sample_values', 'status', 'approval_status',
+        'body_text', 'footer_text', 'buttons', 'sample_values', 'status',
         'meta_template_id', 'rejection_reason', 'quality_score', 'submission_error', 'last_submitted_at', 'last_synced_at',
     ];
+
+    protected $appends = ['approval_status'];
+
+    public function scopeApproved(Builder $query): Builder
+    {
+        return $query->where('status', 'APPROVED');
+    }
+
+    public function isApproved(): bool
+    {
+        return $this->status === 'APPROVED';
+    }
+
+    protected function approvalStatus(): Attribute
+    {
+        return Attribute::get(fn (): ?string => $this->status);
+    }
 
     protected $casts = [
         'buttons' => 'array',

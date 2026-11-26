@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import api from '../../api/client.js'
+import { usePoll } from '../../lib/usePoll.js'
 import { relativeTime } from '../../lib/utils.js'
 
 const refreshInterval = 30_000
@@ -12,13 +13,22 @@ export function PresenceHeartbeat({ userId }) {
 
     let lastActivity = Date.now()
     let lastBeat = 0
+    let pending = false
+    const controller = new AbortController()
     const markActive = () => { lastActivity = Date.now() }
-    const beat = () => {
+    const beat = async () => {
       const now = Date.now()
-      if (now - lastBeat < 1_000) return
+      if (pending || now - lastBeat < 1_000) return
       lastBeat = now
       const status = document.hidden || now - lastActivity > idleAfter ? 'away' : 'online'
-      api.put('/api/app/presence', { status }).catch(() => {})
+      pending = true
+      try {
+        await api.put('/api/app/presence', { status }, { signal: controller.signal, timeout: 10000 })
+      } catch {
+        // The next heartbeat will retry.
+      } finally {
+        pending = false
+      }
     }
     const refresh = () => {
       if (!document.hidden) markActive()
@@ -29,9 +39,11 @@ export function PresenceHeartbeat({ userId }) {
     document.addEventListener('visibilitychange', refresh)
     window.addEventListener('focus', refresh)
     const timer = window.setInterval(beat, refreshInterval)
-    beat()
+    const initial = window.setTimeout(beat, 0)
 
     return () => {
+      controller.abort()
+      window.clearTimeout(initial)
       events.forEach((event) => document.removeEventListener(event, markActive))
       document.removeEventListener('visibilitychange', refresh)
       window.removeEventListener('focus', refresh)
@@ -44,23 +56,11 @@ export function PresenceHeartbeat({ userId }) {
 
 export function useMemberPresence() {
   const [members, setMembers] = useState({})
-  useEffect(() => {
-    const controller = new AbortController()
-    const load = () => {
-      if (document.hidden) return
-      api.get('/api/app/presence', { signal: controller.signal })
-        .then(({ data }) => setMembers(data))
-        .catch(() => {})
-    }
-    document.addEventListener('visibilitychange', load)
-    const timer = window.setInterval(load, refreshInterval)
-    load()
-    return () => {
-      controller.abort()
-      window.clearInterval(timer)
-      document.removeEventListener('visibilitychange', load)
-    }
+  const load = useCallback(async (signal) => {
+    const { data } = await api.get('/api/app/presence', { signal, timeout: 10000 })
+    setMembers(data)
   }, [])
+  usePoll(load, refreshInterval)
   return members
 }
 

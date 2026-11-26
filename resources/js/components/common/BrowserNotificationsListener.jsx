@@ -65,7 +65,7 @@ export default function BrowserNotificationsListener() {
     if (!enabled || !canNotify || !userId) return undefined
 
     const storageKey = `${LAST_MESSAGE_STORAGE_KEY}:${userId}`
-    let cancelled = false
+    const controller = new AbortController()
     let inFlight = false
     let latestId = 0
     let cursorReady = false
@@ -81,10 +81,12 @@ export default function BrowserNotificationsListener() {
         }
 
         const { data } = await api.get('/api/app/notifications/browser-events', {
+          signal: controller.signal,
+          timeout: 10000,
           params: cursorReady ? { after: latestId } : {},
         })
 
-        if (cancelled) return
+        if (controller.signal.aborted) return
 
         const storedAfterRequest = localStorage.getItem(storageKey)
         latestId = Math.max(latestId, Number(storedAfterRequest) || 0)
@@ -121,7 +123,7 @@ export default function BrowserNotificationsListener() {
     const timer = window.setInterval(check, 15000)
 
     return () => {
-      cancelled = true
+      controller.abort()
       window.clearInterval(timer)
     }
   }, [enabled, canNotify, userId])

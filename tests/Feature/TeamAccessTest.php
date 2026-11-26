@@ -44,8 +44,11 @@ class TeamAccessTest extends TestCase
         ];
         $this->postJson($invitePath.'/redeem', $data)->assertStatus(419);
         config(['sanctum.stateful' => ['localhost']]);
-        $this->withHeader('Origin', 'http://localhost')->postJson($invitePath.'/redeem', $data)
+        $redemption = $this->withHeader('Origin', 'http://localhost')->postJson($invitePath.'/redeem', $data)
             ->assertCreated()->assertJsonPath('user.role', 'viewer');
+        $sessionCookie = config('session.cookie');
+        $this->withCredentials()->withUnencryptedCookie($sessionCookie, $redemption->getCookie($sessionCookie, false)->getValue());
+        $this->app['auth']->forgetGuards();
         $this->getJson('/api/app/contacts')->assertOk();
         $this->postJson('/api/app/contacts', ['name' => 'Forbidden'])->assertForbidden();
         $this->postJson('/api/app/invitations', ['role' => 'admin'])->assertForbidden();

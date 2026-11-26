@@ -1,6 +1,6 @@
 import { router } from '@inertiajs/react'
-﻿import { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import api, { csrf, fetchSession } from '../api/client'
+import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import api, { csrf, startPrivateSession, stopPrivateSession } from '../api/client'
 
 const AuthContext = createContext(null)
 
@@ -11,17 +11,10 @@ function normalizeUser(u) {
 
 export function AuthProvider({ children, initialUser }) {
   const [user, setUser] = useState(() => normalizeUser(initialUser))
-  const [loading, setLoading] = useState(false)
-
-  const refresh = useCallback(async () => {
-    try {
-      const { data } = await fetchSession()
-      setUser(normalizeUser(data.user || data))
-    } catch {
-      setUser(null)
-    } finally {
-      setLoading(false)
-    }
+  const setAuthenticatedUser = useCallback((value) => {
+    if (value) startPrivateSession()
+    else stopPrivateSession()
+    setUser(normalizeUser(value))
   }, [])
 
   useEffect(() => {
@@ -35,27 +28,34 @@ export function AuthProvider({ children, initialUser }) {
 
   const login = async (payload) => {
     await csrf()
-    await api.post('/api/login', payload)
-    const { data } = await api.get('/api/user')
-    const authenticatedUser = normalizeUser(data.user || data)
-    if (!authenticatedUser) throw new Error('Sign-in succeeded, but the session could not be verified. Please try again.')
-    setUser(authenticatedUser)
+    const { data } = await api.post('/api/login', payload)
+    if (!data?.user?.id) throw new Error('Sign-in succeeded, but the session could not be verified. Please try again.')
+    setAuthenticatedUser(data.user)
     return data
   }
 
-
   const logout = async () => {
+    stopPrivateSession()
     try {
-      await api.post('/api/logout')
+      try {
+        await api.post('/api/logout')
+      } catch (error) {
+        if (error.response?.status !== 419) throw error
+        await csrf()
+        await api.post('/api/logout')
+      }
     } catch (error) {
-      if (error.response?.status !== 401) throw error
+      if (error.response?.status !== 401) {
+        if (user) startPrivateSession()
+        throw error
+      }
     }
     router.clearHistory()
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, login, logout, refresh }}>
+    <AuthContext.Provider value={{ user, setUser: setAuthenticatedUser, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

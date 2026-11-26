@@ -41,7 +41,6 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::put('/presence', [MemberPresenceController::class, 'update'])->middleware('throttle:15,1');
         Route::get('/contacts/export', [ContactController::class, 'export']);
         Route::post('/contacts/import', [ContactController::class, 'import'])->middleware('role:agent,admin,owner');
-        Route::get('/profile', [SettingsController::class, 'profile']);
         Route::post('/profile', [SettingsController::class, 'updateProfile']);
         Route::post('/password', [SettingsController::class, 'updatePassword']);
         Route::get('/sessions', [SettingsController::class, 'sessions']);
@@ -125,12 +124,8 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 
         Route::prefix('dashboard')->group(function () {
             Route::get('/overview', [DashboardController::class, 'overview']);
-            Route::get('/attention', [DashboardController::class, 'attention']);
             Route::get('/activity', [DashboardController::class, 'activity']);
             Route::get('/campaigns', [DashboardController::class, 'campaigns']);
-            Route::get('/team', [DashboardController::class, 'team']);
-            Route::get('/setup', [DashboardController::class, 'setup']);
-            Route::get('/volume', [DashboardController::class, 'volume']);
             Route::get('/hourly-volume', [DashboardController::class, 'hourlyVolume']);
         });
 

@@ -22,7 +22,7 @@ class MemberPresenceController extends Controller
     public function update(Request $request): Response
     {
         $data = $request->validate(['status' => ['required', 'in:online,away']]);
-        User::query()->whereKey($request->user()->id)->update([
+        User::query()->whereKey($request->user()->id)->toBase()->update([
             'presence_status' => $data['status'],
             'last_seen_at' => now(),
         ]);

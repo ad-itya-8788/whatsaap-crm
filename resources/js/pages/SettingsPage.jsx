@@ -175,23 +175,13 @@ function OverviewPanel({ user }) {
 }
 
 function ProfilePanel() {
-  const { user, refresh } = useAuth()
+  const { user, setUser } = useAuth()
   const toast = useToast()
   const [values, setValues] = useState({ name: user?.name || '', email: user?.email || '' })
   const [avatar, setAvatar] = useState(null)
   const [removeAvatar, setRemoveAvatar] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '')
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    api.get('/api/app/profile').then(({ data }) => {
-      if (cancelled || !data?.user) return
-      setValues({ name: data.user.name || '', email: data.user.email || '' })
-      setAvatarUrl(data.user.avatar_url || '')
-    }).catch(() => {})
-    return () => { cancelled = true }
-  }, [])
 
   const save = async (event) => {
     event.preventDefault()
@@ -206,7 +196,7 @@ function ProfilePanel() {
       setAvatarUrl(data?.user?.avatar_url || '')
       setAvatar(null)
       setRemoveAvatar(false)
-      await refresh()
+      setUser({ ...user, ...data.user })
       toast.success('Profile updated.')
     } catch (requestError) {
       toast.error(errorMessage(requestError, 'Unable to update your profile.'))

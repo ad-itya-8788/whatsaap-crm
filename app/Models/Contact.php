@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Contact extends Model
 {
     protected $fillable = [
-        'user_id', 'phone', 'phone_normalized', 'wa_user_id', 'wa_parent_user_id', 'wa_username',
+        'user_id', 'phone', 'phone_normalized', 'wa_user_id', 'wa_username',
         'name', 'email', 'company', 'avatar_url', 'consent_status', 'consent_at',
     ];
 

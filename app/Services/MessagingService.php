@@ -97,7 +97,7 @@ class MessagingService
                 ->where('name', $data['template_name'] ?? '')
                 ->when($data['template_language'] ?? null, fn ($query, $language) => $query->where('language', $language))
                 ->first();
-            if (! $template || strtoupper((string) ($template->approval_status ?: $template->status)) !== 'APPROVED') {
+            if (! $template || ! $template->isApproved()) {
                 throw new MessagingException('Choose an approved template in the requested language.', 422);
             }
 

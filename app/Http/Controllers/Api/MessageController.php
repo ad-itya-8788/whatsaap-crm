@@ -100,7 +100,6 @@ class MessageController extends Controller
             $message->reactions()->where('actor_type', 'agent')->delete();
             if ($emoji !== '') {
                 $message->reactions()->create([
-                    'conversation_id' => $message->conversation_id,
                     'actor_type' => 'agent',
                     'actor_id' => $request->user()->id,
                     'emoji' => $emoji,
@@ -109,7 +108,8 @@ class MessageController extends Controller
         });
 
         return response()->json([
-            'reactions' => $message->reactions()->get(),
+            'reactions' => $message->reactions()->get()
+                ->each(fn (MessageReaction $reaction) => $reaction->setAttribute('conversation_id', $message->conversation_id)),
         ]);
     }
 

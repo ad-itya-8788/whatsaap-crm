@@ -49,7 +49,6 @@ class TemplateController extends Controller
         $data = $request->validated();
         $data['user_id'] = $request->user()->id;
         $data['status'] = 'DRAFT';
-        $data['approval_status'] = 'DRAFT';
         $this->mapHeader($data);
 
         return response()->json(MessageTemplate::create($data), 201);
@@ -97,7 +96,6 @@ class TemplateController extends Controller
         $message_template->update([
             'meta_template_id' => $response['id'] ?? $message_template->meta_template_id,
             'status' => $status,
-            'approval_status' => $status,
             'submission_error' => null,
             'rejection_reason' => null,
             'last_submitted_at' => now(),
@@ -131,7 +129,6 @@ class TemplateController extends Controller
                     'user_id' => $config->user_id,
                     'category' => $item['category'] ?? 'UTILITY',
                     'status' => $status,
-                    'approval_status' => $status,
                     'meta_template_id' => $item['id'] ?? null,
                     'body_text' => $body['text'] ?? null,
                     'header_type' => $header['format'] ?? null,
@@ -189,7 +186,7 @@ class TemplateController extends Controller
 
     private function isApproved(MessageTemplate $template): bool
     {
-        return strtoupper((string) ($template->approval_status ?: $template->status)) === 'APPROVED';
+        return $template->isApproved();
     }
 
     private function renderTemplateBody(string $body, array $variables): string

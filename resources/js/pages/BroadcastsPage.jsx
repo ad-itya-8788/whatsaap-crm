@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, router } from '@inertiajs/react'
 import api from '../api/client.js'
 import Icon from '../components/common/Icon.jsx'
@@ -25,22 +25,41 @@ export default function BroadcastsPage() {
   const [pagination, setPagination] = useState({ currentPage: 1, lastPage: 1, total: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const request = useRef(null)
 
   const load = useCallback(async (page = 1, background = false) => {
+    if (background && request.current) return
+    request.current?.abort()
+    const controller = new AbortController()
+    request.current = controller
     if (!background) setLoading(true)
-    setError('')
+    if (!background) setError('')
     try {
-      const { data } = await api.get('/api/app/broadcasts', { params: { per_page: 50, page } })
+      const { data } = await api.get('/api/app/broadcasts', { params: { per_page: 50, page }, signal: controller.signal })
+      if (controller.signal.aborted) return
+      setError('')
       setItems(extractList(data))
       setPagination(extractPaginator(data))
     } catch (requestError) {
-      setError(errorMessage(requestError, 'Unable to load broadcasts.'))
+      if (!background && requestError.code !== 'ERR_CANCELED') {
+        setError(errorMessage(requestError, 'Unable to load broadcasts.'))
+      }
     } finally {
-      setLoading(false)
+      if (request.current === controller) {
+        request.current = null
+        setLoading(false)
+      }
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    const timer = window.setTimeout(load, 0)
+    return () => {
+      window.clearTimeout(timer)
+      request.current?.abort()
+      request.current = null
+    }
+  }, [load])
 
   const polling = items.some((item) => ACTIVE.includes(item.status))
 

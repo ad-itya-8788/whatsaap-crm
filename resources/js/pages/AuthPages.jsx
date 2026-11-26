@@ -84,7 +84,7 @@ export function RegisterPage() {
 
 export function InviteJoinPage() {
   const { inviteToken: token } = usePage().props
-  const { user, loading, logout, refresh } = useAuth()
+  const { user, logout, setUser } = useAuth()
   const [invitation, setInvitation] = useState(null)
   const [loadingInvite, setLoadingInvite] = useState(Boolean(token))
   const [error, setError] = useState('')
@@ -112,8 +112,8 @@ export function InviteJoinPage() {
     setError('')
     try {
       await csrf()
-      await api.post(`/api/invitations/${encodeURIComponent(token)}/redeem`, values)
-      await refresh()
+      const { data } = await api.post(`/api/invitations/${encodeURIComponent(token)}/redeem`, values)
+      setUser(data.user)
       router.visit('/dashboard', { replace: true })
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to accept the invitation.'))
@@ -122,7 +122,7 @@ export function InviteJoinPage() {
     }
   }
 
-  const loadingPage = loading || loadingInvite
+  const loadingPage = loadingInvite
   const signOut = async () => {
     setError('')
     try {

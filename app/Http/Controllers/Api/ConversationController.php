@@ -25,7 +25,7 @@ class ConversationController extends Controller
         ]);
 
         $query = Conversation::query()
-            ->with(['contact.tags', 'assignedAgent'])
+            ->with(['contact.tags', 'assignedAgent:id,name,avatar_url'])
             ->withCount('notes');
 
         if ($search = $request->string('search')->toString()) {
@@ -73,12 +73,12 @@ class ConversationController extends Controller
             ? $query->orderBy('last_inbound_at')->orderByDesc('updated_at')
             : $query->orderByDesc('last_message_at')->orderByDesc('updated_at');
 
-        return response()->json($query->paginate($perPage));
+        return response()->json($query->orderByDesc('id')->paginate($perPage));
     }
 
     public function show(Conversation $conversation): JsonResponse
     {
-        return response()->json($conversation->load(['contact', 'assignedAgent']));
+        return response()->json($conversation->load(['contact.tags', 'assignedAgent:id,name,avatar_url'])->loadCount('notes'));
     }
 
     public function unreadCount(): JsonResponse

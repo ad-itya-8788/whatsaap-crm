@@ -12,28 +12,41 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const requestId = useRef(0)
+  const request = useRef(null)
 
   const load = useCallback(async (page = 1, background = false) => {
-    const id = ++requestId.current
+    if (background && request.current) return
+    request.current?.abort()
+    const controller = new AbortController()
+    request.current = controller
     if (!background) {
       setLoading(true)
       setError('')
     }
     try {
-      const { data } = await api.get('/api/app/notifications', { params: { per_page: 50, page } })
-      if (id !== requestId.current) return
+      const { data } = await api.get('/api/app/notifications', { params: { per_page: 50, page }, signal: controller.signal })
+      if (controller.signal.aborted) return
       setError('')
       setItems(extractList(data))
       setPagination(extractPaginator(data))
     } catch (requestError) {
-      if (id === requestId.current && !background) setError(errorMessage(requestError, 'Unable to load notifications.'))
+      if (!controller.signal.aborted && requestError.code !== 'ERR_CANCELED' && !background) setError(errorMessage(requestError, 'Unable to load notifications.'))
     } finally {
-      if (id === requestId.current) setLoading(false)
+      if (request.current === controller) {
+        request.current = null
+        setLoading(false)
+      }
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    const timer = window.setTimeout(load, 0)
+    return () => {
+      window.clearTimeout(timer)
+      request.current?.abort()
+      request.current = null
+    }
+  }, [load])
   useEffect(() => {
     if (busy || loading) return undefined
     const refresh = () => {
@@ -52,7 +65,7 @@ export default function NotificationsPage() {
     setBusy(true)
     try {
       await api.post(`/api/app/notifications/${item.id}/read`)
-      requestId.current++
+      request.current?.abort()
       setItems((current) => current.map((row) => row.id === item.id ? { ...row, read_at: new Date().toISOString() } : row))
       window.dispatchEvent(new Event('wacrm:notifications-changed'))
     } catch (requestError) {
@@ -66,7 +79,7 @@ export default function NotificationsPage() {
     setBusy(true)
     try {
       await api.post('/api/app/notifications/read-all')
-      requestId.current++
+      request.current?.abort()
       setItems((current) => current.map((row) => ({ ...row, read_at: row.read_at || new Date().toISOString() })))
       toast.success('All notifications marked as read.')
       window.dispatchEvent(new Event('wacrm:notifications-changed'))

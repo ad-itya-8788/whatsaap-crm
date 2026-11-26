@@ -12,14 +12,29 @@ const api = axios.create({
 })
 
 let csrfPromise = null
-let sessionRequest = null
+let privateSession = null
 
-export function fetchSession() {
-  if (!sessionRequest) {
-    sessionRequest = api.get('/api/user', { timeout: 8000 }).finally(() => { sessionRequest = null })
-  }
-  return sessionRequest
+export function startPrivateSession() {
+  privateSession ??= new AbortController()
 }
+
+export function stopPrivateSession() {
+  privateSession?.abort()
+  privateSession = null
+}
+
+const isPrivate = (url) => url === '/api/user' || url?.startsWith('/api/app/')
+
+api.interceptors.request.use((config) => {
+  if (!isPrivate(config.url)) return config
+  if (!privateSession) throw new axios.CanceledError('No active session', config)
+
+  const sessionSignal = privateSession.signal
+  config.sessionSignal = sessionSignal
+  config.signal = config.signal ? AbortSignal.any([sessionSignal, config.signal]) : sessionSignal
+  if (config.method === 'get') config.timeout ||= 30000
+  return config
+})
 
 export async function csrf() {
   if (!csrfPromise) {
@@ -31,7 +46,9 @@ export async function csrf() {
 api.interceptors.response.use(
   (r) => r,
   (err) => {
-    if (err?.response?.status === 401 && err?.config?.url?.startsWith('/api/app/')) {
+    if (err?.response?.status === 401
+      && privateSession && err.config?.sessionSignal === privateSession.signal) {
+      stopPrivateSession()
       window.dispatchEvent(new Event('wacrm:unauthorized'))
     }
     return Promise.reject(err)

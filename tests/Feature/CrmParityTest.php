@@ -23,11 +23,25 @@ class CrmParityTest extends TestCase
     {
         $agent = User::factory()->create(['role' => 'agent']);
         $this->assertContains('localhost', config('sanctum.stateful'));
-        $this->withHeader('Origin', 'http://localhost')->postJson('/api/login', [
+        $login = $this->withHeader('Origin', 'http://localhost')->postJson('/api/login', [
             'email' => $agent->email,
             'password' => 'password',
         ])->assertOk()->assertJsonPath('user.id', $agent->id);
-        $this->getJson('/api/app/contacts')->assertOk();
+        $sessionCookie = config('session.cookie');
+        $this->withCredentials()->withUnencryptedCookie($sessionCookie, $login->getCookie($sessionCookie, false)->getValue());
+        $this->app['auth']->forgetGuards();
+        $contact = Contact::create(['name' => 'Existing contact']);
+        $conversation = Conversation::create(['contact_id' => $contact->id, 'unread_count' => 1]);
+        $this->getJson('/api/app/contacts?search=Existing%20contact')->assertOk()->assertJsonPath('data.0.conversation_id', $conversation->id);
+        $this->getJson('/api/app/conversations/'.$conversation->id)->assertOk()->assertJsonPath('id', $conversation->id);
+        $this->getJson('/api/app/inbox/unread-count')->assertOk()->assertJsonStructure(['count']);
+        $this->getJson('/api/app/notifications/unread-count')->assertOk()->assertJsonPath('count', 0);
+        $this->putJson('/api/app/presence', ['status' => 'online'])->assertNoContent();
+        $this->getJson('/api/app/presence')->assertOk()->assertJsonPath($agent->id.'.presence_status', 'online');
+
+        $this->postJson('/api/logout')->assertNoContent();
+        $this->app['auth']->forgetGuards();
+        $this->getJson('/api/app/conversations')->assertUnauthorized();
 
         $agent->update(['is_active' => false]);
         $this->actingAs($agent)->getJson('/api/app/contacts')->assertUnauthorized();
@@ -92,11 +106,14 @@ class CrmParityTest extends TestCase
         ]);
         $template = MessageTemplate::create([
             'name' => 'qa_update', 'language' => 'en_US', 'body_text' => 'Hello {{1}}',
-            'category' => 'UTILITY', 'approval_status' => 'APPROVED',
+            'category' => 'UTILITY', 'status' => 'APPROVED',
         ]);
         $path = '/api/app/conversations/'.$conversation->id.'/messages';
         $interactive = ['kind' => 'buttons', 'body' => 'Choose a time', 'buttons' => [['id' => 'morning', 'title' => 'Morning']]];
-        $this->actingAs($agent)->postJson($path, [
+        $this->actingAs($agent)->getJson('/api/app/whatsapp/templates')->assertOk()
+            ->assertJsonFragment(['status' => 'APPROVED', 'approval_status' => 'APPROVED']);
+        $this->getJson('/api/app/broadcasts/options')->assertOk()->assertJsonFragment(['name' => $template->name]);
+        $this->postJson($path, [
             'content_type' => 'interactive', 'content_text' => 'Choose a time', 'interactive_payload' => $interactive,
         ])->assertCreated()->assertJsonPath('message_id', 'wamid.qa.interactive');
 

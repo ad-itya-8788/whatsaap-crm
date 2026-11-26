@@ -46,9 +46,9 @@ it('starts at the current cursor and only suppresses alerts for a visible thread
     )
   })
 
-  expect(api.get).toHaveBeenNthCalledWith(1, '/api/app/notifications/browser-events', { params: {} })
+  expect(api.get).toHaveBeenNthCalledWith(1, '/api/app/notifications/browser-events', expect.objectContaining({ params: {} }))
   await act(() => vi.advanceTimersByTimeAsync(15000))
-  expect(api.get).toHaveBeenNthCalledWith(2, '/api/app/notifications/browser-events', { params: { after: 0 } })
+  expect(api.get).toHaveBeenNthCalledWith(2, '/api/app/notifications/browser-events', expect.objectContaining({ params: { after: 0 } }))
   expect(show).not.toHaveBeenCalled()
 
   visibility.mockReturnValue('hidden')
@@ -59,4 +59,7 @@ it('starts at the current cursor and only suppresses alerts for a visible thread
   }))
   expect(localStorage.getItem(`${LAST_MESSAGE_STORAGE_KEY}:42`)).toBe('2')
   expect(localStorage.getItem(`${LAST_MESSAGE_STORAGE_KEY}:7`)).toBe('500')
+  const { signal } = api.get.mock.calls[0][1]
+  cleanup()
+  expect(signal.aborted).toBe(true)
 })

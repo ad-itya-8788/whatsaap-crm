@@ -48,11 +48,14 @@ export default function BroadcastDetailPage() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const requestId = useRef(0)
+  const request = useRef(null)
   const canSend = user?.role !== 'viewer'
 
   const load = useCallback(async (page = 1, background = false) => {
-    const currentRequest = ++requestId.current
+    if (background && request.current) return
+    request.current?.abort()
+    const controller = new AbortController()
+    request.current = controller
     if (!background) {
       setError('')
       setLoading(true)
@@ -60,22 +63,33 @@ export default function BroadcastDetailPage() {
     try {
       const { data } = await api.get(`/api/app/broadcasts/${id}`, {
         params: { per_page: 50, page, status },
+        signal: controller.signal,
       })
-      if (currentRequest !== requestId.current) return
+      if (controller.signal.aborted) return
       setError('')
       setBroadcast(data.broadcast)
       setRecipients(extractList(data.recipients))
       setPagination(extractPaginator(data.recipients))
     } catch (requestError) {
-      if (currentRequest === requestId.current && !background) {
+      if (!controller.signal.aborted && requestError.code !== 'ERR_CANCELED' && !background) {
         setError(errorMessage(requestError, 'Unable to load this broadcast.'))
       }
     } finally {
-      if (currentRequest === requestId.current) setLoading(false)
+      if (request.current === controller) {
+        request.current = null
+        setLoading(false)
+      }
     }
   }, [id, status])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    const timer = window.setTimeout(load, 0)
+    return () => {
+      window.clearTimeout(timer)
+      request.current?.abort()
+      request.current = null
+    }
+  }, [load])
 
   const active = broadcast && ['sending', 'scheduled'].includes(broadcast.status)
   useEffect(() => {

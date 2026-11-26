@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { router } from '@inertiajs/react'
 import api from '../api/client.js'
 import PageHeader from '../components/common/PageHeader.jsx'
@@ -61,7 +61,6 @@ export default function ContactsPage() {
   const readOnly = user?.role === 'viewer'
   const [contacts, setContacts] = useState([])
   const [contactStats, setContactStats] = useState(null)
-  const [conversations, setConversations] = useState([])
   const [tags, setTags] = useState([])
   const [customFields, setCustomFields] = useState([])
   const [search, setSearch] = useState('')
@@ -108,11 +107,17 @@ export default function ContactsPage() {
     return params
   }, [debouncedSearch, consentFilter, fieldFilterId, fieldFilterValue, selectedTagIds, page])
 
+  const contactsRequest = useRef(null)
+
   const loadContacts = useCallback(async () => {
+    contactsRequest.current?.abort()
+    const controller = new AbortController()
+    contactsRequest.current = controller
     setLoading(true)
     setError('')
     try {
-      const { data } = await api.get('/api/app/contacts', { params: buildParams() })
+      const { data } = await api.get('/api/app/contacts', { params: buildParams(), signal: controller.signal })
+      if (controller.signal.aborted) return
       setContacts(extractList(data))
       setPaginator(extractPaginator(data))
       if (data?.stats) {
@@ -124,22 +129,22 @@ export default function ContactsPage() {
         })
       }
     } catch (requestError) {
-      setError(errorMessage(requestError, 'Unable to load contacts.'))
+      if (requestError.code !== 'ERR_CANCELED') setError(errorMessage(requestError, 'Unable to load contacts.'))
     } finally {
-      setLoading(false)
+      if (contactsRequest.current === controller) setLoading(false)
     }
   }, [buildParams])
 
-  const loadMeta = useCallback(async () => {
+  const loadMeta = useCallback(async (signal) => {
     try {
       const [tagResult, fieldResult] = await Promise.all([
-        api.get('/api/app/tags'),
-        api.get('/api/app/custom-fields'),
+        api.get('/api/app/tags', { signal }),
+        api.get('/api/app/custom-fields', { signal }),
       ])
       setTags(extractList(tagResult.data))
       setCustomFields(extractList(fieldResult.data).filter((field) => field.is_active !== false))
     } catch (requestError) {
-      setError(errorMessage(requestError, 'Unable to load tags and custom fields.'))
+      if (requestError.code !== 'ERR_CANCELED') setError(errorMessage(requestError, 'Unable to load tags and custom fields.'))
     }
   }, [])
 
@@ -151,14 +156,23 @@ export default function ContactsPage() {
     return () => clearTimeout(timer)
   }, [search])
 
-  useEffect(() => { loadContacts() }, [loadContacts])
-  useEffect(() => { loadMeta() }, [loadMeta])
+  useEffect(() => {
+    const timer = window.setTimeout(loadContacts, 0)
+    return () => {
+      window.clearTimeout(timer)
+      contactsRequest.current?.abort()
+      contactsRequest.current = null
+    }
+  }, [loadContacts])
 
   useEffect(() => {
-    api.get('/api/app/conversations')
-      .then(({ data }) => setConversations(extractList(data)))
-      .catch(() => {})
-  }, [])
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => loadMeta(controller.signal), 0)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [loadMeta])
 
   const changeFilter = (setter, value) => {
     setter(value)
@@ -299,16 +313,14 @@ export default function ContactsPage() {
 
   const openChat = async (contact) => {
     setError('')
-    const existing = conversations.find((item) => String(item.contact?.id ?? item.contact_id) === String(contact.id))
-    if (existing) {
-      router.visit(`/inbox?c=${existing.id}`)
+    if (contact.conversation_id) {
+      router.visit(`/inbox?c=${contact.conversation_id}`)
       return
     }
     try {
       const { data } = await api.post('/api/app/conversations/start', { contact_id: contact.id })
       const created = data?.conversation || data?.data || data
       if (!created?.id) throw new Error('The conversation response did not include an id.')
-      setConversations((items) => [...items, created])
       router.visit(`/inbox?c=${created.id}`)
     } catch (requestError) {
       const message = errorMessage(requestError, 'Unable to open a conversation for this contact.')

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AccountInvitation;
 use App\Models\User;
+use App\Support\SessionUser;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -103,6 +104,6 @@ class InvitationController extends Controller
         Auth::guard('web')->login($user);
         $request->session()->regenerate();
 
-        return response()->json(['user' => $user], 201);
+        return response()->json(['user' => SessionUser::payload($user)], 201);
     }
 }

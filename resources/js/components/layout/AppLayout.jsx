@@ -9,6 +9,7 @@ import { PresenceHeartbeat } from '../common/MemberPresence.jsx'
 import Icon from '../common/Icon.jsx'
 import { useToast } from '../common/ToastProvider.jsx'
 import { changeAppearance, useColorMode } from '../../lib/appearance.js'
+import { usePoll } from '../../lib/usePoll.js'
 import { errorMessage } from '../../lib/utils.js'
 
 const mainNav = [
@@ -86,42 +87,18 @@ export default function AppLayout({ children }) {
   const [notificationUnread, setNotificationUnread] = useState(0)
   const mode = useColorMode()
 
-  const loadUnread = useCallback(async () => {
-    try {
-      const { data } = await api.get('/api/app/inbox/unread-count')
-      setUnread(Number(data?.count || 0))
-    } catch {
-      setUnread(0)
-    }
+  const loadUnread = useCallback(async (signal) => {
+    const { data } = await api.get('/api/app/inbox/unread-count', { signal, timeout: 10000 })
+    setUnread(Number(data?.count || 0))
   }, [])
 
-  const loadNotificationUnread = useCallback(async () => {
-    try {
-      const { data } = await api.get('/api/app/notifications/unread-count')
-      setNotificationUnread(Number(data?.count || 0))
-    } catch {
-      setNotificationUnread(0)
-    }
+  const loadNotificationUnread = useCallback(async (signal) => {
+    const { data } = await api.get('/api/app/notifications/unread-count', { signal, timeout: 10000 })
+    setNotificationUnread(Number(data?.count || 0))
   }, [])
 
-  useEffect(() => {
-    const refresh = () => {
-      if (document.hidden) return
-      loadUnread()
-      loadNotificationUnread()
-    }
-    refresh()
-    const timer = window.setInterval(refresh, 60000)
-    document.addEventListener('visibilitychange', refresh)
-    window.addEventListener('wacrm:notifications-changed', loadNotificationUnread)
-    window.addEventListener('wacrm:inbox-changed', loadUnread)
-    return () => {
-      window.clearInterval(timer)
-      document.removeEventListener('visibilitychange', refresh)
-      window.removeEventListener('wacrm:notifications-changed', loadNotificationUnread)
-      window.removeEventListener('wacrm:inbox-changed', loadUnread)
-    }
-  }, [loadUnread, loadNotificationUnread])
+  usePoll(loadUnread, 60_000, { enabled: Boolean(user), event: 'wacrm:inbox-changed' })
+  usePoll(loadNotificationUnread, 60_000, { enabled: Boolean(user), event: 'wacrm:notifications-changed' })
 
   useEffect(() => {
     setDrawerOpen(false)

@@ -19,6 +19,14 @@ class InertiaRoutingTest extends TestCase
             ->component('LoginPage', false)
             ->where('auth.user', null));
         $this->getJson('/api/user')->assertUnauthorized();
+
+        foreach (['presence', 'inbox/unread-count', 'notifications/unread-count', 'conversations', 'conversations/999/messages'] as $endpoint) {
+            $this->getJson('/api/app/'.$endpoint)->assertUnauthorized();
+            $this->getJson('/api/app/'.$endpoint, ['Origin' => 'http://localhost'])
+                ->assertUnauthorized()->assertCookieMissing(config('session.cookie'));
+        }
+
+        $this->putJson('/api/app/presence', ['status' => 'online'])->assertUnauthorized();
         $this->getJson('/api/missing')->assertNotFound();
     }
 

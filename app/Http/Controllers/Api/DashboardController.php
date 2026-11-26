@@ -18,11 +18,6 @@ class DashboardController extends Controller
         return response()->json($this->dashboard->overview($this->days($request)));
     }
 
-    public function attention(): JsonResponse
-    {
-        return response()->json($this->dashboard->attention());
-    }
-
     public function activity(Request $request): JsonResponse
     {
         $limit = min(max($request->integer('limit', 50), 1), 100);
@@ -33,21 +28,6 @@ class DashboardController extends Controller
     public function campaigns(Request $request): JsonResponse
     {
         return response()->json($this->dashboard->campaigns($this->days($request)));
-    }
-
-    public function team(): JsonResponse
-    {
-        return response()->json($this->dashboard->team());
-    }
-
-    public function setup(): JsonResponse
-    {
-        return response()->json($this->dashboard->setup());
-    }
-
-    public function volume(Request $request): JsonResponse
-    {
-        return response()->json($this->dashboard->volume($this->days($request)));
     }
 
     public function hourlyVolume(Request $request): JsonResponse

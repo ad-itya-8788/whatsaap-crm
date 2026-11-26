@@ -14,7 +14,6 @@ use App\Models\WhatsappConfig;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class DashboardService
 {
@@ -69,11 +68,6 @@ class DashboardService
             'attention' => $attention,
             'queue' => $attention['queue'],
         ];
-    }
-
-    public function attention(int $limit = 10): array
-    {
-        return $this->attentionSummary($limit, $this->replyTargetMinutes());
     }
 
     private function attentionSummary(int $limit, int $target): array
@@ -264,7 +258,7 @@ class DashboardService
 
     public function setup(): array
     {
-        $config = WhatsappConfig::query()->latest('id')->first();
+        $config = WhatsappConfig::query()->latest('id')->first(['status', 'phone_number_id']);
         $counts = DB::query()
             ->selectSub(MessageTemplate::query()->selectRaw('COUNT(*)'), 'templates')
             ->selectSub(QuickReply::query()->selectRaw('COUNT(*)'), 'quick_replies')
@@ -283,13 +277,6 @@ class DashboardService
             'tags' => (int) $counts->tags,
             'customFields' => (int) $counts->custom_fields,
         ];
-    }
-
-    public function volume(int $days = 7): array
-    {
-        [$from, $to] = $this->range($days);
-
-        return $this->volumeRows($from, $to);
     }
 
     public function hourlyVolume(int $days = 7): array
@@ -381,10 +368,6 @@ class DashboardService
 
     private function replyTargetMinutes(): int
     {
-        if (!Schema::hasTable('crm_settings')) {
-            return 15;
-        }
-
         $value = DB::table('crm_settings')->where('key', 'reply_target_minutes')->value('value');
 
         if (!is_string($value)) {

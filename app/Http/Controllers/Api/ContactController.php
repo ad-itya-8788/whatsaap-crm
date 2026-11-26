@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ContactRequest;
 use App\Models\Contact;
+use App\Models\Conversation;
 use App\Models\ConsentEvent;
 use App\Models\CustomField;
 use App\Models\Tag;
@@ -35,7 +36,9 @@ class ContactController extends Controller
 
         $query = Contact::query()
             ->with(['tags', 'customFieldValues.customField'])
-            ->withCount('tags');
+            ->withCount('tags')
+            ->addSelect(['conversation_id' => Conversation::query()
+                ->select('id')->whereColumn('contact_id', 'contacts.id')->limit(1)]);
 
         if ($search = $request->string('search')->toString()) {
             $query->where(function ($q) use ($search) {
@@ -63,7 +66,7 @@ class ContactController extends Controller
             });
         }
 
-        $paginator = $query->orderByDesc('updated_at')->paginate($perPage);
+        $paginator = $query->orderByDesc('updated_at')->orderByDesc('id')->paginate($perPage);
         $paginator->setCollection(
             $paginator->getCollection()->map(fn (Contact $contact) => $this->contactPayload($contact))
         );

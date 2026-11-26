@@ -41,6 +41,7 @@ export default function ChatsPage() {
 
   const [conversations, setConversations] = useState([])
   const [pagination, setPagination] = useState({ currentPage: 1, lastPage: 1, total: 0 })
+  const [linkedConversation, setLinkedConversation] = useState(null)
   const [messages, setMessages] = useState([])
   const [messageCursor, setMessageCursor] = useState({ next: null, hasMore: false })
   const [selectedId, setSelectedId] = useState(urlConversation || '')
@@ -84,6 +85,7 @@ export default function ChatsPage() {
   const [mediaViewer, setMediaViewer] = useState(null)
 
   const threadRef = useRef(null)
+  const listAbortRef = useRef(null)
   const threadAbortRef = useRef(null)
   const sendAttemptRef = useRef(null)
   const richSendAttemptRef = useRef(null)
@@ -93,7 +95,8 @@ export default function ChatsPage() {
   const scrollToBottomRef = useRef(true)
   selectedIdRef.current = selectedId
 
-  const selected = conversations.find((item) => String(item.id) === String(selectedId)) || null
+  const selected = conversations.find((item) => String(item.id) === String(selectedId))
+    || (String(linkedConversation?.id) === selectedId ? linkedConversation : null)
   const optedOut = selected?.contact?.consent_status === 'opted_out'
   const readOnly = user?.role === 'viewer'
   const windowOpen = Date.now() - Date.parse(selected?.last_inbound_at) < 24 * 60 * 60 * 1000
@@ -102,10 +105,15 @@ export default function ChatsPage() {
   const mediaItems = useMemo(() => messages.map(mediaItem).filter(Boolean), [messages])
 
   const loadConversations = useCallback(async (page = 1, append = false, background = false) => {
+    if (listAbortRef.current && background) return
+    listAbortRef.current?.abort()
+    const controller = new AbortController()
+    listAbortRef.current = controller
     if (!background && page === 1) setLoadingList(true)
     if (append) setLoadingMore(true)
     try {
       const { data } = await api.get('/api/app/conversations', {
+        signal: controller.signal,
         params: {
           search: debouncedQuery || undefined,
           status: statusFilter,
@@ -114,6 +122,7 @@ export default function ChatsPage() {
           page,
         },
       })
+      if (controller.signal.aborted) return
       const rows = extractList(data)
       setConversations((current) => {
         if (!append) return rows
@@ -123,38 +132,41 @@ export default function ChatsPage() {
       setPagination(extractPaginator(data))
       setListError('')
     } catch (requestError) {
-      if (!background) setListError(errorMessage(requestError, 'Unable to load conversations.'))
+      if (!background && !controller.signal.aborted && requestError.code !== 'ERR_CANCELED') setListError(errorMessage(requestError, 'Unable to load conversations.'))
     } finally {
-      if (!background && page === 1) setLoadingList(false)
-      if (append) setLoadingMore(false)
+      if (listAbortRef.current === controller) {
+        listAbortRef.current = null
+        setLoadingList(false)
+        setLoadingMore(false)
+      }
     }
   }, [debouncedQuery, statusFilter, assigneeFilter])
 
-  const loadOptions = useCallback(async () => {
+  const loadOptions = useCallback(async (signal) => {
     try {
       const [agentResult, replyResult, tagResult] = await Promise.all([
-        api.get('/api/app/agents'),
-        api.get('/api/app/quick-replies'),
-        api.get('/api/app/tags'),
+        api.get('/api/app/agents', { signal }),
+        api.get('/api/app/quick-replies', { signal }),
+        api.get('/api/app/tags', { signal }),
       ])
       setAgents(extractList(agentResult.data))
       setQuickReplies(extractList(replyResult.data))
       setTags(extractList(tagResult.data))
     } catch (requestError) {
-      toast.error(errorMessage(requestError, 'Unable to load chat options.'))
+      if (requestError.code !== 'ERR_CANCELED') toast.error(errorMessage(requestError, 'Unable to load chat options.'))
     }
   }, [toast])
 
-  const loadNotes = useCallback(async (id) => {
+  const loadNotes = useCallback(async (id, signal) => {
     if (!id) return
     setNotesLoading(true)
     try {
-      const { data } = await api.get(`/api/app/conversations/${id}/notes`)
-      setNotes(extractList(data))
+      const { data } = await api.get(`/api/app/conversations/${id}/notes`, { signal })
+      if (!signal?.aborted && selectedIdRef.current === id) setNotes(extractList(data))
     } catch (requestError) {
-      toast.error(errorMessage(requestError, 'Unable to load notes.'))
+      if (requestError.code !== 'ERR_CANCELED') toast.error(errorMessage(requestError, 'Unable to load notes.'))
     } finally {
-      setNotesLoading(false)
+      if (!signal?.aborted && selectedIdRef.current === id) setNotesLoading(false)
     }
   }, [toast])
 
@@ -162,12 +174,10 @@ export default function ChatsPage() {
     const { background = false, cursor = null, search = debouncedMessageSearch, markRead = false } = options
     if (!id) return false
 
-    let controller = null
-    if (!background) {
-      threadAbortRef.current?.abort()
-      controller = new AbortController()
-      threadAbortRef.current = controller
-    }
+    if (threadAbortRef.current && background) return false
+    threadAbortRef.current?.abort()
+    const controller = new AbortController()
+    threadAbortRef.current = controller
 
     if (!cursor && !background) {
       setLoadingMessages(true)
@@ -183,9 +193,9 @@ export default function ChatsPage() {
     try {
       const { data } = await api.get(`/api/app/conversations/${id}/messages`, {
         params: { cursor: cursor || undefined, per_page: 50, search: search || undefined },
-        signal: controller?.signal,
+        signal: controller.signal,
       })
-      if (selectedIdRef.current !== id) return false
+      if (controller.signal.aborted || selectedIdRef.current !== id) return false
 
       const batch = chronological(extractList(data))
       if (cursor) {
@@ -210,10 +220,11 @@ export default function ChatsPage() {
 
       if (markRead) {
         try {
-          await api.post(`/api/app/conversations/${id}/read`)
+          await api.post(`/api/app/conversations/${id}/read`, null, { signal: controller.signal })
+          window.dispatchEvent(new Event('wacrm:inbox-changed'))
           setConversations((items) => items.map((item) => String(item.id) === String(id) ? { ...item, unread_count: 0 } : item))
         } catch (requestError) {
-          toast.error(errorMessage(requestError, 'Unable to mark the conversation as read.'))
+          if (requestError.code !== 'ERR_CANCELED') toast.error(errorMessage(requestError, 'Unable to mark the conversation as read.'))
         }
       }
       return true
@@ -222,8 +233,11 @@ export default function ChatsPage() {
       if (!background) setThreadError(errorMessage(requestError, 'Unable to load messages.'))
       return false
     } finally {
-      if (!cursor && !background) setLoadingMessages(false)
-      if (cursor) setLoadingOlder(false)
+      if (threadAbortRef.current === controller) {
+        threadAbortRef.current = null
+        setLoadingMessages(false)
+        setLoadingOlder(false)
+      }
     }
   }, [debouncedMessageSearch, toast])
 
@@ -237,24 +251,47 @@ export default function ChatsPage() {
     return () => clearTimeout(timer)
   }, [messageSearch])
 
-  useEffect(() => { loadOptions() }, [loadOptions])
-  useEffect(() => { loadConversations() }, [loadConversations])
+  useEffect(() => {
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => loadOptions(controller.signal), 0)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [loadOptions])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => loadConversations(), 0)
+    return () => {
+      window.clearTimeout(timer)
+      listAbortRef.current?.abort()
+      listAbortRef.current = null
+    }
+  }, [loadConversations])
 
   useEffect(() => {
     setStatusFilter(INBOX_FILTERS.includes(urlFilter) ? urlFilter : 'all')
   }, [urlFilter])
 
   useEffect(() => {
-    if (!conversations.length) {
-      setSelectedId('')
-      return
-    }
     setSelectedId((current) => {
-      if (current && conversations.some((item) => String(item.id) === String(current))) return current
-      if (urlConversation && conversations.some((item) => String(item.id) === String(urlConversation))) return urlConversation
-      return String(conversations[0].id)
+      if (urlConversation || (current && conversations.some((item) => String(item.id) === current))) return current
+      return conversations[0] ? String(conversations[0].id) : ''
     })
   }, [conversations, urlConversation])
+
+  const needsLinkedConversation = Boolean(urlConversation && selectedId === urlConversation
+    && !conversations.some((item) => String(item.id) === urlConversation))
+  useEffect(() => {
+    if (loadingList || !needsLinkedConversation) return
+    const controller = new AbortController()
+    api.get(`/api/app/conversations/${urlConversation}`, { signal: controller.signal })
+      .then(({ data }) => { if (!controller.signal.aborted) setLinkedConversation(data) })
+      .catch((error) => {
+        if (error.code !== 'ERR_CANCELED') setThreadError(errorMessage(error, 'Unable to open the conversation.'))
+      })
+    return () => controller.abort()
+  }, [loadingList, needsLinkedConversation, urlConversation])
 
   useEffect(() => {
     if (urlConversation) {
@@ -273,25 +310,35 @@ export default function ChatsPage() {
     setMessageCursor({ next: null, hasMore: false })
     setSidePanel('')
     setMediaViewer(null)
-    if (selectedId) loadMessages(selectedId, { markRead: true })
-  }, [selectedId, loadMessages])
+  }, [selectedId])
 
   useEffect(() => {
-    if (debouncedMessageSearch && selectedId) loadMessages(selectedId, { search: debouncedMessageSearch })
-  }, [debouncedMessageSearch, selectedId, loadMessages])
+    if (!selectedId) return
+    const timer = window.setTimeout(() => {
+      loadMessages(selectedId, { markRead: !readOnly && !debouncedMessageSearch })
+    }, 0)
+    return () => {
+      window.clearTimeout(timer)
+      threadAbortRef.current?.abort()
+      threadAbortRef.current = null
+    }
+  }, [debouncedMessageSearch, loadMessages, readOnly, selectedId])
 
   useEffect(() => {
-    if (sidePanel === 'notes' && selectedId) loadNotes(selectedId)
+    if (sidePanel !== 'notes' || !selectedId) return
+    const controller = new AbortController()
+    loadNotes(selectedId, controller.signal)
+    return () => controller.abort()
   }, [sidePanel, selectedId, loadNotes])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return
-      loadConversations(1, false, true)
+      if (pagination.currentPage === 1) loadConversations(1, false, true)
       if (selectedId) loadMessages(selectedId, { background: true })
     }, 5000)
     return () => window.clearInterval(timer)
-  }, [loadConversations, loadMessages, selectedId])
+  }, [loadConversations, loadMessages, pagination.currentPage, selectedId])
 
   useLayoutEffect(() => {
     const node = threadRef.current
@@ -305,8 +352,6 @@ export default function ChatsPage() {
       scrollToBottomRef.current = false
     }
   }, [messages, loadingMessages])
-
-  useEffect(() => () => threadAbortRef.current?.abort(), [])
 
   const changeFilter = (key, value) => {
     if (key === 'query') setQuery(value)

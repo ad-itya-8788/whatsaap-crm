@@ -33,7 +33,7 @@ class BroadcastController extends Controller
     {
         return response()->json([
             'templates' => MessageTemplate::query()
-                ->whereRaw('UPPER(COALESCE(approval_status, status)) = ?', ['APPROVED'])
+                ->approved()
                 ->get(['id', 'name', 'language', 'body_text', 'header_type']),
             'tags' => Tag::query()->orderBy('name')->get(['id', 'name']),
             'custom_fields' => CustomField::query()->where('is_active', true)->orderBy('label')->get(['id', 'name', 'label', 'type']),

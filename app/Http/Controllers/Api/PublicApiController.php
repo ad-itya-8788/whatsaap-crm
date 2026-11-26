@@ -208,7 +208,7 @@ class PublicApiController extends Controller
         ]);
         $template = MessageTemplate::query()->where('name', $data['template_name'])
             ->where('language', $data['template_language'] ?? 'en_US')
-            ->whereRaw('UPPER(COALESCE(approval_status, status)) = ?', ['APPROVED'])
+            ->approved()
             ->first();
         if (! $template) {
             throw ValidationException::withMessages(['template_name' => 'Choose an approved template in the requested language.']);

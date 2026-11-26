@@ -13,11 +13,6 @@ use Illuminate\Validation\Rules\Password;
 
 class SettingsController extends Controller
 {
-    public function profile(Request $request): JsonResponse
-    {
-        return response()->json(['user' => $this->userPayload($request->user())]);
-    }
-
     public function updateProfile(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -43,7 +38,7 @@ class SettingsController extends Controller
 
         $user->update($data);
 
-        return response()->json(['user' => $this->userPayload($user->fresh())]);
+        return response()->json(['user' => $this->userPayload($user)]);
     }
 
     public function updatePassword(Request $request): JsonResponse

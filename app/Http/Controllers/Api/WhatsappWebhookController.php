@@ -156,7 +156,6 @@ class WhatsappWebhookController extends Controller
                 'actor_id' => $contact->id,
             ],
             [
-                'conversation_id' => $message->conversation_id,
                 'emoji' => $emoji,
             ],
         );

@@ -172,7 +172,7 @@ class BroadcastService
     public function assertApproved(Broadcast $broadcast): void
     {
         $template = $broadcast->template;
-        if (! $template || strtoupper((string) ($template->approval_status ?: $template->status)) !== 'APPROVED') {
+        if (! $template || ! $template->isApproved()) {
             throw new MessagingException('Only an approved WhatsApp template can be used in a broadcast.', 422);
         }
     }
