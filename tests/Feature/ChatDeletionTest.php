@@ -55,13 +55,15 @@ class ChatDeletionTest extends TestCase
 
     public function test_owner_can_delete_a_conversation_and_its_history_while_keeping_the_contact(): void
     {
+        Storage::fake('local');
         [$owner, $contact, $conversation] = $this->makeConversation();
         $message = Message::create([
             'conversation_id' => $conversation->id,
             'sender_type' => 'customer',
-            'content_type' => 'text',
-            'content_text' => 'Message history',
+            'content_type' => 'image',
+            'media_url' => '654321',
         ]);
+        Storage::disk('local')->put("whatsapp/inbound/{$message->id}", 'image');
         $note = ConversationNote::create([
             'conversation_id' => $conversation->id,
             'user_id' => $owner->id,
@@ -77,6 +79,7 @@ class ChatDeletionTest extends TestCase
         $this->assertDatabaseMissing('messages', ['id' => $message->id]);
         $this->assertDatabaseMissing('conversation_notes', ['id' => $note->id]);
         $this->assertDatabaseHas('contacts', ['id' => $contact->id]);
+        Storage::disk('local')->assertMissing("whatsapp/inbound/{$message->id}");
     }
 
     public function test_agents_cannot_permanently_delete_messages_or_conversations(): void
