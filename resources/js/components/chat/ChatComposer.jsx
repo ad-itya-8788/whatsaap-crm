@@ -28,6 +28,24 @@ const ALLOWED = {
   ],
 }
 const EMOJIS = ['😀', '😂', '😍', '👍', '🙏', '🎉', '✅', '👋', '❤️', '🔥', '😊', '🤝', '📌', '⏰', '📎', '🙂']
+const ACCEPT_BY_KIND = {
+  gallery: 'image/jpeg,image/png',
+  camera: 'image/jpeg,image/png',
+  video: 'video/mp4,video/3gpp',
+  audio: 'audio/aac,audio/amr,audio/mpeg,audio/mp4,audio/ogg,audio/opus',
+  document: 'application/pdf,text/plain,text/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation',
+}
+const ATTACHMENT_OPTIONS = [
+  { label: 'Photos', icon: 'image', kind: 'gallery', tone: 'photo' },
+  { label: 'Camera', icon: 'camera', kind: 'camera', tone: 'camera' },
+  { label: 'Videos', icon: 'video', kind: 'video', tone: 'video' },
+  { label: 'Audio', icon: 'audio', kind: 'audio', tone: 'audio' },
+  { label: 'Documents', icon: 'document', kind: 'document', tone: 'document' },
+  { label: 'Voice note', icon: 'mic', kind: 'voice', tone: 'voice' },
+  { label: 'Interactive', icon: 'chat', kind: 'interactive', tone: 'interactive' },
+  { label: 'Templates', icon: 'template', kind: 'template', tone: 'template' },
+  { label: 'Quick replies', icon: 'bolt', kind: 'replies', tone: 'replies' },
+]
 
 export default function ChatComposer(props) {
   const [savedReplies, setSavedReplies] = useState([])
@@ -93,6 +111,13 @@ function ConversationComposer({
   }, [file])
 
   useEffect(() => {
+    const input = composerRef.current
+    if (!input) return
+    input.style.height = 'auto'
+    input.style.height = `${Math.min(input.scrollHeight, 140)}px`
+  }, [draft])
+
+  useEffect(() => {
     if (!openMenu) return undefined
     const close = (event) => {
       if (!popoverRef.current?.contains(event.target)) setOpenMenu('')
@@ -134,6 +159,16 @@ function ConversationComposer({
     if (!selected || !validateFile(selected)) return
     onFileSelect(selected)
     setOpenMenu('')
+  }
+
+  const openFilePicker = (kind) => {
+    const input = fileInputRef.current
+    if (!input) return
+    input.accept = ACCEPT_BY_KIND[kind] || ACCEPT
+    if (kind === 'camera') input.setAttribute('capture', 'environment')
+    else input.removeAttribute('capture')
+    setOpenMenu('')
+    input.click()
   }
 
   const startRecording = async () => {
@@ -184,6 +219,30 @@ function ConversationComposer({
       recorderRef.current = null
       toast.error('Could not finish the recording. Please try again.')
     }
+  }
+
+  const openAttachmentOption = (kind) => {
+    if (kind === 'voice') {
+      setOpenMenu('')
+      if (recording) stopRecording()
+      else startRecording()
+      return
+    }
+    if (kind === 'interactive' && onSendInteractive) {
+      setOpenMenu('')
+      setDialog({ type: 'interactive' })
+      return
+    }
+    if (kind === 'template' && onSendTemplate) {
+      setOpenMenu('')
+      setDialog({ type: 'template' })
+      return
+    }
+    if (kind === 'replies') {
+      setOpenMenu('replies')
+      return
+    }
+    openFilePicker(kind)
   }
 
   const insertEmoji = (emoji) => {
@@ -247,7 +306,7 @@ function ConversationComposer({
     }
   }
 
-  const disabled = sending || drafting || (!draft.trim() && !file)
+  const disabled = sending || drafting
   const templatePicker = (
     <TemplatePicker
       open={dialog?.type === 'template'}
@@ -305,52 +364,48 @@ function ConversationComposer({
           if (selected) chooseFile(selected)
         }}
       />
-      <form className="composer-row" onSubmit={(event) => { event.preventDefault(); onSend() }}>
-        <button type="button" className="icon-button composer-attach" onClick={() => fileInputRef.current?.click()} aria-label="Attach a file" title="Attach image, video, audio, or document">
-          <Icon name="paperclip" size={20} />
-        </button>
-        <button type="button" className={`icon-button${openMenu === 'emoji' ? ' is-open' : ''}`} onClick={() => setOpenMenu((value) => value === 'emoji' ? '' : 'emoji')} aria-label="Emoji picker" aria-expanded={openMenu === 'emoji'}>
-          <Icon name="emoji" size={20} />
-        </button>
-        <button type="button" className={`icon-button${recording ? ' is-recording' : ''}`} onClick={recording ? stopRecording : startRecording} aria-label={recording ? 'Stop recording' : 'Record audio'}>
-          <Icon name="mic" size={20} />
-        </button>
-        {conversationId && (
-          <button type="button" className="icon-button" onClick={draftWithAi} disabled={drafting} aria-label="Draft with AI" title={drafting ? 'Drafting...' : 'Draft a reply with AI'}>
-            <Icon name="bot" size={19} />
+      <form className="composer-row" onSubmit={(event) => {
+        event.preventDefault()
+        if ((draft.trim() || file) && !sending) onSend()
+      }}>
+        <div className="composer-attach-wrap">
+          <button
+            type="button"
+            className={`icon-button composer-attach${openMenu === 'attachments' ? ' is-open' : ''}`}
+            onClick={() => setOpenMenu((value) => value === 'attachments' ? '' : 'attachments')}
+            aria-label="Attach a file"
+            aria-haspopup="menu"
+            aria-expanded={openMenu === 'attachments'}
+            title="Attach a file"
+          >
+            <Icon name="paperclip" size={21} />
           </button>
-        )}
-        <div className="quick-reply-menu">
-          <button type="button" className={`icon-button${openMenu === 'replies' ? ' is-open' : ''}`} onClick={() => setOpenMenu((value) => value === 'replies' ? '' : 'replies')} aria-label="More message options" aria-expanded={openMenu === 'replies'}>
-            <Icon name="plus" size={19} />
-          </button>
-          {openMenu === 'replies' && (
-            <div className="quick-reply-list">
-              {onSendInteractive && (
-                <button type="button" className="quick-reply-item" onClick={() => { setOpenMenu(''); setDialog({ type: 'interactive' }) }}>
-                  <strong>Interactive message</strong>
-                </button>
-              )}
-              {onSendTemplate && (
-                <button type="button" className="quick-reply-item" onClick={() => { setOpenMenu(''); setDialog({ type: 'template' }) }}>
-                  <strong>Send a template</strong>
-                </button>
-              )}
-              <div className="quick-reply-heading">Quick replies</div>
-              {quickReplies.map((reply) => (
-                <button type="button" className="quick-reply-item" key={reply.id} onClick={() => insertReply(reply)}>
-                  <strong>{reply.title}</strong>
-                  <span>{reply.body}</span>
-                </button>
-              ))}
-              {!quickReplies.length && <div className="list-placeholder">No quick replies yet.</div>}
+          {openMenu === 'attachments' && (
+            <div className="attachment-sheet" role="menu" aria-label="Attachment options">
+              {ATTACHMENT_OPTIONS
+                .filter((option) => option.kind !== 'interactive' || onSendInteractive)
+                .filter((option) => option.kind !== 'template' || onSendTemplate)
+                .map((option) => (
+                  <button
+                    type="button"
+                    key={option.kind}
+                    className="attachment-option"
+                    onClick={() => openAttachmentOption(option.kind)}
+                  >
+                    <span className={`attachment-icon tone-${option.tone}`}><Icon name={option.icon} size={18} /></span>
+                    <span>{option.label}</span>
+                  </button>
+                ))}
             </div>
           )}
         </div>
-        {openMenu === 'emoji' && (
-          <div className="emoji-picker">
-            {EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => insertEmoji(emoji)}>{emoji}</button>)}
-          </div>
+        <button type="button" className={`icon-button${openMenu === 'emoji' ? ' is-open' : ''}`} onClick={() => setOpenMenu((value) => value === 'emoji' ? '' : 'emoji')} aria-label="Emoji picker" aria-expanded={openMenu === 'emoji'}>
+          <Icon name="emoji" size={20} />
+        </button>
+        {conversationId && (
+          <button type="button" className="icon-button composer-ai" onClick={draftWithAi} disabled={drafting} aria-label="Draft with AI" title={drafting ? 'Drafting...' : 'Draft a reply with AI'}>
+            <Icon name="bot" size={19} />
+          </button>
         )}
         <textarea
           ref={composerRef}
@@ -362,8 +417,42 @@ function ConversationComposer({
           onChange={(event) => onDraftChange(event.target.value)}
           onKeyDown={onKeyDown}
         />
-        <button className="button button-primary composer-send" type="submit" disabled={disabled}>
-          <Icon name="send" size={16} /> <span>{sending ? 'Sending...' : 'Send'}</span>
+        {openMenu === 'emoji' && (
+          <div className="emoji-picker">
+            {EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => insertEmoji(emoji)}>{emoji}</button>)}
+          </div>
+        )}
+        {openMenu === 'replies' && (
+          <div className="quick-reply-list quick-reply-list-inline">
+            {onSendInteractive && (
+              <button type="button" className="quick-reply-item" onClick={() => { setOpenMenu(''); setDialog({ type: 'interactive' }) }}>
+                <strong>Interactive message</strong>
+              </button>
+            )}
+            {onSendTemplate && (
+              <button type="button" className="quick-reply-item" onClick={() => { setOpenMenu(''); setDialog({ type: 'template' }) }}>
+                <strong>Send a template</strong>
+              </button>
+            )}
+            <div className="quick-reply-heading">Quick replies</div>
+            {quickReplies.map((reply) => (
+              <button type="button" className="quick-reply-item" key={reply.id} onClick={() => insertReply(reply)}>
+                <strong>{reply.title}</strong>
+                <span>{reply.body}</span>
+              </button>
+            ))}
+            {!quickReplies.length && <div className="list-placeholder">No quick replies yet.</div>}
+          </div>
+        )}
+        <button
+          className={`composer-send${!draft.trim() && !file ? ' is-voice' : ''}${recording ? ' is-recording' : ''}`}
+          type={draft.trim() || file ? 'submit' : 'button'}
+          onClick={!draft.trim() && !file ? () => openAttachmentOption('voice') : undefined}
+          disabled={disabled}
+          aria-label={recording ? 'Stop recording and attach' : draft.trim() || file ? 'Send message' : 'Record a voice note'}
+          title={recording ? 'Stop recording and attach' : draft.trim() || file ? 'Send message' : 'Record a voice note'}
+        >
+          <Icon name={recording ? 'pause' : draft.trim() || file ? 'send' : 'mic'} size={18} />
         </button>
       </form>
       <div className="composer-actions">

@@ -9,6 +9,7 @@ import { PresenceDot, presenceStatus, useMemberPresence } from '../components/co
 import { createIdempotencyKey, errorMessage, extractList, extractPaginator, formatDate } from '../lib/utils.js'
 import { interactiveText, templateMessagePayload } from '../lib/whatsappPayloads.js'
 import ConversationList from '../components/chat/ConversationList.jsx'
+import ChatAvatar from '../components/chat/ChatAvatar.jsx'
 import MessageBubble from '../components/chat/MessageBubble.jsx'
 import MediaViewer from '../components/chat/MediaViewer.jsx'
 import ChatComposer from '../components/chat/ChatComposer.jsx'
@@ -25,10 +26,6 @@ function messageDate(message) {
 
 function chronological(messages) {
   return [...messages].sort((left, right) => Number(left.id) - Number(right.id))
-}
-
-function initials(value) {
-  return String(value || '?').trim().slice(0, 1).toUpperCase()
 }
 
 const INBOX_FILTERS = ['all', 'waiting', 'unassigned', 'expiring', 'unread', 'open', 'pending', 'closed']
@@ -72,6 +69,7 @@ export default function ChatsPage() {
   const [deleteConversationOpen, setDeleteConversationOpen] = useState(false)
   const [deletingConversation, setDeletingConversation] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [threadSearchOpen, setThreadSearchOpen] = useState(false)
 
   const [draft, setDraft] = useState('')
   const [selectedFile, setSelectedFile] = useState(null)
@@ -92,6 +90,7 @@ export default function ChatsPage() {
   const [realtimeConnected, setRealtimeConnected] = useState(false)
 
   const threadRef = useRef(null)
+  const threadMoreRef = useRef(null)
   const listAbortRef = useRef(null)
   const threadAbortRef = useRef(null)
   const sendAttemptRef = useRef(null)
@@ -362,6 +361,20 @@ export default function ChatsPage() {
   }, [messageSearch])
 
   useEffect(() => {
+    if (!moreOpen) return undefined
+    const close = (event) => {
+      if (!threadMoreRef.current?.contains(event.target)) setMoreOpen(false)
+    }
+    const onKey = (event) => { if (event.key === 'Escape') setMoreOpen(false) }
+    window.addEventListener('mousedown', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [moreOpen])
+
+  useEffect(() => {
     const controller = new AbortController()
     const timer = window.setTimeout(() => loadOptions(controller.signal), 0)
     return () => {
@@ -420,6 +433,7 @@ export default function ChatsPage() {
     setMessageCursor({ next: null, hasMore: false })
     setSidePanel('')
     setMediaViewer(null)
+    setThreadSearchOpen(false)
   }, [selectedId])
 
   useEffect(() => {
@@ -949,65 +963,69 @@ export default function ChatsPage() {
       <section className="chat-thread" aria-label="Conversation">
         {selected ? (
           <>
-            <header className="thread-head">
+            <header className={`thread-head${threadSearchOpen ? ' is-search-open' : ''}`}>
               <button type="button" className="icon-button thread-back" onClick={backToList} aria-label="Back to conversations"><Icon name="back" size={20} /></button>
-              <span className="chat-avatar">{initials(selectedName)}</span>
+              <ChatAvatar contact={selected.contact} name={selectedName} />
               <div className="thread-head-info">
                 <div className="thread-title">{selectedName}</div>
-                <div className="thread-subtitle">{selected.contact?.phone || 'No phone number'}</div>
+                <div className="thread-subtitle">
+                  {selected.contact?.phone || 'No phone number'}
+                  {selected.assignedAgent ? ` · ${selected.assignedAgent.name}` : ''}
+                </div>
               </div>
               {hasWhatsApp(selected) && <span className="thread-channel" title="Linked to a WhatsApp number"><Icon name="whatsapp" size={15} /> WhatsApp</span>}
-              <div className="thread-tools">
-                <div className="thread-search search-wrap">
-                  <Icon name="search" size={14} />
-                  <input
-                    className="input search-input"
-                    type="search"
-                    aria-label="Search in conversation"
-                    placeholder="Search messages"
-                    value={messageSearch}
-                    onChange={(event) => setMessageSearch(event.target.value)}
-                  />
-                </div>
-                <select
-                  className="select select-sm"
-                  aria-label="Conversation status"
-                  value={selected.status || 'open'}
-                  disabled={readOnly || busyAction === 'status'}
-                  onChange={(event) => changeStatus(event.target.value)}
-                >
-                  <option value="open">Open</option>
-                  <option value="pending">Pending</option>
-                  <option value="closed">Closed</option>
-                </select>
-                <select
-                  className="select select-sm assign-select"
-                  aria-label="Conversation assignee"
-                  value={selected.assignedAgent?.id ? String(selected.assignedAgent.id) : 'unassigned'}
-                  disabled={readOnly || busyAction === 'assignee'}
-                  onChange={(event) => changeAssignee(event.target.value)}
-                >
-                  <option value="unassigned">Unassigned</option>
-                  <option value="me">Me</option>
-                  {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {presenceStatus(presence[agent.id])}</option>)}
-                  {selected.assignedAgent && !agents.some((agent) => String(agent.id) === String(selected.assignedAgent.id)) && (
-                    <option value={selected.assignedAgent.id}>{selected.assignedAgent.name}</option>
-                  )}
-                </select>
-                <button type="button" className={`icon-button${sidePanel === 'info' ? ' is-open' : ''}`} onClick={() => setSidePanel((value) => value === 'info' ? '' : 'info')} aria-label="Contact information" title="Contact information"><Icon name="contacts" size={18} /></button>
-                <button type="button" className={`button button-sm${sidePanel === 'notes' ? ' button-primary' : ' button-secondary'}`} onClick={() => setSidePanel((value) => value === 'notes' ? '' : 'notes')} aria-expanded={sidePanel === 'notes'}>
-                  <Icon name="note" size={15} /> Notes{Number(selected.notes_count || 0) > 0 ? ` (${selected.notes_count})` : ''}
-                </button>
-                <div className="thread-more">
-                  <button type="button" className="icon-button" onClick={() => setMoreOpen((value) => !value)} aria-label="More actions" aria-expanded={moreOpen}><Icon name="more" size={18} /></button>
-                  {moreOpen && (
-                    <div className="thread-more-menu">
-                      <button type="button" onClick={copyPhone}><Icon name="copy" size={14} /> Copy phone number</button>
-                      <button type="button" onClick={refreshConversation}><Icon name="sync" size={14} /> Refresh conversation</button>
-                      {canDelete && <button type="button" onClick={() => { setMoreOpen(false); setDeleteConversationOpen(true) }}><Icon name="trash" size={14} /> Delete chat from CRM</button>}
-                    </div>
-                  )}
-                </div>
+              <div className="thread-search search-wrap">
+                <Icon name="search" size={14} />
+                <input
+                  className="input search-input"
+                  type="search"
+                  aria-label="Search in conversation"
+                  placeholder="Search messages"
+                  value={messageSearch}
+                  onChange={(event) => setMessageSearch(event.target.value)}
+                />
+              </div>
+              <div className="thread-more" ref={threadMoreRef}>
+                <button type="button" className="icon-button" onClick={() => setMoreOpen((value) => !value)} aria-label="More actions" aria-expanded={moreOpen}><Icon name="more" size={20} /></button>
+                {moreOpen && (
+                  <div className="thread-more-menu">
+                    <button type="button" onClick={() => { setThreadSearchOpen((value) => !value); setMoreOpen(false) }}><Icon name="search" size={14} /> Search in chat</button>
+                    <button type="button" onClick={() => { setSidePanel('info'); setMoreOpen(false) }}><Icon name="contacts" size={14} /> Contact info</button>
+                    <button type="button" onClick={() => { setSidePanel('notes'); setMoreOpen(false) }}><Icon name="note" size={14} /> Notes{Number(selected.notes_count || 0) > 0 ? ` (${selected.notes_count})` : ''}</button>
+                    <label className="thread-menu-field">
+                      <span>Status</span>
+                      <select
+                        className="select select-sm"
+                        value={selected.status || 'open'}
+                        disabled={readOnly || busyAction === 'status'}
+                        onChange={(event) => { changeStatus(event.target.value); setMoreOpen(false) }}
+                      >
+                        <option value="open">Open</option>
+                        <option value="pending">Pending</option>
+                        <option value="closed">Closed</option>
+                      </select>
+                    </label>
+                    <label className="thread-menu-field">
+                      <span>Assignee</span>
+                      <select
+                        className="select select-sm"
+                        value={selected.assignedAgent?.id ? String(selected.assignedAgent.id) : 'unassigned'}
+                        disabled={readOnly || busyAction === 'assignee'}
+                        onChange={(event) => { changeAssignee(event.target.value); setMoreOpen(false) }}
+                      >
+                        <option value="unassigned">Unassigned</option>
+                        <option value="me">Me</option>
+                        {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {presenceStatus(presence[agent.id])}</option>)}
+                        {selected.assignedAgent && !agents.some((agent) => String(agent.id) === String(selected.assignedAgent.id)) && (
+                          <option value={selected.assignedAgent.id}>{selected.assignedAgent.name}</option>
+                        )}
+                      </select>
+                    </label>
+                    <button type="button" onClick={copyPhone}><Icon name="copy" size={14} /> Copy phone number</button>
+                    <button type="button" onClick={refreshConversation}><Icon name="sync" size={14} /> Refresh conversation</button>
+                    {canDelete && <button type="button" onClick={() => { setMoreOpen(false); setDeleteConversationOpen(true) }}><Icon name="trash" size={14} /> Delete chat from CRM</button>}
+                  </div>
+                )}
               </div>
             </header>
 
@@ -1025,7 +1043,7 @@ export default function ChatsPage() {
                 {sidePanel === 'info' && (
                   <div className="side-panel-body">
                     <div className="contact-detail-card">
-                      <span className="chat-avatar avatar-lg">{initials(selectedName)}</span>
+                      <ChatAvatar contact={selected.contact} name={selectedName} className="avatar-lg" />
                       <strong>{selectedName}</strong>
                       <span>{selected.contact?.phone || 'No phone number'}</span>
                     </div>
@@ -1118,6 +1136,7 @@ export default function ChatsPage() {
               })}
             </div>
 
+            {replyTo && <div className="reply-context"><Icon name="reply" size={14} /><span>{messageText(replyTo) || 'Attachment'}</span><button type="button" className="icon-button" onClick={() => setReplyTo(null)} aria-label="Cancel reply"><Icon name="close" size={14} /></button></div>}
             <ChatComposer
               draft={draft}
               onDraftChange={setDraft}
@@ -1134,7 +1153,6 @@ export default function ChatsPage() {
               onSendInteractive={sendInteractive}
               onSendTemplate={sendTemplate}
             />
-            {replyTo && <div className="reply-context"><Icon name="reply" size={14} /><span>{messageText(replyTo) || 'Attachment'}</span><button type="button" className="icon-button" onClick={() => setReplyTo(null)} aria-label="Cancel reply"><Icon name="close" size={14} /></button></div>}
           </>
         ) : (
           <div className="thread-placeholder"><Icon name="chat" size={36} /><p>Select a conversation to start chatting.</p></div>

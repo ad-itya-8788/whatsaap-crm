@@ -2,7 +2,7 @@ services:
   - type: web
     name: whatsapp-crm
     runtime: docker
-    plan: free
+    plan: starter
     dockerfilePath: ./Dockerfile
     healthCheckPath: /up
     envVars:
@@ -30,56 +30,11 @@ services:
         sync: false
       - key: REVERB_APP_SECRET
         sync: false
-      - key: REVERB_HOST
-        fromService:
-          type: web
-          name: whatsapp-crm-reverb
-          property: host
-      - key: REVERB_PORT
-        value: "443"
-      - key: REVERB_SCHEME
-        value: https
-
-  - type: web
-    name: whatsapp-crm-reverb
-    runtime: docker
-    plan: starter
-    dockerfilePath: ./Dockerfile
-    dockerCommand: php artisan reverb:start --host=0.0.0.0 --port=$PORT
-    envVars:
-      - key: APP_KEY
-        sync: false
-      - key: DB_HOST
-        sync: false
-      - key: DB_PORT
-        value: "3306"
-      - key: DB_DATABASE
-        sync: false
-      - key: DB_USERNAME
-        sync: false
-      - key: DB_PASSWORD
-        sync: false
-      - key: BROADCAST_CONNECTION
-        value: log
-      - key: REVERB_APP_ID
-        sync: false
-      - key: REVERB_APP_KEY
-        sync: false
-      - key: REVERB_APP_SECRET
-        sync: false
-      - key: REVERB_HOST
-        fromService:
-          type: web
-          name: whatsapp-crm-reverb
-          property: host
-      - key: REVERB_PORT
-        value: "443"
-      - key: REVERB_SCHEME
-        value: https
       - key: REVERB_SERVER_HOST
-        value: 0.0.0.0
-      - key: REVERB_ALLOWED_ORIGINS
-        fromService:
-          type: web
-          name: whatsapp-crm
-          property: url
+        value: 127.0.0.1
+      - key: REVERB_SERVER_PORT
+        value: "8080"
+      - key: REVERB_PORT
+        value: "443"
+      - key: REVERB_SCHEME
+        value: https

@@ -1,4 +1,5 @@
 import Icon from '../common/Icon.jsx'
+import ChatAvatar from './ChatAvatar.jsx'
 import { hasWhatsApp } from './chatUtils.js'
 import { relativeTime } from '../../lib/utils.js'
 
@@ -12,10 +13,6 @@ const statusTabs = [
   { value: 'pending', label: 'Pending' },
   { value: 'closed', label: 'Closed' },
 ]
-
-function initials(value) {
-  return String(value || '?').trim().slice(0, 1).toUpperCase()
-}
 
 export default function ConversationList({
   conversations = [],
@@ -100,7 +97,7 @@ export default function ConversationList({
               className={`chat-item${active ? ' is-active' : ''}`}
               onClick={() => onSelect(conversation.id)}
             >
-              <span className="chat-avatar">{initials(conversation.contact?.name || conversation.contact?.phone)}</span>
+              <ChatAvatar contact={conversation.contact} />
               <span className="chat-item-main">
                 <span className="chat-item-top">
                   <span className="chat-name">{conversation.contact?.name || conversation.contact?.phone || 'Unknown contact'}</span>

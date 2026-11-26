@@ -10,7 +10,7 @@ FROM php:8.3-apache-bookworm AS php-base
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tini util-linux \
     && docker-php-ext-install -j2 pdo_mysql pcntl \
-    && a2enmod rewrite headers \
+    && a2enmod rewrite headers proxy proxy_http proxy_wstunnel \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /var/www/html
 
@@ -38,6 +38,8 @@ ENV APP_ENV=production \
     CACHE_STORE=database \
     QUEUE_CONNECTION=database \
     MAIL_MAILER=smtp \
+    REVERB_SERVER_HOST=127.0.0.1 \
+    REVERB_SERVER_PORT=8080 \
     PORT=10000
 
 COPY --from=dependencies /var/www/html /var/www/html

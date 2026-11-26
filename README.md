@@ -15,6 +15,29 @@ php artisan app:make-admin owner@example.com --role=owner
 php artisan serve --host=127.0.0.1 --port=8000
 ```
 
+If `.env` has empty keys, generate them once before starting the servers:
+
+```powershell
+$chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+function New-Value { -join (1..20 | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] }) }
+function Set-EnvValue($path, $key, $value) {
+  $lines = Get-Content -LiteralPath $path
+  $found = $false
+  $lines = $lines | ForEach-Object {
+    if ($_ -match "^\s*$key\s*=") { $found = $true; "$key=$value" } else { $_ }
+  }
+  if (-not $found) { $lines += "$key=$value" }
+  Set-Content -LiteralPath $path -Value $lines
+}
+if (-not (Select-String -LiteralPath .env -Pattern '^APP_KEY=base64:' -Quiet)) { php artisan key:generate }
+Set-EnvValue '.env' 'REVERB_APP_ID' ([string](Get-Random -Minimum 100000 -Maximum 999999))
+Set-EnvValue '.env' 'REVERB_APP_KEY' (New-Value)
+Set-EnvValue '.env' 'REVERB_APP_SECRET' (New-Value)
+Set-EnvValue '.env' 'BROADCAST_CONNECTION' 'reverb'
+Set-EnvValue '.env' 'REVERB_ALLOWED_ORIGINS' 'http://localhost:8000,http://127.0.0.1:8000,http://localhost:5173,http://127.0.0.1:5173'
+php artisan optimize:clear
+```
+
 Run the worker and scheduler in separate terminals against the same application configuration.
 
 ```powershell
@@ -26,7 +49,7 @@ php artisan schedule:work
 
 The inbox uses Laravel Reverb over WebSockets. Laravel broadcasts only after a message or conversation change is saved successfully; the browser listens on the authenticated private `account.default` channel. If Reverb is not configured, the inbox keeps its slower polling fallback.
 
-For local development, copy the Reverb variables from [.env.example](.env.example) into `.env`, use the same `REVERB_APP_ID`, `REVERB_APP_KEY`, and `REVERB_APP_SECRET` values, and set `REVERB_ALLOWED_ORIGINS` to the origin you open in the browser. Then start one extra terminal:
+For local development, copy the Reverb variables from [.env.example](.env.example) into `.env`, use the same `REVERB_APP_ID`, `REVERB_APP_KEY`, and `REVERB_APP_SECRET` values, and set `REVERB_ALLOWED_ORIGINS` to the origins you open in the browser. If you use `http://localhost:8000`, `http://127.0.0.1:8000`, `http://localhost:5173`, or `http://127.0.0.1:5173`, list all four exactly as shown above. Then start one extra terminal:
 
 ```powershell
 php artisan reverb:start
@@ -34,7 +57,9 @@ php artisan reverb:start
 
 The browser receives the public Reverb connection details from Laravel shared props, so no `VITE_REVERB_*` rebuild is required. Keep `BROADCAST_CONNECTION=reverb` on the web process that answers HTTP requests; the Reverb process itself does not need to broadcast to another Reverb server.
 
-On Render, [render.yaml](render.yaml) creates `whatsapp-crm-reverb` as a second always-on web service. Set the same stable `APP_KEY`, `REVERB_APP_ID`, `REVERB_APP_KEY`, and `REVERB_APP_SECRET` on both services. `REVERB_HOST` and `REVERB_ALLOWED_ORIGINS` are filled automatically from the two service hostnames. Use an always-on plan for the WebSocket service; a sleeping free service will disconnect clients.
+For production, set `REVERB_ALLOWED_ORIGINS` to the exact browser origin(s) that load the CRM, not the WebSocket host and not the localhost values. Use a comma-separated list with the scheme and optional non-default port, for example `https://crm.example.com` or `https://crm.example.com,https://www.example.com`. Do not add a path or trailing slash. With this image, `REVERB_HOST` is the CRM HTTPS host because `/app` is proxied to Reverb, while `REVERB_ALLOWED_ORIGINS` is the page origin the browser is allowed to connect from.
+
+In production this project uses one Docker container. The container starts Apache, the queue worker, the scheduler, and Reverb together. Apache proxies `/app` WebSocket traffic to Reverb on `127.0.0.1:8080`, so the browser connects to the CRM's own HTTPS origin and only one public port is needed. The entrypoint derives `REVERB_HOST` and `REVERB_ALLOWED_ORIGINS` from `APP_URL` when they are not set. Keep `APP_URL` on the public HTTPS origin, especially when using a custom domain. Use an always-on plan; a sleeping free service will disconnect clients. This single-container setup is for one app instance; multiple app instances need a separate shared Reverb service or Redis scaling.
 
 Key files:
 
@@ -59,12 +84,28 @@ This workspace is single-tenant: auth checks that the user is active and uses th
 
 For Apache deployments, point the virtual host's document root to this repository's `public/` directory. Set `APP_DEBUG=false` and use HTTPS with `SESSION_SECURE_COOKIE=true`. Use [the production environment example](.env.production.example) when configuring the deployment.
 
+## One-command production start
+
+Render uses [render.yaml](render.yaml) with one Docker web service. After setting the environment variables and database, the only start/deploy command is:
+
+```powershell
+git push origin main
+```
+
+For a self-hosted Docker server, copy `.env.production.example` to `.env`, fill in the database, `APP_KEY`, Reverb keys, and the public `APP_URL`, then run:
+
+```powershell
+docker compose up -d --build
+```
+
+[docker-compose.yml](docker-compose.yml) starts one container with Apache, queue worker, scheduler, and Reverb. Put a HTTPS reverse proxy in front of the published port; set `HTTP_PORT` if `8080` is already used.
+
 ## Deploy on Render
 
 1. Create an empty database on an external MySQL provider. Use a database host reachable from Render and allowlist the service's outbound ranges when required by the provider.
 2. With your local shell configured for that empty database, run `php artisan migrate --force` and `php artisan app:make-admin owner@example.com --role=owner`. These commands are separate from container startup. Verify the database name before running them.
 3. Run `php artisan key:generate --show` and save the resulting `base64:...` value in Render as `APP_KEY`. Reuse the same key on redeploys. When connecting a previously encrypted database, use its original key.
-4. Push this branch to GitHub. In Render choose **New → Blueprint** and connect the repository containing [render.yaml](render.yaml). You can also create a **Free Docker Web Service** using the root Dockerfile and set its HTTP health check path to `/up`.
+4. Push this branch to GitHub. In Render choose **New → Blueprint** and connect the repository containing [render.yaml](render.yaml). This creates one Starter Docker web service using the root Dockerfile and `/up` health check. You can also create a **Starter Docker Web Service** manually with the same Dockerfile and environment variables.
 5. Open the HTTPS service URL, sign in, and enter the WhatsApp access token, phone number ID, WABA ID, and verify token in the CRM. In Meta, use `https://<your-service>.onrender.com/api/whatsapp/webhook` and the same verify token.
 
 | Render environment variable | Value |
@@ -74,12 +115,13 @@ For Apache deployments, point the virtual host's document root to this repositor
 | `DB_PORT` | Defaults to `3306`. Override if your provider uses another port. |
 | `META_APP_SECRET` | Meta app secret required to validate webhook signatures |
 | `META_APP_ID` | Meta app ID required for template header uploads |
-| `APP_URL` | Optional for the default Render domain. Set it to the HTTPS origin if using a custom domain. |
+| `APP_URL` | Optional for the default Render domain. Set it to the HTTPS origin if using a custom domain. It also drives Reverb's host and allowed origin when those are not set. |
 | `SANCTUM_STATEFUL_DOMAINS` | Optional for the primary app origin. If serving extra hostnames, set a comma-separated list of hosts without schemes. |
+| `REVERB_HOST`, `REVERB_ALLOWED_ORIGINS` | Optional with the single-container image because they are derived from `APP_URL`. Set them explicitly to the same HTTPS origin if required by your deployment. Do not use `localhost` in production. |
 | `MYSQL_ATTR_SSL_CA` | Defaults on Render to `/etc/ssl/certs/ca-certificates.crt` for publicly trusted certificates. If your provider requires a custom CA, upload its PEM as a Render secret file named `mysql-ca.pem` and set the value to `/etc/secrets/mysql-ca.pem`. Set `DB_HOST` to the provider's TLS hostname. |
 | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM_ADDRESS` | Configure for password reset email. Use an SMTP provider with a permitted port such as `2525`. The container defaults to `MAIL_MAILER=smtp`. |
 
-The image sets `APP_ENV=production`, `APP_DEBUG=false`, `LOG_CHANNEL=stderr`, `DB_CONNECTION=mysql`, `SESSION_DRIVER=database`, `SESSION_SECURE_COOKIE=true`, `CACHE_STORE=database`, and `QUEUE_CONNECTION=database`. It listens on Render's `PORT` with a default of `10000`. Queue processing and the scheduler run inside the web service while it is awake. Set `RENDER_RUN_BACKGROUND=false` if moving them to separate services.
+The image sets `APP_ENV=production`, `APP_DEBUG=false`, `LOG_CHANNEL=stderr`, `DB_CONNECTION=mysql`, `SESSION_DRIVER=database`, `SESSION_SECURE_COOKIE=true`, `CACHE_STORE=database`, and `QUEUE_CONNECTION=database`. It listens on Render's `PORT` with a default of `10000`. Queue processing, the scheduler, and Reverb run inside the web service while it is awake. Set `RENDER_RUN_BACKGROUND=false` to move queue/scheduler out, or `RUN_REVERB=false` to move WebSockets out.
 
 If Render reports `Cannot connect to MySQL using SSL`, check the CA path and filename in **Environment → Secret Files**, and use the provider hostname instead of an IP address. A local Windows path will not exist in the container. When using the individual `DB_*` variables, remove a stale `DB_URL` since it can override the configured host and port. The entrypoint validates the CA as the PHP worker user before starting Apache. PHP keeps server certificate verification enabled. [Render Docker secret files](https://render.com/docs/docker-secrets#accessing-secret-files-at-runtime)
 

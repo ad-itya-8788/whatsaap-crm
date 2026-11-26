@@ -11,6 +11,16 @@ export RENDER_HTTP_PORT="$port"
 export APP_URL="${APP_URL:-${RENDER_EXTERNAL_URL:-http://localhost:$port}}"
 : "${APP_KEY:?Set a stable Laravel APP_KEY in the service environment}"
 
+app_origin="${APP_URL%/}"
+app_host="${app_origin#*://}"
+app_host="${app_host%%/*}"
+export REVERB_HOST="${REVERB_HOST:-$app_host}"
+export REVERB_PORT="${REVERB_PORT:-443}"
+export REVERB_SCHEME="${REVERB_SCHEME:-https}"
+export REVERB_ALLOWED_ORIGINS="${REVERB_ALLOWED_ORIGINS:-$app_origin}"
+export REVERB_SERVER_HOST="${REVERB_SERVER_HOST:-127.0.0.1}"
+export REVERB_SERVER_PORT="${REVERB_SERVER_PORT:-8080}"
+
 if [[ "${RENDER:-}" == true ]]; then
     export APP_DEBUG=false
     export MYSQL_ATTR_SSL_CA="${MYSQL_ATTR_SSL_CA:-/etc/ssl/certs/ca-certificates.crt}"
@@ -52,6 +62,14 @@ if [[ "${RENDER_RUN_BACKGROUND:-true}" != true ]] || [[ "$1" != apache2-foregrou
     exec "$@"
 fi
 
+run_reverb() {
+    while true; do
+        as_app php artisan reverb:start --host="$REVERB_SERVER_HOST" --port="$REVERB_SERVER_PORT" \
+            --no-interaction || true
+        sleep 5
+    done
+}
+
 run_queue() {
     while true; do
         as_app php -d memory_limit=80M artisan queue:work --sleep=5 --timeout=75 \
@@ -67,6 +85,9 @@ run_schedule() {
     done
 }
 
+if [[ "${RUN_REVERB:-true}" == true ]]; then
+    run_reverb &
+fi
 run_queue &
 run_schedule &
 exec "$@"

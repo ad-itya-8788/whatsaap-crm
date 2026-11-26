@@ -85,10 +85,10 @@ function AudioMessage({ src, name, mediaId, onOpenMedia }) {
 function MessageStatus({ status }) {
   const value = String(status || '').toLowerCase()
   if (!value) return null
-  if (value === 'failed') return <span className="status-label status-failed" title="Failed"><Icon name="alert" size={13} /></span>
+  const icon = value === 'failed' ? 'alert' : ['pending', 'queued', 'sending'].includes(value) ? 'clock' : ['delivered', 'read'].includes(value) ? 'checks' : 'check'
   return (
     <span className={`status-label status-${value}`} title={value.charAt(0).toUpperCase() + value.slice(1)}>
-      <Icon name={['delivered', 'read'].includes(value) ? 'checks' : 'check'} size={15} />
+      <Icon name={icon} size={value === 'failed' ? 14 : 15} />
     </span>
   )
 }
