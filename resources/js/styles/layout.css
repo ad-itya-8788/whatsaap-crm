@@ -7,8 +7,8 @@
 .sidebar-close { width: 32px; height: 32px; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; }
 .sidebar-close:hover { background: var(--hover); }
 .sidebar-brand { display: flex; height: var(--topbar-h); flex: 0 0 var(--topbar-h); align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 var(--space-3); border-bottom: 1px solid var(--sidebar-border); }
-.sidebar-brand a { display: flex; min-width: 0; align-items: center; gap: var(--space-2); overflow: hidden; color: var(--sidebar-foreground); font-size: 13px; font-weight: 650; text-decoration: none; white-space: nowrap; }
-.sidebar-logo { width: auto; height: 24px; max-width: 112px; object-fit: contain; }
+.sidebar-brand a { display: flex; flex: 1; min-width: 0; align-items: center; gap: var(--space-2); overflow: hidden; color: var(--sidebar-foreground); font-size: 13px; font-weight: 650; text-decoration: none; white-space: nowrap; }
+.sidebar-logo { width: auto; height: 42px; max-width: 100%; object-fit: contain; }
 .sidebar-brand-name { overflow: hidden; text-overflow: ellipsis; }
 .sidebar-nav { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: var(--space-3) var(--space-2); }
 .sidebar-group + .sidebar-group { margin-top: var(--space-4); }
