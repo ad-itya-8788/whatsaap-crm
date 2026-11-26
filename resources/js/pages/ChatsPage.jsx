@@ -14,12 +14,12 @@ import MessageBubble from '../components/chat/MessageBubble.jsx'
 import MediaViewer from '../components/chat/MediaViewer.jsx'
 import ChatComposer from '../components/chat/ChatComposer.jsx'
 import AiThreadBanner from '../components/chat/AiThreadBanner.jsx'
-import { fileType, hasWhatsApp, isIncoming, mediaItem, messageText } from '../components/chat/chatUtils.js'
+import { fileType, hasWhatsApp, isIncoming, mediaItem, messageText, messageTimestamp } from '../components/chat/chatUtils.js'
 import { subscribeToRealtime } from '../lib/realtime.js'
 import { conversationMatchesFilters, mergeConversations, mergeMessageList, messagePreview, removeConversations, removeMessages } from '../lib/realtimeChat.js'
 
 function messageDate(message) {
-  const value = message?.provider_timestamp || message?.created_at
+  const value = messageTimestamp(message)
   const date = value ? new Date(value) : null
   return date && !Number.isNaN(date.getTime()) ? date.toDateString() : ''
 }
@@ -94,6 +94,8 @@ export default function ChatsPage() {
   const threadMoreRef = useRef(null)
   const listAbortRef = useRef(null)
   const threadAbortRef = useRef(null)
+  const loadingMessageUpdatesRef = useRef(null)
+  const listChangesRef = useRef(null)
   const sendAttemptRef = useRef(null)
   const richSendAttemptRef = useRef(null)
   const selectedIdRef = useRef(selectedId)
@@ -132,6 +134,8 @@ export default function ChatsPage() {
     listAbortRef.current?.abort()
     const controller = new AbortController()
     listAbortRef.current = controller
+    const liveChanges = new Set()
+    listChangesRef.current = liveChanges
     if (!background && page === 1) setLoadingList(true)
     if (append) setLoadingMore(true)
     try {
@@ -163,6 +167,7 @@ export default function ChatsPage() {
     } finally {
       if (listAbortRef.current === controller) {
         listAbortRef.current = null
+        listChangesRef.current = null
         setLoadingList(false)
         setLoadingMore(false)
       }
@@ -205,6 +210,8 @@ export default function ChatsPage() {
     threadAbortRef.current?.abort()
     const controller = new AbortController()
     threadAbortRef.current = controller
+    const liveUpdates = { id, messages: [] }
+    loadingMessageUpdatesRef.current = liveUpdates
 
     if (!cursor && !background) {
       setLoadingMessages(true)
@@ -224,7 +231,9 @@ export default function ChatsPage() {
       })
       if (controller.signal.aborted || selectedIdRef.current !== id) return false
 
-      const batch = chronological(extractList(data))
+      const history = extractList(data)
+      const historyIds = new Set(history.map((message) => String(message.id)))
+      const batch = mergeMessageList(chronological(history), liveUpdates.messages.filter((row) => historyIds.has(String(row.id))))
       if (cursor) {
         setMessages((current) => {
           const seen = new Set(current.map((message) => String(message.id)))
@@ -245,8 +254,8 @@ export default function ChatsPage() {
       if (markRead) {
         try {
           await api.post(`/api/app/conversations/${id}/read`, null, { signal: controller.signal })
-          window.dispatchEvent(new Event('wacrm:inbox-changed'))
           if (!realtimeConnectedRef.current) {
+            window.dispatchEvent(new Event('wacrm:inbox-changed'))
             setConversations((items) => items.map((item) => String(item.id) === String(id) ? { ...item, unread_count: 0 } : item))
           }
         } catch (requestError) {
@@ -261,6 +270,7 @@ export default function ChatsPage() {
     } finally {
       if (threadAbortRef.current === controller) {
         threadAbortRef.current = null
+        loadingMessageUpdatesRef.current = null
         setLoadingMessages(false)
         setLoadingOlder(false)
       }
@@ -272,6 +282,10 @@ export default function ChatsPage() {
     const conversationId = rows[0]?.conversation_id
     if (!rows.length || (conversationId && String(conversationId) !== String(selectedIdRef.current))) return
 
+    const liveUpdates = loadingMessageUpdatesRef.current
+    if (existingOnly && liveUpdates?.id === String(conversationId)) {
+      liveUpdates.messages = mergeMessageList(liveUpdates.messages, rows)
+    }
     setMessages((current) => {
       if (conversationId && String(conversationId) !== String(selectedIdRef.current)) return current
       const matching = existingOnly || messageSearchRef.current
@@ -290,6 +304,7 @@ export default function ChatsPage() {
   const applyConversations = useCallback((incoming) => {
     const rows = Array.isArray(incoming) ? incoming : [incoming]
     if (!rows.length) return
+    rows.forEach((row) => { if (row?.id) listChangesRef.current?.add(String(row.id)) })
 
     setConversations((current) => {
       let next = current
@@ -317,8 +332,9 @@ export default function ChatsPage() {
     })
   }, [])
 
-  const failOptimisticMessage = (id) => {
-    setMessages((current) => current.map((message) => message.id === id ? { ...message, status: 'failed' } : message))
+  const updateOptimisticError = (id, error) => {
+    const status = error.response && error.response.status < 500 ? 'failed' : 'pending'
+    setMessages((current) => current.map((message) => message.id === id ? { ...message, status } : message))
   }
 
   const removeMessageItems = useCallback((ids) => {
@@ -327,6 +343,7 @@ export default function ChatsPage() {
 
   const removeConversationItems = useCallback((ids) => {
     const removed = Array.isArray(ids) ? ids : [ids]
+    removed.forEach((id) => listChangesRef.current?.add(String(id)))
     setConversations((current) => removeConversations(current, removed))
     if (removed.some((id) => String(id) === String(selectedIdRef.current))) {
       setSelectedId('')
@@ -343,10 +360,10 @@ export default function ChatsPage() {
 
   const markIncomingRead = useCallback((conversation) => {
     if (!conversation?.unread_count || String(conversation.id) !== selectedIdRef.current
-      || document.visibilityState !== 'visible' || readOnly || readRequestRef.current) return
+      || document.visibilityState !== 'visible' || !threadRef.current?.getClientRects().length || readOnly || readRequestRef.current) return
     readRequestRef.current = window.setTimeout(() => {
       readRequestRef.current = null
-      if (String(conversation.id) !== selectedIdRef.current || document.visibilityState !== 'visible') return
+      if (String(conversation.id) !== selectedIdRef.current || document.visibilityState !== 'visible' || !threadRef.current?.getClientRects().length) return
       api.post(`/api/app/conversations/${conversation.id}/read`).catch(() => {})
     }, 150)
   }, [readOnly])
@@ -469,12 +486,13 @@ export default function ChatsPage() {
   useEffect(() => {
     if (!selectedId) return
     const timer = window.setTimeout(() => {
-      loadMessages(selectedId, { markRead: !readOnly && !debouncedMessageSearch })
+      loadMessages(selectedId, { markRead: !readOnly && !debouncedMessageSearch && Boolean(threadRef.current?.getClientRects().length) })
     }, 0)
     return () => {
       window.clearTimeout(timer)
       threadAbortRef.current?.abort()
       threadAbortRef.current = null
+      loadingMessageUpdatesRef.current = null
     }
   }, [debouncedMessageSearch, loadMessages, readOnly, selectedId])
 
@@ -496,8 +514,6 @@ export default function ChatsPage() {
         applyConversations(payload.conversation)
         if (payload.message?.sender_type === 'customer') markIncomingRead(payload.conversation)
       }
-      if (payload.message?.sender_type !== 'customer') return
-      window.dispatchEvent(new Event('wacrm:inbox-changed'))
     },
     onMessageUpdated: (payload) => {
       if (payload?.message) applyMessages(payload.message, true)
@@ -511,16 +527,11 @@ export default function ChatsPage() {
     },
     onConversationUpdated: (payload) => {
       if (payload?.conversation) applyConversations(payload.conversation)
-      window.dispatchEvent(new Event('wacrm:inbox-changed'))
     },
     onConversationDeleted: (payload) => {
       if (payload?.conversation_id || payload?.conversationId) removeConversationItems(payload.conversation_id || payload.conversationId)
-      window.dispatchEvent(new Event('wacrm:inbox-changed'))
     },
-    onReconnected: () => {
-      void recoverRealtime()
-      window.dispatchEvent(new Event('wacrm:inbox-changed'))
-    },
+    onReconnected: recoverRealtime,
   }), [applyConversations, applyMessages, recoverRealtime, removeConversationItems, removeMessageItems, markIncomingRead])
 
   useEffect(() => {
@@ -534,6 +545,10 @@ export default function ChatsPage() {
       document.removeEventListener('visibilitychange', recoverVisible)
     }
   }, [realtimeConnected, recoverRealtime])
+
+  useEffect(() => {
+    if (mobileView === 'thread') markIncomingRead(selected)
+  }, [mobileView, selected, markIncomingRead])
 
   useEffect(() => () => window.clearTimeout(readRequestRef.current), [])
 
@@ -772,6 +787,10 @@ export default function ChatsPage() {
       last_reply_at: optimistic.created_at,
     }])
 
+    setDraft('')
+    setSelectedFile(null)
+    setReplyTo(null)
+
     const finishSend = (saved) => {
       sendAttemptRef.current = null
       applyMessages([saved])
@@ -782,9 +801,6 @@ export default function ChatsPage() {
         last_message_at: activityAt,
         last_reply_at: activityAt,
       }])
-      setDraft('')
-      setSelectedFile(null)
-      setReplyTo(null)
       setUploadProgress(100)
     }
 
@@ -814,10 +830,9 @@ export default function ChatsPage() {
     } catch (requestError) {
       const failed = requestError.response?.data?.data
       if (failed?.id) applyMessages([failed])
-      else failOptimisticMessage(optimistic.id)
+      else updateOptimisticError(optimistic.id, requestError)
       sendAttemptRef.current = null
       const message = errorMessage(requestError, 'Unable to send message.')
-      setThreadError(message)
       toast.error(message)
     } finally {
       setSending(false)
@@ -835,7 +850,7 @@ export default function ChatsPage() {
       return
     }
     const text = messageText(message)
-    if (message?.media_url) {
+    if (message?.media_url || ['image', 'video', 'audio', 'document'].includes(message.content_type)) {
       toast.info('Select the attachment again to retry this media message.')
       setDraft(text)
       return
@@ -876,7 +891,7 @@ export default function ChatsPage() {
     } catch (requestError) {
       const failed = requestError.response?.data?.data
       if (failed?.id) applyMessages([failed])
-      else failOptimisticMessage(optimistic.id)
+      else updateOptimisticError(optimistic.id, requestError)
       toast.error(errorMessage(requestError, 'Retry failed.'))
     } finally {
       setRetryingId('')
@@ -927,7 +942,7 @@ export default function ChatsPage() {
     } catch (requestError) {
       const failed = requestError.response?.data?.data
       if (failed?.id) applyMessages([failed])
-      else failOptimisticMessage(optimistic.id)
+      else updateOptimisticError(optimistic.id, requestError)
       if (failed?.status === 'failed') richSendAttemptRef.current = null
       toast.error(errorMessage(requestError, 'Unable to send message.'))
       return false
@@ -1153,10 +1168,10 @@ export default function ChatsPage() {
                 const previousDate = messageDate(messages[index - 1])
                 const previous = messages[index - 1]
                 const grouped = previous && currentDate === messageDate(previous) && isIncoming(previous) === incoming
-                  && Math.abs(new Date(message.provider_timestamp || message.created_at).getTime() - new Date(previous.provider_timestamp || previous.created_at).getTime()) < 5 * 60 * 1000
+                  && Math.abs(new Date(messageTimestamp(message)).getTime() - new Date(messageTimestamp(previous)).getTime()) < 5 * 60 * 1000
                 return (
                   <Fragment key={message.idempotency_key || message.id || index}>
-                    {currentDate && currentDate !== previousDate && <div className="message-date">{formatDate(message.provider_timestamp || message.created_at)}</div>}
+                    {currentDate && currentDate !== previousDate && <div className="message-date">{formatDate(messageTimestamp(message))}</div>}
                     {unreadSeparatorIndex === index && <div className="unread-separator"><span>New messages</span></div>}
                     {replyTo?.id === message.id && <div className="reply-banner"><span>Replying to {incoming ? 'contact' : 'you'}</span><button type="button" className="icon-button" onClick={() => setReplyTo(null)} aria-label="Cancel reply"><Icon name="close" size={14} /></button></div>}
                     <MessageBubble

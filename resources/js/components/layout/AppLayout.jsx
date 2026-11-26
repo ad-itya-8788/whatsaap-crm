@@ -10,6 +10,7 @@ import Icon from '../common/Icon.jsx'
 import { useToast } from '../common/ToastProvider.jsx'
 import { changeAppearance, useColorMode } from '../../lib/appearance.js'
 import { usePoll } from '../../lib/usePoll.js'
+import { subscribeToRealtime } from '../../lib/realtime.js'
 import { useWhatsappConfig } from '../../lib/whatsappConfig.js'
 import { errorMessage } from '../../lib/utils.js'
 
@@ -122,6 +123,28 @@ export default function AppLayout({ children }) {
 
   usePoll(loadUnread, 60_000, { enabled: Boolean(user), event: 'wacrm:inbox-changed' })
   usePoll(loadNotificationUnread, 60_000, { enabled: Boolean(user), event: 'wacrm:notifications-changed' })
+  const userId = user?.id
+  useEffect(() => {
+    if (!userId) return undefined
+    let timer
+    const refreshUnread = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => window.dispatchEvent(new Event('wacrm:inbox-changed')), 250)
+    }
+    const unsubscribe = subscribeToRealtime({
+      onMessageCreated: ({ message }) => {
+        if (message?.sender_type === 'customer') refreshUnread()
+      },
+      onMessageDeleted: refreshUnread,
+      onConversationUpdated: refreshUnread,
+      onConversationDeleted: refreshUnread,
+      onReconnected: refreshUnread,
+    })
+    return () => {
+      unsubscribe()
+      window.clearTimeout(timer)
+    }
+  }, [userId])
   const { data: whatsapp } = useWhatsappConfig({ enabled: Boolean(user) })
 
   useEffect(() => {

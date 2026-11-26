@@ -45,8 +45,14 @@ return [
                     'useTLS' => env('REVERB_SCHEME', 'http') === 'https',
                 ],
                 'allowed_origins' => array_values(array_filter(
-                    explode(',', (string) env('REVERB_ALLOWED_ORIGINS', '*')),
-                    'strlen',
+                    array_map(static function (string $origin): ?string {
+                        $origin = trim($origin);
+                        // Reverb compares only the browser Origin header's hostname.
+                        $url = str_contains($origin, '://') ? $origin : '//'.$origin;
+
+                        return parse_url($url, PHP_URL_HOST) ?: null;
+                    }, explode(',', (string) env('REVERB_ALLOWED_ORIGINS', '*'))),
+                    static fn (?string $host): bool => $host !== null,
                 )),
                 'ping_interval' => env('REVERB_APP_PING_INTERVAL', 60),
                 'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 30),

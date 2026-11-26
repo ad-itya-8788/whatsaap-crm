@@ -60,6 +60,13 @@ describe('realtimeChat', () => {
     expect(mergeMessageList(current, incoming)[0].status).toBe('read')
   })
 
+  it('keeps a read receipt when an older send response arrives', () => {
+    const saved = { id: 52, idempotency_key: 'attempt', message_id: 'wamid.123', status: 'read' }
+    const stale = { id: 52, status: 'sent' }
+    expect(mergeMessageList([saved], [stale])).toEqual([saved])
+    expect(mergeMessageList([saved], [{ id: 'tmp-attempt', idempotency_key: 'attempt', status: 'sending' }])).toEqual([saved])
+  })
+
   it('removes an optimistic message by its temporary id', () => {
     const messages = [{ id: 'tmp-key-3', idempotency_key: 'key-3', status: 'sending' }]
     expect(removeMessages(messages, ['tmp-key-3'])).toHaveLength(0)

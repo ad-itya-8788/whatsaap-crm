@@ -78,13 +78,41 @@ class RealtimeMessagingTest extends TestCase
         Event::assertDispatched(MessageStatusChanged::class, fn ($event) => $event->message['id'] === $messageId
             && $event->message['status'] === 'read');
         Event::assertDispatchedTimes(MessageStatusChanged::class, 3);
+        $this->webhook(['messages' => [array_replace($inbound, [
+            'id' => 'wamid.missed',
+            'timestamp' => (string) $thread->fresh()->last_message_at->timestamp,
+            'text' => ['body' => 'While offline'],
+        ])]])->assertOk();
         $this->getJson('/api/app/realtime/sync?'.http_build_query([
             'conversation_id' => $thread->id,
             'after_id' => $messageId,
             'since' => Message::findOrFail($messageId)->updated_at->toISOString(),
-        ]))->assertOk()->assertJsonFragment(['id' => $messageId, 'status' => 'read']);
+        ]))->assertOk()
+            ->assertJsonFragment(['id' => $messageId, 'status' => 'read'])
+            ->assertJsonFragment(['message_id' => 'wamid.missed'])
+            ->assertJsonPath('conversations.0.last_message_text', 'While offline')
+            ->assertJsonPath('conversations.0.unread_count', 2);
         $this->getJson('/api/app/notifications/browser-events?after=0')
-            ->assertOk()->assertJsonCount(1, 'events');
+            ->assertOk()->assertJsonCount(2, 'events');
+
+        // A failure receipt for a different provider ID must leave the read message alone.
+        $failed = Message::create([
+            'conversation_id' => $thread->id,
+            'message_id' => 'wamid.failed',
+            'sender_type' => 'agent',
+            'content_type' => 'text',
+            'status' => 'sent',
+        ]);
+        $this->webhook(['statuses' => [[
+            'id' => 'wamid.failed',
+            'status' => 'failed',
+            'timestamp' => (string) now()->timestamp,
+            'errors' => [['code' => 131026, 'title' => 'Undeliverable']],
+        ]]])->assertOk();
+        $this->assertSame('read', Message::findOrFail($messageId)->status);
+        $this->assertSame('failed', $failed->refresh()->status);
+        Event::assertDispatched(MessageStatusChanged::class, fn ($event) => $event->message['id'] === $failed->id
+            && $event->message['status'] === 'failed');
     }
 
     private function providerStatus(string $status): array
