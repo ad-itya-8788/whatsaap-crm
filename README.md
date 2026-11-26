@@ -41,7 +41,7 @@ For Apache deployments, point the virtual host's document root to this repositor
 | `META_APP_ID` | Meta app ID required for template header uploads |
 | `APP_URL` | Optional for the default Render domain. Set it to the HTTPS origin if using a custom domain. |
 | `SANCTUM_STATEFUL_DOMAINS` | Optional for the primary app origin. If serving extra hostnames, set a comma-separated list of hosts without schemes. |
-| `MYSQL_ATTR_SSL_CA` | For MySQL TLS, upload the database provider's PEM CA as a Render secret file named `mysql-ca.pem` and set this to `/etc/secrets/mysql-ca.pem`. If the provider explicitly uses publicly trusted certificates, use `/etc/ssl/certs/ca-certificates.crt`. Set `DB_HOST` to the provider's TLS hostname. |
+| `MYSQL_ATTR_SSL_CA` | Defaults on Render to `/etc/ssl/certs/ca-certificates.crt` for publicly trusted certificates. If your provider requires a custom CA, upload its PEM as a Render secret file named `mysql-ca.pem` and set the value to `/etc/secrets/mysql-ca.pem`. Set `DB_HOST` to the provider's TLS hostname. |
 | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM_ADDRESS` | Configure for password reset email. Use an SMTP provider with a permitted port such as `2525`. The container defaults to `MAIL_MAILER=smtp`. |
 
 The image sets `APP_ENV=production`, `APP_DEBUG=false`, `LOG_CHANNEL=stderr`, `DB_CONNECTION=mysql`, `SESSION_DRIVER=database`, `SESSION_SECURE_COOKIE=true`, `CACHE_STORE=database`, and `QUEUE_CONNECTION=database`. It listens on Render's `PORT` with a default of `10000`. Queue processing and the scheduler run inside the web service while it is awake. Set `RENDER_RUN_BACKGROUND=false` if moving them to separate services.

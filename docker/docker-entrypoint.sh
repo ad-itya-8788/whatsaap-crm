@@ -13,6 +13,7 @@ export APP_URL="${APP_URL:-${RENDER_EXTERNAL_URL:-http://localhost:$port}}"
 
 if [[ "${RENDER:-}" == true ]]; then
     export APP_DEBUG=false
+    export MYSQL_ATTR_SSL_CA="${MYSQL_ATTR_SSL_CA:-/etc/ssl/certs/ca-certificates.crt}"
 fi
 
 as_app() {
@@ -20,15 +21,28 @@ as_app() {
 }
 
 mysql_ca="${MYSQL_ATTR_SSL_CA:-}"
-if [[ -n "$mysql_ca" ]] && ! as_app php -r '
+if [[ -n "$mysql_ca" ]]; then
+    as_app php -r '
     $path = $argv[1];
-    if (!is_file($path) || !is_readable($path)) exit(1);
+    if (!str_starts_with($path, "/")) {
+        fwrite(STDERR, "MYSQL_ATTR_SSL_CA must be a Linux absolute path. Enter only the path as the variable value, without quotes.\n");
+        exit(1);
+    }
+    if (!is_file($path)) {
+        fwrite(STDERR, "MYSQL_ATTR_SSL_CA file is missing or inaccessible to the PHP worker.\n");
+        exit(1);
+    }
     $pem = @file_get_contents($path);
-    exit($pem !== false && @openssl_x509_read($pem) !== false ? 0 : 1);
-' -- "$mysql_ca"; then
-    echo "MYSQL_ATTR_SSL_CA must point to a readable PEM certificate or bundle inside the container." >&2
-    echo "On Render, use the provider CA under /etc/secrets or the system trust bundle if your provider specifies it." >&2
-    exit 1
+    if ($pem === false) {
+        fwrite(STDERR, "MYSQL_ATTR_SSL_CA file is unreadable by the PHP worker.\n");
+        exit(1);
+    }
+    if (@openssl_x509_read($pem) === false) {
+        fwrite(STDERR, "MYSQL_ATTR_SSL_CA file does not contain a valid PEM certificate.\n");
+        exit(1);
+    }
+' -- "$mysql_ca"
+    echo "MySQL TLS CA is readable and contains a PEM certificate."
 fi
 
 printf 'Listen %s\n' "$port" > /etc/apache2/ports.conf
