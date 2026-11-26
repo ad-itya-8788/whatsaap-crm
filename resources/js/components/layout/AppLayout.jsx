@@ -208,8 +208,8 @@ export default function AppLayout({ children }) {
 
   const crumbs = breadcrumbs(location.pathname)
   const connected = whatsapp?.status === 'connected'
-  const accountLabel = whatsapp?.phone_number_id
-    ? `Connected · ${whatsapp.phone_number_id}`
+  const accountLabel = whatsapp?.display_phone_number
+    ? `Connected · ${whatsapp.display_phone_number}`
     : connected ? 'WhatsApp connected' : 'WhatsApp not connected'
 
   return (

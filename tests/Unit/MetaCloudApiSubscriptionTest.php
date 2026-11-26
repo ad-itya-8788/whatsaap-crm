@@ -51,4 +51,23 @@ class MetaCloudApiSubscriptionTest extends TestCase
 
         $this->assertNull(app(MetaCloudApiService::class)->verifyAppSubscription($config));
     }
+
+    public function test_it_fetches_the_display_phone_number_from_meta(): void
+    {
+        Http::fake([
+            'graph.facebook.com/*' => Http::response([
+                'id' => 'phone-id',
+                'display_phone_number' => '+1 555-0100',
+            ]),
+        ]);
+
+        $config = new WhatsappConfig;
+        $config->phone_number_id = 'phone-id';
+        $config->access_token = 'test-token';
+
+        $this->assertSame(
+            '+1 555-0100',
+            app(MetaCloudApiService::class)->getDisplayPhoneNumber($config),
+        );
+    }
 }

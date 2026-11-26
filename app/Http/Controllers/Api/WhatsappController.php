@@ -9,6 +9,7 @@ use App\Services\MetaCloudApiService;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class WhatsappController extends Controller
 {
@@ -27,11 +28,14 @@ class WhatsappController extends Controller
             ]);
         }
 
+        $displayPhoneNumber = $this->cachedDisplayPhoneNumber($config);
+
         return response()->json([
             'configured' => true,
             'status' => $config->status,
             'connection_status' => $config->status,
             'phone_number_id' => $config->phone_number_id,
+            'display_phone_number' => $displayPhoneNumber,
             'waba_id' => $config->waba_id,
             'connected_at' => $config->connected_at,
             'registered_at' => $config->registered_at,
@@ -99,6 +103,7 @@ class WhatsappController extends Controller
             'last_registration_error' => $registrationError,
             'subscribed_apps_at' => $config->waba_id ? now() : null,
         ])->save();
+        Cache::forget($this->displayPhoneNumberCacheKey($config));
 
         return response()->json([
             ...$this->getConfig()->getData(true),
@@ -191,5 +196,25 @@ class WhatsappController extends Controller
             'message' => $error,
             'checked_at' => now(),
         ]);
+    }
+
+    private function cachedDisplayPhoneNumber(WhatsappConfig $config): ?string
+    {
+        $cacheKey = $this->displayPhoneNumberCacheKey($config);
+        $cached = Cache::get($cacheKey);
+
+        if (is_string($cached)) {
+            return $cached !== '' ? $cached : null;
+        }
+
+        $number = $this->meta->getDisplayPhoneNumber($config);
+        Cache::put($cacheKey, $number ?? '', now()->addMinutes($number ? 360 : 5));
+
+        return $number;
+    }
+
+    private function displayPhoneNumberCacheKey(WhatsappConfig $config): string
+    {
+        return 'whatsapp.display_phone_number.'.hash('sha256', (string) $config->phone_number_id);
     }
 }

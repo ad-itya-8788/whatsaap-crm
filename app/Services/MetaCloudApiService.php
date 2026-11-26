@@ -5,11 +5,13 @@ namespace App\Services;
 use App\Exceptions\MetaApiException;
 use App\Models\WhatsappConfig;
 use App\Support\WhatsappMedia;
+use Illuminate\Contracts\Encryption\DecryptException;
 use GuzzleHttp\Psr7\Utils;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class MetaCloudApiService
 {
@@ -37,6 +39,50 @@ class MetaCloudApiService
         }
 
         return null;
+    }
+
+    public function getDisplayPhoneNumber(WhatsappConfig $config): ?string
+    {
+        try {
+            $accessToken = $config->access_token;
+        } catch (DecryptException) {
+            Log::warning('whatsapp.phone_number_metadata_unavailable', ['reason' => 'token_decryption_failed']);
+
+            return null;
+        }
+
+        if (! $accessToken || ! $config->phone_number_id) {
+            return null;
+        }
+
+        try {
+            $response = Http::withToken($accessToken)
+                ->connectTimeout(10)
+                ->timeout(20)
+                ->get($this->url($config->phone_number_id), [
+                    'fields' => 'id,display_phone_number',
+                ]);
+        } catch (ConnectionException) {
+            Log::warning('whatsapp.phone_number_metadata_unavailable', ['reason' => 'connection']);
+
+            return null;
+        }
+
+        if (! $response->successful()) {
+            Log::warning('whatsapp.phone_number_metadata_unavailable', ['status' => $response->status()]);
+
+            return null;
+        }
+
+        if ((string) $response->json('id') !== (string) $config->phone_number_id) {
+            Log::warning('whatsapp.phone_number_metadata_unavailable', ['reason' => 'id_mismatch']);
+
+            return null;
+        }
+
+        $number = $response->json('display_phone_number');
+
+        return is_string($number) && trim($number) !== '' ? trim($number) : null;
     }
 
     public function verifyWabaPhoneNumber(WhatsappConfig $config): ?string
