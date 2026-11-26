@@ -21,6 +21,10 @@ class EnsureActiveUser
             $request->session()->regenerateToken();
         }
 
+        if (! $request->is('api/*')) {
+            return redirect()->route('login');
+        }
+
         abort(401, 'This account has been deactivated.');
     }
 }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\SessionUser;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -39,7 +40,7 @@ class AuthController extends Controller
 
         $request->session()->regenerate();
 
-        return response()->json(['user' => $this->userPayload($request->user())]);
+        return response()->json(['user' => SessionUser::payload($request->user())]);
     }
 
     public function logout(Request $request)
@@ -54,7 +55,7 @@ class AuthController extends Controller
 
     public function user(Request $request)
     {
-        return response()->json(['user' => $this->userPayload($request->user())]);
+        return response()->json(['user' => SessionUser::payload($request->user())]);
     }
 
     public function forgotPassword(Request $request)
@@ -89,18 +90,5 @@ class AuthController extends Controller
         }
 
         return response()->json(['status' => __($status)]);
-    }
-
-    private function userPayload(User $user): array
-    {
-        return [
-            'id' => $user->id,
-            'name' => $user->name,
-            'full_name' => $user->name,
-            'email' => $user->email,
-            'role' => $user->role,
-            'avatar_url' => $user->avatar_url,
-            'email_verified_at' => $user->email_verified_at,
-        ];
     }
 }

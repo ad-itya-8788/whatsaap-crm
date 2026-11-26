@@ -32,9 +32,7 @@ class AppServiceProvider extends ServiceProvider
         Message::updated($webhooks->messageUpdated(...));
 
         ResetPassword::createUrlUsing(function ($user, string $token): string {
-            $frontend = rtrim(trim(explode(',', config('app.frontend_url'))[0]), '/');
-
-            return $frontend.'/reset-password?token='.rawurlencode($token).'&email='.rawurlencode($user->email);
+            return route('password.reset', ['token' => $token, 'email' => $user->email]);
         });
 
         RateLimiter::for('login', function (Request $request) {

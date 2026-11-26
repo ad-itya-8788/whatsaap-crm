@@ -26,7 +26,7 @@ foreach (explode(',', (string) env('FRONTEND_URL', '')) as $frontendUrl) {
 
 $statefulDomains = array_values(array_unique(array_filter(array_map(
     'trim',
-    array_merge($statefulDomains, $frontendDomains, ['localhost', '127.0.0.1', '::1']),
+    array_merge($statefulDomains, $frontendDomains, ['localhost', '127.0.0.1', '::1'], explode(',', Sanctum::currentRequestHost())),
 ))));
 
 return [

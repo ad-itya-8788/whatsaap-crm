@@ -25,8 +25,10 @@ class DashboardService
         $attention = $this->attentionSummary(10, $target);
         $volume = $this->volumeRows($from, $to);
 
-        $previousConversations = Conversation::query()->whereBetween('created_at', [$previousFrom, $previousTo])->count();
-        $previousResolved = Conversation::query()->whereBetween('closed_at', [$previousFrom, $previousTo])->count();
+        $previous = DB::query()
+            ->selectSub(Conversation::query()->whereBetween('created_at', [$previousFrom, $previousTo])->selectRaw('COUNT(*)'), 'conversations')
+            ->selectSub(Conversation::query()->whereBetween('closed_at', [$previousFrom, $previousTo])->selectRaw('COUNT(*)'), 'resolved')
+            ->first();
 
         $outbound = Message::query()
             ->where('sender_type', 'agent')
@@ -47,9 +49,9 @@ class DashboardService
             'generated_at' => now()->toIso8601String(),
             'kpis' => [
                 'newConversations' => array_sum(array_column($volume, 'newConversations')),
-                'newConversationsPrevious' => $previousConversations,
+                'newConversationsPrevious' => (int) $previous->conversations,
                 'resolved' => array_sum(array_column($volume, 'resolved')),
-                'resolvedPrevious' => $previousResolved,
+                'resolvedPrevious' => (int) $previous->resolved,
                 'broadcastDelivered' => (int) $outbound->delivered,
                 'broadcastRead' => (int) $outbound->read_count,
                 'broadcastDeliveredPrevious' => (int) $outbound->previous_delivered,
@@ -263,16 +265,23 @@ class DashboardService
     public function setup(): array
     {
         $config = WhatsappConfig::query()->latest('id')->first();
+        $counts = DB::query()
+            ->selectSub(MessageTemplate::query()->selectRaw('COUNT(*)'), 'templates')
+            ->selectSub(QuickReply::query()->selectRaw('COUNT(*)'), 'quick_replies')
+            ->selectSub(Contact::query()->selectRaw('COUNT(*)'), 'contacts')
+            ->selectSub(Tag::query()->selectRaw('COUNT(*)'), 'tags')
+            ->selectSub(CustomField::query()->selectRaw('COUNT(*)'), 'custom_fields')
+            ->first();
 
         return [
             'whatsappConnected' => $config !== null
                 && in_array($config->status, ['connected', 'active', 'verified'], true),
             'whatsappPhoneNumberId' => $config?->phone_number_id,
-            'templates' => MessageTemplate::query()->count(),
-            'quickReplies' => QuickReply::query()->count(),
-            'contacts' => Contact::query()->count(),
-            'tags' => Tag::query()->count(),
-            'customFields' => CustomField::query()->count(),
+            'templates' => (int) $counts->templates,
+            'quickReplies' => (int) $counts->quick_replies,
+            'contacts' => (int) $counts->contacts,
+            'tags' => (int) $counts->tags,
+            'customFields' => (int) $counts->custom_fields,
         ];
     }
 
