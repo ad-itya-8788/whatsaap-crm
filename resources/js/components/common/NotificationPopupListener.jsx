@@ -3,16 +3,24 @@ import api from '../../api/client.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { hasModuleAccess } from '../../lib/moduleAccess.js'
 import { notificationAppearance } from '../../lib/notificationAppearance.js'
+import { subscribeToRealtime } from '../../lib/realtime.js'
 import { useToast } from './ToastProvider.jsx'
 
 function popupFromEvent(event, canOpenInbox) {
   const data = event.data || {}
   const conversationId = data.conversation_id
+  const notificationId = Number(event.id)
   return {
     title: event.title || 'New notification',
     message: event.body || '',
     type: notificationAppearance(event.type).tone,
     href: conversationId && canOpenInbox ? `/inbox?c=${encodeURIComponent(conversationId)}` : '/notifications',
+    actionId: notificationId ? `notification:${notificationId}` : '',
+    onAction: notificationId ? () => {
+      void api.post(`/api/app/notifications/${notificationId}/read`).finally(() => {
+        window.dispatchEvent(new Event('wacrm:notifications-changed'))
+      })
+    } : undefined,
   }
 }
 
@@ -75,15 +83,21 @@ export default function NotificationPopupListener() {
     }
 
     check()
+    const unsubscribe = subscribeToRealtime({
+      activityUserId: userId,
+      onReconnected: check,
+      onNotificationCreated: check,
+    })
     const timer = window.setInterval(check, 8000)
     window.addEventListener('focus', check)
-    window.addEventListener('wacrm:notification-changed', check)
+    window.addEventListener('wacrm:notifications-changed', check)
 
     return () => {
+      unsubscribe()
       controller.abort()
       window.clearInterval(timer)
       window.removeEventListener('focus', check)
-      window.removeEventListener('wacrm:notification-changed', check)
+      window.removeEventListener('wacrm:notifications-changed', check)
     }
   }, [userId, toast, canOpenInbox, canOpenNotifications])
 

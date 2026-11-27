@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Events\ConversationActivity;
+use App\Events\ConversationUpdated;
 use App\Events\MessageCreated;
 use App\Events\MessageStatusChanged;
+use App\Events\NotificationCreated;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Notification;
@@ -164,6 +166,176 @@ class RealtimeMessagingTest extends TestCase
                     'name' => $agent->name,
                 ];
         });
+    }
+
+    public function test_agent_can_claim_unassigned_conversation_and_see_it_in_inbox(): void
+    {
+        Event::fake();
+        $this->webhook(['messages' => [[
+            'id' => 'wamid.unassigned',
+            'from' => '15553333333',
+            'timestamp' => (string) now()->timestamp,
+            'type' => 'text',
+            'text' => ['body' => 'Hello'],
+        ]]])->assertOk();
+        $thread = Conversation::sole();
+        $agent = User::forceCreate([
+            'name' => 'Claiming Agent',
+            'email' => 'claiming-agent@example.test',
+            'password' => bcrypt('test-password'),
+            'role_id' => \App\Models\Role::where('slug', 'agent')->value('id'),
+            'is_active' => true,
+        ]);
+        $agent->assignedRole->update(['module_access' => ['inbox']]);
+
+        $this->actingAs($agent)->patchJson("/api/app/conversations/{$thread->id}/assign", ['assignee_id' => $agent->id])
+            ->assertOk()->assertJsonPath('assigned_agent_id', $agent->id);
+
+        $this->assertSame($agent->id, (int) $thread->fresh()->assigned_agent_id);
+        $this->assertDatabaseCount('notifications', 0);
+        $this->getJson('/api/app/conversations')->assertOk()->assertJsonCount(1, 'data');
+    }
+
+    public function test_assignment_is_idempotent_and_eligibility_is_enforced(): void
+    {
+        Event::fake();
+        $this->webhook(['messages' => [[
+            'id' => 'wamid.eligibility',
+            'from' => '15554444444',
+            'timestamp' => (string) now()->timestamp,
+            'type' => 'text',
+            'text' => ['body' => 'Hello'],
+        ]]])->assertOk();
+        $thread = Conversation::sole();
+        $owner = User::forceCreate([
+            'name' => 'Eligibility Owner',
+            'email' => 'eligibility-owner@example.test',
+            'password' => bcrypt('test-password'),
+            'role_id' => \App\Models\Role::where('slug', 'owner')->value('id'),
+            'is_active' => true,
+        ]);
+        $agent = User::forceCreate([
+            'name' => 'Eligible Agent',
+            'email' => 'eligible-agent@example.test',
+            'password' => bcrypt('test-password'),
+            'role_id' => \App\Models\Role::where('slug', 'agent')->value('id'),
+            'is_active' => true,
+        ]);
+        $agent->assignedRole->update(['module_access' => ['inbox']]);
+        $inactive = User::forceCreate([
+            'name' => 'Inactive Agent',
+            'email' => 'inactive-agent@example.test',
+            'password' => bcrypt('test-password'),
+            'role_id' => \App\Models\Role::where('slug', 'agent')->value('id'),
+            'is_active' => false,
+        ]);
+        $viewer = User::forceCreate([
+            'name' => 'No Inbox Member',
+            'email' => 'no-inbox-member@example.test',
+            'password' => bcrypt('test-password'),
+            'role_id' => \App\Models\Role::where('slug', 'viewer')->value('id'),
+            'is_active' => true,
+        ]);
+        $viewer->assignedRole->update(['module_access' => ['dashboard']]);
+
+        $url = "/api/app/conversations/{$thread->id}/assign";
+        $this->actingAs($owner)->patchJson($url, ['assignee_id' => $agent->id])->assertOk();
+        $this->patchJson($url, ['assignee_id' => $agent->id])->assertOk();
+        $this->assertDatabaseCount('notifications', 1);
+        $this->patchJson($url, ['assignee_id' => $inactive->id])->assertStatus(422);
+        $this->patchJson($url, ['assignee_id' => $viewer->id])->assertStatus(422);
+    }
+
+    public function test_reassignment_and_unassignment_notify_once_and_broadcast_only_to_authorized_users(): void
+    {
+        Event::fake([ConversationUpdated::class, NotificationCreated::class]);
+        $this->webhook(['messages' => [[
+            'id' => 'wamid.reassignment',
+            'from' => '15555555555',
+            'timestamp' => (string) now()->timestamp,
+            'type' => 'text',
+            'text' => ['body' => 'Hello'],
+        ]]])->assertOk();
+        $thread = Conversation::sole();
+        $owner = User::forceCreate([
+            'name' => 'Assignment Owner',
+            'email' => 'assignment-owner@example.test',
+            'password' => bcrypt('test-password'),
+            'role_id' => \App\Models\Role::where('slug', 'owner')->value('id'),
+            'is_active' => true,
+        ]);
+        $agent = User::forceCreate([
+            'name' => 'First Agent',
+            'email' => 'first-agent@example.test',
+            'password' => bcrypt('test-password'),
+            'role_id' => \App\Models\Role::where('slug', 'agent')->value('id'),
+            'is_active' => true,
+        ]);
+        $agent->assignedRole->update(['module_access' => ['inbox']]);
+        $otherAgent = User::forceCreate([
+            'name' => 'Second Agent',
+            'email' => 'second-agent@example.test',
+            'password' => bcrypt('test-password'),
+            'role_id' => \App\Models\Role::where('slug', 'agent')->value('id'),
+            'is_active' => true,
+        ]);
+        $otherAgent->assignedRole->update(['module_access' => ['inbox']]);
+
+        $url = "/api/app/conversations/{$thread->id}/assign";
+        $this->actingAs($owner)->patchJson($url, ['assignee_id' => $agent->id])->assertOk();
+        $this->patchJson($url, ['assignee_id' => $otherAgent->id])->assertOk();
+        $this->patchJson($url, ['assignee_id' => null])->assertOk();
+
+        $this->assertNull($thread->fresh()->assigned_agent_id);
+        $this->assertDatabaseCount('notifications', 2);
+        Event::assertDispatchedTimes(NotificationCreated::class, 2);
+        Event::assertDispatched(ConversationUpdated::class, function (ConversationUpdated $event) use ($owner, $agent, $otherAgent) {
+            $channels = array_map(fn ($channel) => $channel->name, $event->broadcastOn());
+
+            return ! in_array('private-account.default', $channels, true)
+                && in_array('private-inbox-activity.'.$owner->id, $channels, true)
+                && in_array('private-inbox-activity.'.$agent->id, $channels, true)
+                && in_array('private-inbox-activity.'.$otherAgent->id, $channels, true);
+        });
+    }
+
+    public function test_browser_events_exclude_conversations_not_assigned_to_agent(): void
+    {
+        Event::fake();
+        foreach (['15556666666', '15557777777'] as $phone) {
+            $this->webhook(['messages' => [[
+                'id' => 'wamid.browser-'.$phone,
+                'from' => $phone,
+                'timestamp' => (string) now()->timestamp,
+                'type' => 'text',
+                'text' => ['body' => 'Hello'],
+            ]]])->assertOk();
+        }
+        [$mine, $other] = Conversation::orderBy('id')->get()->all();
+        $agent = User::forceCreate([
+            'name' => 'Browser Events Agent',
+            'email' => 'browser-events-agent@example.test',
+            'password' => bcrypt('test-password'),
+            'role_id' => \App\Models\Role::where('slug', 'agent')->value('id'),
+            'is_active' => true,
+        ]);
+        $agent->assignedRole->update(['module_access' => ['inbox']]);
+        $this->actingAs($agent)->patchJson("/api/app/conversations/{$mine->id}/assign", ['assignee_id' => $agent->id])
+            ->assertOk();
+
+        $latest = $this->getJson('/api/app/notifications/browser-events?after=0')->json('latest_id');
+        foreach (['15556666666', '15557777777'] as $index => $phone) {
+            $this->webhook(['messages' => [[
+                'id' => 'wamid.browser-new-'.$index,
+                'from' => $phone,
+                'timestamp' => (string) now()->timestamp,
+                'type' => 'text',
+                'text' => ['body' => 'New message'],
+            ]]])->assertOk();
+        }
+
+        $this->getJson('/api/app/notifications/browser-events?after='.$latest)
+            ->assertOk()->assertJsonCount(1, 'events')->assertJsonPath('events.0.conversation_id', $mine->id);
     }
 
     private function providerStatus(string $status): array

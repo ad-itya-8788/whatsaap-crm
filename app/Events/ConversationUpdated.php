@@ -7,11 +7,11 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 
 class ConversationUpdated implements ShouldBroadcastNow
 {
-    public function __construct(public array $conversation) {}
+    public function __construct(public array $conversation, public array $recipients = []) {}
 
-    public function broadcastOn(): PrivateChannel
+    public function broadcastOn(): array
     {
-        return new PrivateChannel('account.default');
+        return array_map(fn ($id) => new PrivateChannel("inbox-activity.{$id}"), $this->recipients);
     }
 
     public function broadcastWith(): array

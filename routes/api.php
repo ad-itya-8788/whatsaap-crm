@@ -70,13 +70,13 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('/conversations', [ConversationController::class, 'index'])->middleware('module:inbox');
         Route::get('/inbox/unread-count', [ConversationController::class, 'unreadCount'])->middleware('module:inbox');
         Route::post('/conversations/start', [ConversationController::class, 'start'])->middleware('throttle:send')->middleware('module:inbox');
+        Route::patch('/conversations/{conversation}/assign', [ConversationController::class, 'assign'])->middleware('module:inbox');
         Route::middleware('conversation.access')->group(function () {
             Route::get('/conversations/{conversation}', [ConversationController::class, 'show'])->middleware('module:inbox');
             Route::delete('/conversations/{conversation}', [ConversationController::class, 'destroy'])->middleware('module:inbox');
             Route::post('/conversations/{conversation}/read', [ConversationController::class, 'markRead'])->middleware('module:inbox');
             Route::post('/conversations/{conversation}/typing', [ConversationController::class, 'typing'])->middleware(['module:inbox', 'throttle:30,1,typing']);
-            Route::post('/conversations/{conversation}/ai-autoreply', [AiController::class, 'updateAutoreply'])->middleware(['throttle:send'])->middleware('module:inbox');
-            Route::patch('/conversations/{conversation}/assign', [ConversationController::class, 'assign'])->middleware('module:inbox');
+            Route::post('/conversations/{conversation}/ai-autoreply', [ConversationController::class, 'updateAutoreply'])->middleware(['throttle:send'])->middleware('module:inbox');
             Route::patch('/conversations/{conversation}/status', [ConversationController::class, 'updateStatus'])->middleware('module:inbox');
             Route::get('/conversations/{conversation}/notes', [ConversationNoteController::class, 'index'])->middleware('module:inbox');
             Route::post('/conversations/{conversation}/notes', [ConversationNoteController::class, 'store'])->middleware('module:inbox');
@@ -96,10 +96,10 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 
         Route::get('/notifications', [NotificationController::class, 'index'])->middleware('module:notifications');
         Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount'])->middleware('module:notifications');
-        Route::get('/notifications/browser-events', [NotificationController::class, 'browserEvents'])->middleware('module:notifications');
+        Route::get('/notifications/browser-events', [NotificationController::class, 'browserEvents'])->middleware('module:notifications,inbox');
         Route::get('/notifications/popup-events', [NotificationController::class, 'popupEvents'])->middleware('module:notifications,inbox');
         Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead'])->middleware('module:notifications');
-        Route::post('/notifications/{notification}/read', [NotificationController::class, 'markRead'])->middleware('module:notifications');
+        Route::post('/notifications/{notification}/read', [NotificationController::class, 'markRead'])->middleware('module:notifications,inbox');
 
         Route::get('/ai/config', [AiController::class, 'config'])->middleware('module:ai_agents,inbox');
         Route::post('/ai/playground', [AiController::class, 'playground'])->middleware('throttle:ai')->middleware('module:ai_agents');

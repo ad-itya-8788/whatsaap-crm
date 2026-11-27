@@ -67,7 +67,7 @@ function getEcho(settings) {
 
 export function subscribeToRealtime(handlers = {}) {
   const settings = config()
-  if (!settings) {
+  if (!settings || !handlers.activityUserId) {
     handlers.onConnectionChange?.(false)
     return () => {}
   }
@@ -80,20 +80,19 @@ export function subscribeToRealtime(handlers = {}) {
     return () => {}
   }
 
-  const channel = echo.private('account.default')
-  const activityChannelName = handlers.activityUserId ? `inbox-activity.${handlers.activityUserId}` : null
-  const activityChannel = activityChannelName ? echo.private(activityChannelName) : null
-  const onActivity = (payload) => handlers.onConversationActivity?.(payload)
-  activityChannel?.listen('.conversation.activity', onActivity)
+  const channelName = `inbox-activity.${handlers.activityUserId}`
+  const channel = echo.private(channelName)
   const subscription = channel.subscription
   subscribers += 1
   const listeners = {
+    'conversation.activity': (payload) => handlers.onConversationActivity?.(payload),
     'message.created': (payload) => handlers.onMessageCreated?.(payload),
     'message.updated': (payload) => handlers.onMessageUpdated?.(payload),
     'message.status': (payload) => handlers.onMessageStatusChanged?.(payload),
     'message.deleted': (payload) => handlers.onMessageDeleted?.(payload),
     'conversation.updated': (payload) => handlers.onConversationUpdated?.(payload),
     'conversation.deleted': (payload) => handlers.onConversationDeleted?.(payload),
+    'notification.created': (payload) => handlers.onNotificationCreated?.(payload),
   }
 
   Object.entries(listeners).forEach(([event, listener]) => channel.listen(`.${event}`, listener))
@@ -115,17 +114,13 @@ export function subscribeToRealtime(handlers = {}) {
   else handlers.onConnectionChange?.(false)
 
   return () => {
-    if (activityChannel) {
-      activityChannel.stopListening('.conversation.activity', onActivity)
-      echo.leave(activityChannelName)
-    }
     Object.entries(listeners).forEach(([event, listener]) => channel.stopListening(`.${event}`, listener))
     subscription.unbind('pusher:subscription_succeeded', onSubscribed)
     subscription.unbind('pusher:subscription_error', onSubscriptionError)
     connection.unbind('state_change', onStateChange)
+    echo.leave(channelName)
     subscribers -= 1
     if (!subscribers) {
-      echo.leave('account.default')
       echo.disconnect()
       echoClient = null
     }

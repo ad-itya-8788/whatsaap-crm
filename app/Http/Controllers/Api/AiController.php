@@ -11,6 +11,7 @@ use App\Services\AiConfigService;
 use App\Services\AiKnowledgeService;
 use App\Services\AiProviderService;
 use App\Services\AiService;
+use App\Services\ConversationAssignmentService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,6 +25,7 @@ class AiController extends Controller
         private AiProviderService $providers,
         private AiKnowledgeService $knowledge,
         private AiService $ai,
+        private ConversationAssignmentService $assignments,
     ) {}
 
     public function config(Request $request): JsonResponse
@@ -176,19 +178,25 @@ class AiController extends Controller
             'assign_to_me' => ['sometimes', 'boolean'],
         ]);
         $paused = (bool) $data['paused'];
+        $assignToMe = $paused && ($data['assign_to_me'] ?? false);
         $updates = ['ai_autoreply_disabled' => $paused];
 
-        if ($paused && ($data['assign_to_me'] ?? false)) {
-            $updates['assigned_agent_id'] = $request->user()->id;
-        } elseif (! $paused) {
-            $updates['assigned_agent_id'] = null;
+        if (! $paused) {
             $updates['ai_reply_count'] = 0;
             $updates['ai_handoff_summary'] = null;
         }
 
         $conversation->update($updates);
 
-        return response()->json($conversation->load(['contact.tags', 'assignedAgent']));
+        if ($assignToMe || ! $paused) {
+            $this->assignments->assign(
+                $conversation->fresh(),
+                $assignToMe ? (int) $request->user()->id : null,
+                $request->user(),
+            );
+        }
+
+        return response()->json($conversation->fresh()->load(['contact.tags', 'assignedAgent']));
     }
 
     public function knowledge(): JsonResponse

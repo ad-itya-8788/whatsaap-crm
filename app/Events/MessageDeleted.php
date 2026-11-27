@@ -11,11 +11,12 @@ class MessageDeleted implements ShouldBroadcastNow
         public int $conversationId,
         public int $message_id,
         public array $conversation,
+        public array $recipients = [],
     ) {}
 
-    public function broadcastOn(): PrivateChannel
+    public function broadcastOn(): array
     {
-        return new PrivateChannel('account.default');
+        return array_map(fn ($id) => new PrivateChannel("inbox-activity.{$id}"), $this->recipients);
     }
 
     public function broadcastWith(): array

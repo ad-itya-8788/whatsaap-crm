@@ -45,8 +45,8 @@ class NotificationController extends Controller
             $latestId = $notifications->last()?->id ?? $after;
             $hasMore = $notifications->count() === 20;
         } else {
-            $latestId = (int) (clone $query)->max('id');
-            $notifications = $query->unread()->where('id', '<=', $latestId)
+            $latestId = 0;
+            $notifications = $query->unread()
                 ->orderByDesc('id')->limit(4)->get($columns)->reverse()->values();
             $hasMore = false;
         }
@@ -89,8 +89,7 @@ class NotificationController extends Controller
                     return;
                 }
 
-                $query->where('user_id', $user->id)
-                    ->orWhere('assigned_agent_id', $user->id);
+                $query->where('assigned_agent_id', $user->id);
             });
 
         if (! $request->has('after')) {

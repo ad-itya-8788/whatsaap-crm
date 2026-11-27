@@ -133,13 +133,13 @@ export default function BrowserNotificationsListener() {
 
     check()
     const unsubscribe = subscribeToRealtime({
+      activityUserId: userId,
       onConnectionChange: (ready) => { connected = ready },
       onReconnected: check,
       onMessageCreated: ({ message, conversation }) => {
         if (!message) return void check()
         if (message?.sender_type !== 'customer' || !conversation) return
-        if (role !== 'owner'
-          && ![conversation.user_id, conversation.assigned_agent_id].some((id) => String(id) === String(userId))) return
+        if (role !== 'owner' && String(conversation.assigned_agent_id) !== String(userId)) return
         const id = Number(message.id)
         if (id <= latestId || shown.has(id) || id <= (Number(localStorage.getItem(storageKey)) || 0)) return
         shown.add(id)

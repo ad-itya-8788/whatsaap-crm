@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\AiConfig;
 use App\Models\Conversation;
 use App\Models\Message;
-use App\Models\Notification;
 use App\Models\User;
 use App\Models\WhatsappConfig;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +20,7 @@ class AiAutoReplyService
         private AiService $ai,
         private MessagingService $messaging,
         private RealtimeBroadcaster $realtime,
+        private ConversationAssignmentService $assignments,
     ) {}
 
     public function dispatch(Message $inbound): void
@@ -105,17 +105,22 @@ class AiAutoReplyService
         $conversation->update([
             'ai_autoreply_disabled' => true,
             'ai_handoff_summary' => $summary,
-            'assigned_agent_id' => $agent?->id,
         ]);
 
-        if ($agent) {
-            Notification::create([
-                'user_id' => $agent->id,
-                'type' => 'conversation_assigned',
-                'title' => 'Conversation assigned to you',
-                'body' => 'The AI assistant requested your help with a conversation.',
-                'data' => ['conversation_id' => $conversation->id],
-            ]);
+        if (! $agent) {
+            return;
         }
+
+        $owner = User::query()->where('is_active', true)
+            ->whereHas('assignedRole', fn ($role) => $role->where('slug', 'owner'))
+            ->first();
+
+        if (! $owner) {
+            Log::warning('ai.handoff_assignment_skipped', ['reason' => 'no_active_owner']);
+
+            return;
+        }
+
+        $this->assignments->assign($conversation->fresh(), (int) $agent->id, $owner);
     }
 }

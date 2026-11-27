@@ -19,7 +19,7 @@ function Toast({ item, onDismiss }) {
           <strong>{item.title}</strong>
           {item.message && <p>{item.message}</p>}
         </div>
-        {item.href && <a className="toast-action" href={item.href}>Open <ArrowRight size={14} aria-hidden="true" /></a>}
+        {item.href && <a className="toast-action" href={item.href} onClick={() => { item.onAction?.(); onDismiss(item.id) }}>Open <ArrowRight size={14} aria-hidden="true" /></a>}
       </div>
       <button type="button" className="icon-button" onClick={() => onDismiss(item.id)} aria-label="Dismiss notification" title="Dismiss notification">
         <X size={16} strokeWidth={1.8} aria-hidden="true" />
@@ -56,14 +56,15 @@ export function ToastProvider({ children }) {
     if (!customTitle && !message) return
     const title = customTitle || variants[type].title
     const href = notice?.href || ''
-    const key = JSON.stringify([type, title, message, href])
+    const actionId = notice?.actionId || ''
+    const key = JSON.stringify([type, title, message, href, actionId])
     if ([...active.current.values()].some((entry) => entry.key === key)) return
 
     if (active.current.size >= 4) dismiss(active.current.keys().next().value)
     const id = ++sequence.current
     const duration = customTitle ? Math.max(6500, variants[type].duration) : variants[type].duration
     active.current.set(id, { key, timer: window.setTimeout(() => dismiss(id), duration) })
-    setToasts((current) => [...current, { id, type, title, message, href }])
+    setToasts((current) => [...current, { id, type, title, message, href, onAction: notice?.onAction }])
   }, [dismiss])
 
   const value = useMemo(() => ({

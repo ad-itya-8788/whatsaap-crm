@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
-use App\Models\Notification;
 use App\Models\User;
+use App\Services\ConversationAssignmentService;
 use App\Services\InboundMediaMirror;
 use App\Services\RealtimeBroadcaster;
 use Illuminate\Http\JsonResponse;
@@ -14,7 +14,10 @@ use Illuminate\Support\Facades\DB;
 
 class ConversationController extends Controller
 {
-    public function __construct(private RealtimeBroadcaster $realtime) {}
+    public function __construct(
+        private RealtimeBroadcaster $realtime,
+        private ConversationAssignmentService $assignments,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -92,6 +95,7 @@ class ConversationController extends Controller
 
     public function destroy(Conversation $conversation, InboundMediaMirror $mediaMirror): JsonResponse
     {
+        $recipients = $this->realtime->recipients($conversation);
         $mediaMessageIds = DB::transaction(function () use ($conversation) {
             $conversation = Conversation::query()->lockForUpdate()->findOrFail($conversation->id);
             $mediaMessageIds = $conversation->messages()
@@ -109,7 +113,7 @@ class ConversationController extends Controller
             $mediaMirror->deleteByMessageId($messageId);
         }
 
-        $this->realtime->conversationDeleted((int) $conversation->id);
+        $this->realtime->conversationDeleted((int) $conversation->id, $recipients);
 
         return response()->json(['ok' => true]);
     }
@@ -147,14 +151,20 @@ class ConversationController extends Controller
     {
         $data = $request->validate(['contact_id' => ['required', 'integer', 'exists:contacts,id']]);
 
+        $user = $request->user();
         $conversation = Conversation::firstOrCreate(
             ['contact_id' => $data['contact_id']],
             [
-                'user_id' => $request->user()->id,
+                'user_id' => $user->id,
                 'status' => 'open',
-                'assigned_agent_id' => $request->user()->isOwner() ? null : $request->user()->id,
+                'assigned_agent_id' => $user->isOwner() ? null : $user->id,
             ],
         );
+
+        if (! $conversation->wasRecentlyCreated && ! $conversation->assigned_agent_id && ! $user->isOwner()) {
+            $this->assignments->assign($conversation, (int) $user->id, $user);
+            $conversation = $conversation->fresh();
+        }
 
         return response()->json($conversation->load('contact'));
     }
@@ -184,36 +194,26 @@ class ConversationController extends Controller
         $data = $request->validate([
             'assignee_id' => ['nullable', 'integer', 'exists:users,id'],
         ]);
+        $assigneeId = empty($data['assignee_id']) ? null : (int) $data['assignee_id'];
+        $this->authorizeAssignment($request->user(), $conversation, $assigneeId);
 
-        if (! empty($data['assignee_id'])) {
-            abort_unless(User::find($data['assignee_id'])?->hasModuleAccess('inbox'), 422, 'Select an active member with Inbox access.');
+        $result = $this->assignments->assign($conversation, $assigneeId, $request->user());
+
+        return response()->json($result['conversation']->load(['contact', 'assignedAgent']));
+    }
+
+    private function authorizeAssignment(User $actor, Conversation $conversation, ?int $assigneeId): void
+    {
+        if ($actor->isOwner()) {
+            return;
         }
 
-        DB::transaction(function () use ($conversation, $data, $request) {
-            $conversation->update(['assigned_agent_id' => $data['assignee_id'] ?? null]);
+        $current = $conversation->assigned_agent_id === null ? null : (int) $conversation->assigned_agent_id;
+        if ($current === (int) $actor->id || ($current === null && $assigneeId === (int) $actor->id)) {
+            return;
+        }
 
-            if (! empty($data['assignee_id']) && (int) $data['assignee_id'] !== $request->user()->id) {
-                $contact = $conversation->contact;
-                $label = $contact?->name ?: $contact?->phone ?: 'a contact';
-                $actor = $request->user()->name;
-
-                Notification::create([
-                    'user_id' => (int) $data['assignee_id'],
-                    'type' => 'conversation_assigned',
-                    'title' => 'New chat assigned to you',
-                    'body' => "{$actor} assigned you {$label} chat.",
-                    'data' => [
-                        'conversation_id' => $conversation->id,
-                        'actor_name' => $actor,
-                        'contact_name' => $label,
-                    ],
-                ]);
-            }
-        });
-
-        $this->realtime->conversationUpdated($conversation->fresh());
-
-        return response()->json($conversation->load(['contact', 'assignedAgent']));
+        abort(404);
     }
 
     public function updateStatus(Request $request, Conversation $conversation): JsonResponse
