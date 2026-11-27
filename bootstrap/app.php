@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureActiveUser;
+use App\Http\Middleware\EnsureConversationAccess;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\StartStatefulApiSession;
@@ -43,6 +44,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'active' => EnsureActiveUser::class,
             'role' => EnsureRole::class,
+            'conversation.access' => EnsureConversationAccess::class,
         ]);
     })
     ->withSchedule(function (Schedule $schedule) {

@@ -31,11 +31,14 @@ class RealtimeSyncController extends Controller
         $serverTime = isset($data['through']) ? Carbon::parse($data['through']) : now();
         // Include the boundary second because the database timestamps have second precision.
         $since = isset($data['since']) ? Carbon::parse($data['since'])->startOfSecond() : null;
+        $isAdmin = $request->user()->isAdmin();
+        $userId = $request->user()->id;
 
         $messages = collect();
         if (! empty($data['conversation_id']) && empty($data['skip_messages'])) {
             $messages = Message::query()
                 ->where('conversation_id', $data['conversation_id'])
+                ->when(! $isAdmin, fn ($query) => $query->whereHas('conversation', fn ($conversation) => $conversation->where('assigned_agent_id', $userId)))
                 ->where('id', '>', $data['message_cursor'] ?? 0)
                 ->where(function ($query) use ($data, $since) {
                     if (! $since || ! empty($data['after_id'])) {
@@ -59,6 +62,7 @@ class RealtimeSyncController extends Controller
         $conversations = collect();
         if (empty($data['skip_conversations'])) {
             $conversations = Conversation::query()
+                ->when(! $isAdmin, fn ($query) => $query->where('assigned_agent_id', $userId))
                 ->with(['contact.tags', 'assignedAgent:id,name,avatar_url'])
                 ->withCount('notes')
                 ->when($since, fn ($query) => $query->where('updated_at', '>=', $since))

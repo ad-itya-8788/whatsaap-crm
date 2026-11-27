@@ -613,10 +613,51 @@ export default function ChatsPage() {
 
   const changeStatus = (status) => patchConversation('status', { status }, { status }, 'status')
 
+  const transferConversation = async (conversation, assigneeId) => {
+    if (!conversation?.id || readOnly) return
+    const conversationId = conversation.id
+    const agent = agents.find((item) => String(item.id) === String(assigneeId))
+    setBusyAction('transfer')
+    try {
+      const { data } = await api.patch(`/api/app/conversations/${conversationId}/assign`, { assignee_id: assigneeId })
+      const receiverId = data.assigned_agent_id ?? assigneeId
+      const canStillSee = ['admin', 'owner'].includes(user?.role) || String(receiverId) === String(user?.id)
+      if (!canStillSee) {
+        setConversations((items) => items.filter((item) => String(item.id) !== String(conversationId)))
+        if (String(conversationId) === String(selectedIdRef.current)) {
+          setLinkedConversation(null)
+          setSelectedId('')
+          setMessages([])
+          setMessageCursor({ next: null, hasMore: false })
+          setReplyTo(null)
+          setSidePanel('')
+          setMobileView('list')
+          setParams((current) => {
+            const next = new URLSearchParams(current)
+            next.delete('conversation')
+            next.delete('c')
+            return next
+          }, { replace: true })
+        }
+      } else {
+        setConversations((items) => items.map((item) => String(item.id) === String(conversationId)
+          ? { ...item, ...data, contact: item.contact, notes_count: item.notes_count, assignedAgent: data.assignedAgent || agent || null }
+          : item))
+        if (String(conversationId) === String(linkedConversation?.id)) {
+          setLinkedConversation((current) => current ? { ...current, ...data, assignedAgent: data.assignedAgent || agent || null } : current)
+        }
+      }
+      toast.success(`Conversation transferred to ${data.assignedAgent?.name || agent?.name || ' teammate'}.`)
+    } catch (requestError) {
+      toast.error(errorMessage(requestError, 'Unable to transfer the conversation.'))
+    } finally {
+      setBusyAction('')
+    }
+  }
+
   const changeAssignee = (value) => {
     const assigneeId = value === 'unassigned' ? null : value === 'me' ? user?.id ?? null : value
-    const agent = agents.find((item) => String(item.id) === String(assigneeId))
-    patchConversation('assign', { assignee_id: assigneeId }, { assignedAgent: agent || null }, 'assignee')
+    transferConversation(selected, assigneeId)
   }
 
   const addNote = async (event) => {
@@ -1009,6 +1050,7 @@ export default function ChatsPage() {
         onRetry={() => loadConversations()}
         canDeleteConversations={canDelete}
         onDeleteConversation={openDeleteConversation}
+        onTransferConversation={transferConversation}
       />
 
       <section className="chat-thread" aria-label="Conversation">
@@ -1057,7 +1099,7 @@ export default function ChatsPage() {
                       </select>
                     </label>
                     <label className="thread-menu-field">
-                      <span>Assignee</span>
+                      <span>Transfer to</span>
                       <select
                         className="select select-sm"
                         value={selected.assignedAgent?.id ? String(selected.assignedAgent.id) : 'unassigned'}

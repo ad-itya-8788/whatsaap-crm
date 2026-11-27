@@ -33,6 +33,10 @@ class ConversationController extends Controller
             ->with(['contact.tags', 'assignedAgent:id,name,avatar_url'])
             ->withCount('notes');
 
+        if (! $request->user()->isAdmin()) {
+            $query->where('assigned_agent_id', $request->user()->id);
+        }
+
         if ($search = $request->string('search')->toString()) {
             $query->whereHas('contact', function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
@@ -110,9 +114,14 @@ class ConversationController extends Controller
         return response()->json(['ok' => true]);
     }
 
-    public function unreadCount(): JsonResponse
+    public function unreadCount(Request $request): JsonResponse
     {
-        return response()->json(['count' => Conversation::query()->where('unread_count', '>', 0)->count()]);
+        $query = Conversation::query()->where('unread_count', '>', 0);
+        if (! $request->user()->isAdmin()) {
+            $query->where('assigned_agent_id', $request->user()->id);
+        }
+
+        return response()->json(['count' => $query->count()]);
     }
 
     public function markRead(Conversation $conversation): JsonResponse
@@ -132,7 +141,11 @@ class ConversationController extends Controller
 
         $conversation = Conversation::firstOrCreate(
             ['contact_id' => $data['contact_id']],
-            ['user_id' => $request->user()->id, 'status' => 'open'],
+            [
+                'user_id' => $request->user()->id,
+                'status' => 'open',
+                'assigned_agent_id' => $request->user()->isAdmin() ? null : $request->user()->id,
+            ],
         );
 
         return response()->json($conversation->load('contact'));

@@ -87,6 +87,46 @@ class RealtimeMessagingTest extends TestCase
             ->assertOk()->assertJsonCount(1, 'events');
     }
 
+    public function test_owner_sees_all_conversations_and_agent_sees_only_transferred_conversations(): void
+    {
+        Event::fake();
+        foreach (['15551111111', '15552222222'] as $phone) {
+            $this->webhook(['messages' => [[
+                'id' => 'wamid.'.$phone,
+                'from' => $phone,
+                'timestamp' => (string) now()->timestamp,
+                'type' => 'text',
+                'text' => ['body' => 'Hello'],
+            ]]])->assertOk();
+        }
+
+        [$mine, $other] = Conversation::orderBy('id')->get()->all();
+        $owner = User::forceCreate([
+            'name' => 'Inbox Owner',
+            'email' => 'inbox-owner@example.test',
+            'password' => bcrypt('test-password'),
+            'role' => 'owner',
+            'is_active' => true,
+        ]);
+        $agent = User::forceCreate([
+            'name' => 'Inbox Agent',
+            'email' => 'inbox-agent@example.test',
+            'password' => bcrypt('test-password'),
+            'role' => 'agent',
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($owner)->getJson('/api/app/conversations')
+            ->assertOk()->assertJsonCount(2, 'data');
+        $this->actingAs($agent)->getJson('/api/app/conversations')
+            ->assertOk()->assertJsonCount(0, 'data');
+        $this->actingAs($owner)->patchJson("/api/app/conversations/{$mine->id}/assign", ['assignee_id' => $agent->id])
+            ->assertOk();
+        $this->actingAs($agent)->getJson('/api/app/conversations')
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $mine->id);
+        $this->getJson("/api/app/conversations/{$other->id}")->assertNotFound();
+    }
+
     private function providerStatus(string $status): array
     {
         return ['id' => 'wamid.outbound', 'status' => $status, 'timestamp' => (string) now()->timestamp];

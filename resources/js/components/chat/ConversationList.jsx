@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import Icon from '../common/Icon.jsx'
 import ChatAvatar from './ChatAvatar.jsx'
 import { hasWhatsApp } from './chatUtils.js'
@@ -29,7 +30,39 @@ export default function ConversationList({
   onRetry,
   canDeleteConversations = false,
   onDeleteConversation,
+  onTransferConversation,
 }) {
+  const [openMenuId, setOpenMenuId] = useState(null)
+  const [transferId, setTransferId] = useState(null)
+  const canManage = canDeleteConversations && (onDeleteConversation || onTransferConversation)
+
+  useEffect(() => {
+    if (!openMenuId && !transferId) return undefined
+    const closeOnOutsideClick = (event) => {
+      if (!event.target.closest?.('.chat-item-actions')) {
+        setOpenMenuId(null)
+        setTransferId(null)
+      }
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') {
+        setOpenMenuId(null)
+        setTransferId(null)
+      }
+    }
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [openMenuId, transferId])
+
+  const closeMenus = () => {
+    setOpenMenuId(null)
+    setTransferId(null)
+  }
+
   return (
     <section className="chat-list-panel" aria-label="Conversations">
       <header className="chat-list-head">
@@ -117,16 +150,60 @@ export default function ConversationList({
                   </span>
                 </span>
               </button>
-              {canDeleteConversations && onDeleteConversation && (
-                <button
-                  type="button"
-                  className="chat-item-delete"
-                  aria-label={`Delete chat with ${conversation.contact?.name || conversation.contact?.phone || 'this contact'}`}
-                  title="Delete chat from CRM"
-                  onClick={() => onDeleteConversation(conversation)}
-                >
-                  <Icon name="trash" size={15} />
-                </button>
+              {canManage && (
+                <div className="chat-item-actions">
+                  <button
+                    type="button"
+                    className="chat-item-menu-button"
+                    aria-label={`Actions for ${conversation.contact?.name || conversation.contact?.phone || 'this contact'}`}
+                    aria-expanded={String(openMenuId) === String(conversation.id)}
+                    title="Conversation actions"
+                    onClick={() => {
+                      setTransferId(null)
+                      setOpenMenuId((current) => String(current) === String(conversation.id) ? null : conversation.id)
+                    }}
+                  >
+                    <Icon name="more" size={16} />
+                  </button>
+                  {String(openMenuId) === String(conversation.id) && (
+                    <div className="chat-item-menu" role="menu">
+                      {onTransferConversation && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => setTransferId(conversation.id)}
+                        >
+                          <Icon name="users" size={14} /> Transfer to
+                        </button>
+                      )}
+                      {canDeleteConversations && onDeleteConversation && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="is-danger"
+                          onClick={() => { closeMenus(); onDeleteConversation(conversation) }}
+                        >
+                          <Icon name="trash" size={14} /> Delete conversation
+                        </button>
+                      )}
+                      {String(transferId) === String(conversation.id) && (
+                        <div className="chat-item-transfer">
+                          <div className="chat-item-transfer-title">Transfer to</div>
+                          {agents.length === 0 && <div className="chat-item-transfer-empty">No teammates available</div>}
+                          {agents.map((agent) => (
+                            <button
+                              type="button"
+                              key={agent.id}
+                              onClick={() => { closeMenus(); onTransferConversation(conversation, agent.id) }}
+                            >
+                              <Icon name="user" size={13} /> {agent.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )
