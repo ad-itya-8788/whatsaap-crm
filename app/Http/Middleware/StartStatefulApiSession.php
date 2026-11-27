@@ -7,6 +7,15 @@ use Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful;
 
 class StartStatefulApiSession extends EnsureFrontendRequestsAreStateful
 {
+    public static function fromFrontend($request)
+    {
+        if ($request->headers->get('referer') || $request->headers->get('origin')) {
+            return parent::fromFrontend($request);
+        }
+
+        return $request->headers->get('Sec-Fetch-Site') === 'same-origin';
+    }
+
     public function handle($request, $next)
     {
         $requiresAuth = in_array('auth:sanctum', $request->route()?->gatherMiddleware() ?? [], true);

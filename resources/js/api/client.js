@@ -23,7 +23,7 @@ export function stopPrivateSession() {
   privateSession = null
 }
 
-const isPrivate = (url) => url === '/api/user' || url?.startsWith('/api/app/')
+const isPrivate = (url) => url === '/session/user' || url === '/api/user' || url?.startsWith('/api/app/')
 
 api.interceptors.request.use((config) => {
   if (!isPrivate(config.url)) return config

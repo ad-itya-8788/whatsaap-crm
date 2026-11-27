@@ -12,12 +12,15 @@ Route::get('/', function (Request $request) {
 });
 
 Route::get('/login', function (Request $request) {
-    if ($request->user()?->is_active) {
+    if ($request->user()?->is_active && ! $request->boolean('reauth')) {
         return redirect('/');
     }
 
     return Inertia::render('LoginPage');
 })->name('login');
+
+Route::get('/session/user', [\App\Http\Controllers\Api\AuthController::class, 'user'])
+    ->middleware(['auth', 'active']);
 
 Route::inertia('/register', 'RegisterPage');
 Route::inertia('/forgot-password', 'ForgotPasswordPage');

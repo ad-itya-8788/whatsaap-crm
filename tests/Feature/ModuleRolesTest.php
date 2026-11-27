@@ -76,6 +76,28 @@ class ModuleRolesTest extends TestCase
         $this->assertFalse($owner->fresh()->isOwner());
     }
 
+    public function test_web_session_refresh_and_explicit_sign_in_use_the_web_guard(): void
+    {
+        $this->getJson('/session/user')->assertUnauthorized();
+        $member = $this->member('owner');
+
+        $this->actingAs($member)->getJson('/session/user')->assertOk()->assertJsonPath('user.id', $member->id);
+        $this->get('/login')->assertRedirect('/');
+        $this->withoutVite()->get('/login?reauth=1')->assertOk()->assertSee('LoginPage');
+    }
+
+    public function test_same_origin_api_requests_work_with_referrer_stripped(): void
+    {
+        $middleware = \App\Http\Middleware\StartStatefulApiSession::class;
+        $request = \Illuminate\Http\Request::create('https://crm.example.test/api/user');
+        $request->headers->set('Sec-Fetch-Site', 'same-origin');
+        $this->assertTrue($middleware::fromFrontend($request));
+
+        $request->headers->set('Origin', 'https://other.example.test');
+        config(['sanctum.stateful' => ['crm.example.test']]);
+        $this->assertFalse($middleware::fromFrontend($request));
+    }
+
     private function member(string $slug): User
     {
         return User::factory()->create(['role_id' => Role::where('slug', $slug)->value('id')]);

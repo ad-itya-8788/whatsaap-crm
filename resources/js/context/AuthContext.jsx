@@ -29,7 +29,7 @@ export function AuthProvider({ children, initialUser }) {
   const memberId = user?.id
   const refresh = useCallback(async (signal) => {
     if (!memberId) return
-    const { data } = await api.get('/api/user', { signal, timeout: 5000 })
+    const { data } = await api.get('/session/user', { signal, timeout: 5000 })
     if (!signal?.aborted && data.user?.id === memberId) {
       setUser((current) => current?.id === memberId && JSON.stringify(current) !== JSON.stringify(data.user)
         ? normalizeUser(data.user) : current)
