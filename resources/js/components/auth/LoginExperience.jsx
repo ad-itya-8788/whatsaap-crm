@@ -26,7 +26,6 @@ export default function LoginExperience({ title, subtitle, children, footer }) {
           <span className="ping-login-brand-divider" aria-hidden="true" />
           <span className="ping-login-tagline">{brand.tagline}</span>
         </div>
-        <DeveloperAttribution compact className="ping-login-header-attribution" />
       </header>
 
       <div className="ping-login-main">

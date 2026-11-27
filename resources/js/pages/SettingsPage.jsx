@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from '@inertiajs/react'
-import { hasModuleAccess, moduleForPath } from '../lib/moduleAccess.js'
+import { Link, router } from '@inertiajs/react'
+import { ChevronRight, Crown, ExternalLink, House, Layers, Palette, Wrench } from 'lucide-react'
+import { hasModuleAccess } from '../lib/moduleAccess.js'
 import { useSearchParams } from '../lib/navigation.js'
 import api from '../api/client.js'
-import PageHeader from '../components/common/PageHeader.jsx'
 import Icon from '../components/common/Icon.jsx'
 import BrowserNotificationsCard from '../components/common/BrowserNotificationsCard.jsx'
 import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
@@ -11,7 +11,8 @@ import { useToast } from '../components/common/ToastProvider.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import ApiKeysPanel from '../components/settings/ApiKeysPanel.jsx'
 import { changeAppearance, useAccentTheme, useColorMode } from '../lib/appearance.js'
-import { errorMessage, extractList, isAdmin, relativeTime } from '../lib/utils.js'
+import { useWhatsappConfig } from '../lib/whatsappConfig.js'
+import { errorMessage, extractList, relativeTime } from '../lib/utils.js'
 
 const blankConfig = { waba_id: '', phone_number_id: '', access_token: '', verify_token: '', pin: '' }
 
@@ -48,38 +49,77 @@ function labelFor(status) {
 }
 
 const SECTIONS = [
-  { id: 'overview', label: 'Overview', group: 'Account' },
-  { id: 'profile', label: 'Your profile', group: 'Account' },
-  { id: 'security', label: 'Login & security', group: 'Account' },
-  { id: 'appearance', label: 'Appearance', group: 'Workspace' },
-  { id: 'whatsapp', label: 'WhatsApp', group: 'Workspace' },
-  { id: 'templates', label: 'Templates', group: 'Workspace', to: '/templates' },
-  { id: 'quick-replies', label: 'Quick replies', group: 'Workspace', to: '/workspace?tab=quick-replies' },
-  { id: 'inbox', label: 'Inbox', group: 'Workspace' },
-  { id: 'fields', label: 'Fields & tags', group: 'Workspace', to: '/workspace?tab=tags' },
-  { id: 'members', label: 'Team members', group: 'Workspace', to: '/team' },
-  { id: 'api', label: 'API keys', group: 'Workspace' },
+  { id: 'overview', label: 'Overview', group: 'Account', glyph: House },
+  { id: 'profile', label: 'Your profile', group: 'Account', icon: 'user' },
+  { id: 'security', label: 'Login & security', group: 'Account', icon: 'shield' },
+  { id: 'appearance', label: 'Appearance', group: 'Workspace', glyph: Palette },
+  { id: 'whatsapp', label: 'WhatsApp', group: 'Workspace', icon: 'whatsapp' },
+  { id: 'templates', label: 'Templates', group: 'Workspace', icon: 'template', module: 'templates', to: '/templates' },
+  { id: 'quick-replies', label: 'Quick replies', group: 'Workspace', icon: 'zap', module: 'workspace', to: '/workspace?tab=quick-replies' },
+  { id: 'inbox', label: 'Inbox', group: 'Workspace', icon: 'inbox' },
+  { id: 'fields', label: 'Fields & tags', group: 'Workspace', icon: 'tag', module: 'workspace', to: '/workspace?tab=tags' },
+  { id: 'members', label: 'Team members', group: 'Workspace', icon: 'users', module: 'team', to: '/team' },
+  { id: 'api', label: 'API keys', group: 'Workspace', glyph: Wrench, ownerOnly: true },
 ]
 
 const TAB_ALIASES = { tags: 'fields', 'custom-fields': 'fields' }
 
-function resolveTab(value) {
-  return SECTIONS.some((section) => section.id === value) ? value : 'overview'
+const STATS = [
+  { id: 'members', label: 'Team members', icon: 'users', module: 'team', url: '/api/app/users?per_page=1', to: '/team' },
+  { id: 'templates', label: 'Templates', icon: 'template', module: 'templates', url: '/api/app/whatsapp/templates', to: '/templates' },
+  { id: 'tags', label: 'Tags', icon: 'tag', module: 'workspace', url: '/api/app/tags', to: '/workspace?tab=tags' },
+  { id: 'fields', label: 'Custom fields', glyph: Layers, module: 'workspace', url: '/api/app/custom-fields', to: '/workspace?tab=fields' },
+]
+
+const QUICK_ACTIONS = [
+  { label: 'Manage WhatsApp', description: 'Connection & settings', icon: 'whatsapp', to: '/settings?tab=whatsapp' },
+  { label: 'Message Templates', description: 'Create & manage templates', icon: 'template', module: 'templates', to: '/templates' },
+  { label: 'Team Members', description: 'Add or manage your team', icon: 'users', module: 'team', to: '/team' },
+  { label: 'Tags & Fields', description: 'Organize your contacts', icon: 'tag', module: 'workspace', to: '/workspace?tab=tags' },
+]
+
+const CONNECTION_COPY = {
+  checking: ['Checking WhatsApp connection', 'Checking your current connection status.'],
+  connected: ['WhatsApp connected', 'Your WhatsApp number is active and ready to use.'],
+  disconnected: ['WhatsApp disconnected', 'Connect your WhatsApp number to send and receive messages.'],
+  unknown: ['WhatsApp status unavailable', 'Open connection settings to check your configuration.'],
 }
 
-function SettingsRail({ active }) {
-  const { user } = useAuth()
+function SettingsGlyph({ item, size = 19 }) {
+  const Glyph = item.glyph
+  return Glyph ? <Glyph size={size} strokeWidth={1.8} aria-hidden="true" /> : <Icon name={item.icon} size={size} />
+}
+
+function SettingsRail({ sections, active, params }) {
+  const hrefFor = (section) => {
+    if (section.to) return section.to
+    const query = new URLSearchParams(params)
+    query.set('tab', section.id)
+    return `/settings?${query}`
+  }
+
   return (
     <nav className="settings-rail" aria-label="Settings sections">
+      <label className="settings-section-select">
+        <span>Settings section</span>
+        <select className="select" value={active} onChange={(event) => {
+          const section = sections.find((item) => item.id === event.target.value)
+          if (section) router.visit(hrefFor(section))
+        }}>
+          {['Account', 'Workspace'].map((group) => (
+            <optgroup key={group} label={group}>
+              {sections.filter((section) => section.group === group).map((section) => <option key={section.id} value={section.id}>{section.label}</option>)}
+            </optgroup>
+          ))}
+        </select>
+      </label>
       {['Account', 'Workspace'].map((group) => (
         <div className="settings-rail-group" key={group}>
           <span className="settings-rail-label">{group}</span>
-          {SECTIONS.filter((section) => section.group === group && (!section.to || hasModuleAccess(user, moduleForPath(user, section.to)))).map((section) => (
-            <Link
-              key={section.id}
-              className={`settings-rail-item${active === section.id ? ' is-active' : ''}`}
-              href={section.to || `/settings?tab=${section.id}`}
-            >
+          {sections.filter((section) => section.group === group).map((section) => (
+            <Link key={section.id} className={`settings-rail-item${active === section.id ? ' is-active' : ''}`}
+              href={hrefFor(section)} aria-current={active === section.id ? 'page' : undefined}>
+              <SettingsGlyph item={section} />
               {section.label}
             </Link>
           ))}
@@ -90,89 +130,95 @@ function SettingsRail({ active }) {
 }
 
 function OverviewPanel({ user }) {
-  const [counts, setCounts] = useState(null)
-  const [connectionStatus, setConnectionStatus] = useState('checking')
+  const accessTeam = hasModuleAccess(user, 'team')
+  const accessTemplates = hasModuleAccess(user, 'templates')
+  const accessWorkspace = hasModuleAccess(user, 'workspace')
+  const access = { team: accessTeam, templates: accessTemplates, workspace: accessWorkspace }
+  const [counts, setCounts] = useState({})
+  const { data: whatsapp, error: connectionError } = useWhatsappConfig()
+  const connectionStatus = connectionError ? 'unknown' : whatsapp ? resolveOverviewConnectionStatus(whatsapp) : 'checking'
+  const [connectionTitle, connectionDescription] = CONNECTION_COPY[connectionStatus]
 
   useEffect(() => {
-    let cancelled = false
-    const get = (url) => api.get(url).then((response) => response.data).catch(() => [])
-    Promise.all([
-      get('/api/app/users'),
-      get('/api/app/tags'),
-      get('/api/app/custom-fields'),
-      get('/api/app/whatsapp/templates'),
-    ]).then(([users, tags, fields, templates]) => {
-      if (!cancelled) {
-        setCounts({
-          members: extractList(users).length,
-          tags: extractList(tags).length,
-          fields: extractList(fields).length,
-          templates: extractList(templates).length,
-        })
+    const controller = new AbortController()
+    const enabled = { team: accessTeam, templates: accessTemplates, workspace: accessWorkspace }
+    const tasks = STATS.filter((tile) => enabled[tile.module]).map(async (tile) => {
+      try {
+        const { data } = await api.get(tile.url, { signal: controller.signal })
+        return [tile.id, data?.total ?? extractList(data).length]
+      } catch {
+        return [tile.id, null]
       }
     })
+    Promise.all(tasks).then((results) => {
+      if (!controller.signal.aborted) setCounts(Object.fromEntries(results))
+    })
+    return () => controller.abort()
+  }, [accessTeam, accessTemplates, accessWorkspace])
 
-    let config = null
-    let health = null
-    let checksCompleted = 0
-    const updateConnectionStatus = () => {
-      if (cancelled) return
-      const nextStatus = resolveOverviewConnectionStatus(config, health)
-      if (nextStatus === 'connected' || checksCompleted === 2) {
-        setConnectionStatus(nextStatus)
-      }
-    }
-    const loadConnectionCheck = (url, onSuccess) => {
-      api.get(url)
-        .then(({ data }) => onSuccess(data))
-        .catch(() => {})
-        .finally(() => {
-          checksCompleted += 1
-          updateConnectionStatus()
-        })
-    }
-    loadConnectionCheck('/api/app/whatsapp/config', (data) => { config = data })
-    loadConnectionCheck('/api/app/whatsapp/health', (data) => { health = data })
-
-    return () => { cancelled = true }
-  }, [])
-
-  const tiles = [
-    { label: 'Team members', value: counts?.members, to: '/settings?tab=members' },
-    { label: 'Templates', value: counts?.templates, to: '/settings?tab=templates' },
-    { label: 'Tags', value: counts?.tags, to: '/settings?tab=fields' },
-    { label: 'Custom fields', value: counts?.fields, to: '/settings?tab=fields' },
-  ]
+  const avatar = user?.avatar_url
+  const avatarSrc = avatar && (/^(?:https?:\/\/|\/)/i.test(avatar) ? avatar : `/storage/${avatar}`)
+  const role = user?.role_name || user?.role
+  const tiles = STATS.filter((tile) => access[tile.module])
 
   return (
-    <section className="card settings-panel">
-      <header className="panel-header"><h2>Workspace overview</h2></header>
-      <div className="settings-profile-card">
-        <span className="chat-avatar avatar-lg">{String(user?.name || '?').charAt(0).toUpperCase()}</span>
-        <div>
-          <strong>{user?.name || 'Team member'}</strong>
-          <span>{user?.email}</span>
+    <div className="settings-panel-stack">
+      <section className="card settings-panel settings-overview" aria-labelledby="settings-overview-title">
+        <header className="settings-card-heading">
+          <h2 id="settings-overview-title">Workspace overview</h2>
+          <p>Key details and usage for your workspace.</p>
+        </header>
+        <div className="settings-profile-card">
+          <span className="settings-profile-avatar" aria-hidden="true">
+            {user?.name?.trim().charAt(0).toUpperCase() || '?'}
+            {avatarSrc && <img key={avatarSrc} src={avatarSrc} alt="" onError={(event) => { event.currentTarget.hidden = true }} />}
+          </span>
+          <div className="settings-profile-copy">
+            <strong>{user?.name || 'Team member'}</strong>
+            {user?.email && <span>{user.email}</span>}
+          </div>
+          {role && <span className="settings-role">{user?.role === 'owner' ? <Crown size={16} aria-hidden="true" /> : <Icon name="shield" size={16} />}{role}</span>}
         </div>
-        <span className={`badge badge-${isAdmin(user) ? 'approved' : 'pending'}`}>{user?.role_name || user?.role}</span>
-      </div>
-      <div className="settings-overview-grid">
-        {tiles.filter((tile) => hasModuleAccess(user, ({ 'Team members': 'team', Templates: 'templates', Tags: 'workspace', 'Custom fields': 'workspace' })[tile.label] ?? 'settings')).map((tile) => (
-          <Link className="settings-overview-tile" href={tile.to} key={tile.label}>
-            <strong>{counts ? (tile.value ?? 0) : '—'}</strong>
-            <span>{tile.label}</span>
-          </Link>
-        ))}
-      </div>
-      <div className="settings-status-row">
-        <span className={`status-dot ${connectionStatus === 'connected' ? 'is-online' : connectionStatus === 'disconnected' ? 'is-offline' : ''}`} />
-        {connectionStatus === 'checking'
-          ? 'Checking WhatsApp connection…'
-          : connectionStatus === 'unknown'
-            ? 'Unable to verify WhatsApp connection'
-            : `WhatsApp ${connectionStatus}`}
-        <Link href="/settings?tab=whatsapp">Open connection settings</Link>
-      </div>
-    </section>
+        {tiles.length > 0 && <div className="settings-overview-grid">
+          {tiles.map((tile) => (
+            <Link className="settings-overview-tile" href={tile.to} key={tile.id}>
+              <span className="settings-tile-icon"><SettingsGlyph item={tile} size={25} /></span>
+              <span className="settings-tile-copy">
+                <strong title={counts[tile.id] === null ? 'Count unavailable' : undefined}>{counts[tile.id] ?? '—'}</strong>
+                <span>{tile.label}</span>
+              </span>
+            </Link>
+          ))}
+        </div>}
+      </section>
+      <section className="card settings-panel settings-status-row" aria-labelledby="settings-connection-title">
+        <span className={`settings-tile-icon settings-connection-icon${connectionStatus === 'connected' ? ' is-connected' : ''}`}>
+          <Icon name="whatsapp" size={29} />
+        </span>
+        <header className="settings-card-heading" aria-live="polite">
+          <h2 id="settings-connection-title">{connectionTitle}</h2>
+          <p>{connectionDescription}</p>
+        </header>
+        <Link className="button button-secondary settings-connection-link" href="/settings?tab=whatsapp">
+          Open connection settings <ExternalLink size={15} aria-hidden="true" />
+        </Link>
+      </section>
+      <section className="card settings-panel settings-quick-actions" aria-labelledby="settings-quick-actions-title">
+        <header className="settings-card-heading">
+          <h2 id="settings-quick-actions-title">Quick actions</h2>
+          <p>Common workspace configurations.</p>
+        </header>
+        <div className="settings-overview-grid">
+          {QUICK_ACTIONS.filter((action) => !action.module || access[action.module]).map((action) => (
+            <Link className="settings-overview-tile settings-action-tile" href={action.to} key={action.label}>
+              <span className={`settings-tile-icon${action.icon === 'whatsapp' ? ' is-connected' : ''}`}><SettingsGlyph item={action} size={23} /></span>
+              <span className="settings-tile-copy"><strong>{action.label}</strong><span>{action.description}</span></span>
+              <ChevronRight size={16} className="settings-action-chevron" aria-hidden="true" />
+            </Link>
+          ))}
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -365,7 +411,15 @@ function InboxPanel() {
 export default function SettingsPage() {
   const { user } = useAuth()
   const [params] = useSearchParams()
-  const tab = resolveTab(TAB_ALIASES[params.get('tab')] || params.get('tab') || 'overview')
+  const requestedTab = TAB_ALIASES[params.get('tab')] || params.get('tab')
+  const sections = SECTIONS.filter((section) => (!section.module || hasModuleAccess(user, section.module)) && (!section.ownerOnly || user?.role === 'owner'))
+  const activeSection = sections.find((section) => section.id === requestedTab) || sections[0]
+  const tab = activeSection.id
+  const externalTab = activeSection.to
+
+  useEffect(() => {
+    if (externalTab) router.visit(externalTab, { replace: true })
+  }, [externalTab])
   const toast = useToast()
   const canManage = user?.role === 'owner'
   const [form, setForm] = useState(blankConfig)
@@ -502,11 +556,15 @@ export default function SettingsPage() {
   const badgeTone = connectionError ? 'rejected' : connected ? 'approved' : 'pending'
 
   return (
-    <>
-      <PageHeader title="Settings" subtitle="Manage your account, workspace and WhatsApp connection." />
+    <div className="settings-page">
+      <header className="settings-page-header">
+        <span className="settings-heading-icon"><Icon name="settings" size={31} /></span>
+        <div><h1>Settings</h1><p>Manage your account, workspace and WhatsApp connection.</p></div>
+      </header>
       <div className="settings-shell">
-        <SettingsRail active={tab} />
+        <SettingsRail active={tab} sections={sections} params={params} />
         <div className="settings-main">
+          {externalTab && <p role="status" className="muted">Opening {activeSection.label}…</p>}
           {tab === 'overview' && <OverviewPanel user={user} />}
           {tab === 'profile' && <ProfilePanel />}
           {tab === 'security' && <SecurityPanel />}
@@ -655,6 +713,6 @@ export default function SettingsPage() {
         onConfirm={disconnect}
         onCancel={() => setConfirmDisconnect(false)}
       />
-    </>
+    </div>
   )
 }

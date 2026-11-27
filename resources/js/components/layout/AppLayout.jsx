@@ -255,7 +255,6 @@ export default function AppLayout({ children }) {
         </nav>
 
         <div className="sidebar-footer">
-          <div className="sidebar-attribution"><DeveloperAttribution compact /></div>
           <button type="button" className="sidebar-user" aria-expanded={footerMenuOpen} onClick={() => { setFooterMenuOpen((open) => !open); setHeaderMenuOpen(false) }}>
             <AccountAvatar user={user} />
             <span className="sidebar-user-text">
@@ -267,6 +266,7 @@ export default function AppLayout({ children }) {
           {footerMenuOpen ? (
             <AccountMenu user={user} onClose={() => setFooterMenuOpen(false)} onLogout={onLogout} showIdentity={false} />
           ) : null}
+          <div className="sidebar-attribution"><DeveloperAttribution compact /></div>
         </div>
       </aside>
 
@@ -294,7 +294,6 @@ export default function AppLayout({ children }) {
             </nav>
           </div>
           <div className="topbar-actions">
-            <div className="topbar-attribution"><DeveloperAttribution compact /></div>
             {allowed('settings') && <Link className={`topbar-whatsapp${connected ? ' is-connected' : ''}`} href="/settings?tab=whatsapp" title={accountTitle} aria-label={accountTitle}>
               <Icon name="whatsapp" size={15} />
               <span className="text-truncate">{whatsapp?.configured || whatsapp ? accountLabel : 'WhatsApp status'}</span>

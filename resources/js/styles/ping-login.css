@@ -55,7 +55,6 @@
 .ping-login-logo { width: clamp(130px, 15vw, 188px); }
 .ping-login-brand-divider { width: 1px; height: 22px; background: rgba(255, 255, 255, 0.18); }
 .ping-login-tagline { color: rgba(255, 255, 255, 0.66); font-size: 12px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
-.ping-login-header-attribution { justify-content: flex-end; color: rgba(255, 255, 255, 0.58); }
 
 .ping-login-main {
   position: relative;
@@ -166,7 +165,6 @@
   .ping-login-page { padding: 16px 14px; }
   .ping-login-brand-divider,
   .ping-login-tagline,
-  .ping-login-header-attribution { display: none; }
   .ping-login-logo { width: 126px; }
   .ping-login-main { padding: 24px 0; }
   .ping-login-title { font-size: clamp(2.05rem, 10vw, 2.8rem); }
