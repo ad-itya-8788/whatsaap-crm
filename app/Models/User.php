@@ -44,6 +44,11 @@ class User extends Authenticatable
 
     public function isOwner(): bool
     {
+        // Before the role migration, only an existing exact Owner assignment is trusted.
+        if (! array_key_exists('role_id', $this->getAttributes())) {
+            return $this->getRawOriginal('role') === 'owner';
+        }
+
         return $this->assignedRole?->slug === 'owner';
     }
 

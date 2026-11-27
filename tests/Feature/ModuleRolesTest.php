@@ -98,6 +98,23 @@ class ModuleRolesTest extends TestCase
         $this->assertFalse($middleware::fromFrontend($request));
     }
 
+    public function test_legacy_owner_can_open_dashboard_before_role_migration(): void
+    {
+        $owner = new User;
+        $owner->setRawAttributes(['id' => 123, 'role' => 'owner', 'is_active' => true], true);
+
+        $this->actingAs($owner)->withoutVite()->get('/dashboard')->assertOk()->assertSee('DashboardPage');
+        $this->getJson('/session/user')
+            ->assertOk()
+            ->assertJsonPath('user.role', 'owner')
+            ->assertJsonPath('user.module_access', array_keys(Role::MODULES));
+
+        $owner->setRawAttributes(['id' => 123, 'role' => 'owner', 'role_id' => null, 'is_active' => true], true);
+        $this->assertFalse($owner->hasModuleAccess('dashboard'));
+        $owner->setRawAttributes(['id' => 123, 'role' => 'admin', 'is_active' => true], true);
+        $this->assertFalse($owner->hasModuleAccess('dashboard'));
+    }
+
     private function member(string $slug): User
     {
         return User::factory()->create(['role_id' => Role::where('slug', $slug)->value('id')]);

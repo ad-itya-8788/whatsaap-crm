@@ -13,6 +13,7 @@ const api = axios.create({
 
 let csrfPromise = null
 let privateSession = null
+let sessionCheck = null
 
 export function startPrivateSession() {
   privateSession ??= new AbortController()
@@ -45,11 +46,24 @@ export async function csrf() {
 
 api.interceptors.response.use(
   (r) => r,
-  (err) => {
+  async (err) => {
     if (err?.response?.status === 401
       && privateSession && err.config?.sessionSignal === privateSession.signal) {
-      stopPrivateSession()
-      window.dispatchEvent(new Event('wacrm:unauthorized'))
+      const signal = privateSession.signal
+      if (err.config.url === '/session/user') {
+        stopPrivateSession()
+        window.dispatchEvent(new Event('wacrm:unauthorized'))
+      } else {
+        // The web guard is authoritative for the browser session.
+        if (sessionCheck?.signal !== signal) {
+          const check = { signal, promise: null }
+          check.promise = api.get('/session/user', { timeout: 8000 }).catch(() => {}).finally(() => {
+            if (sessionCheck === check) sessionCheck = null
+          })
+          sessionCheck = check
+        }
+        await sessionCheck.promise
+      }
     }
     return Promise.reject(err)
   }

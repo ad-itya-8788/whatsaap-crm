@@ -178,9 +178,10 @@ export default function AppLayout({ children }) {
   }
 
   const renderLink = (item) => {
-    const isActive = item.to === '/dashboard'
-      ? location.pathname === item.to
-      : location.pathname.startsWith(item.to)
+    const teamRoles = location.pathname === '/team' && location.searchParams.get('tab') === 'roles'
+    const isActive = item.to === '/team?tab=roles' ? teamRoles
+      : item.to === '/team' ? location.pathname === '/team' && !teamRoles
+      : location.pathname === item.to || location.pathname.startsWith(item.to + '/')
 
     return (
       <li key={item.to}>
@@ -241,7 +242,8 @@ export default function AppLayout({ children }) {
           </div>
           <div className="sidebar-group">
             <p className="sidebar-label">Manage</p>
-            <ul className="sidebar-section">{manageNav.filter(visible).map(renderLink)}</ul>
+            <ul className="sidebar-section">{manageNav.filter(visible).map(renderLink)}
+              {user?.role === 'owner' && renderLink({ to: '/team?tab=roles', label: 'Roles & permissions', icon: 'shield' })}</ul>
           </div>
         </nav>
 

@@ -1,3 +1,4 @@
+import { useSearchParams } from '../lib/navigation.js'
 import { useCallback, useEffect, useState } from 'react'
 import api from '../api/client.js'
 import PageHeader from '../components/common/PageHeader.jsx'
@@ -20,15 +21,18 @@ export default function TeamPage() {
   const isOwner = String(user?.role || '').toLowerCase() === 'owner'
   const canManage = Boolean(user)
   const [catalog, setCatalog] = useState(null)
-  const [tab, setTab] = useState('members')
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('tab') === 'roles' && isOwner ? 'roles' : 'members'
+  const setTab = (next) => setParams(next === 'roles' ? { tab: 'roles' } : {}, { replace: true })
+  const rolesReady = user?.role_id != null
   const roles = (catalog?.roles ?? []).filter((role) => role.slug !== 'owner')
   const loadRoles = useCallback(async () => {
     const { data } = await api.get('/api/app/roles')
     setCatalog(data)
   }, [])
   useEffect(() => {
-    if (isOwner) loadRoles().catch(() => toast.error('Unable to load roles.'))
-  }, [isOwner, loadRoles, toast])
+    if (isOwner && rolesReady) loadRoles().catch(() => toast.error('Unable to load roles.'))
+  }, [isOwner, rolesReady, loadRoles, toast])
   const [users, setUsers] = useState([])
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -215,7 +219,7 @@ export default function TeamPage() {
       <PageHeader
         title="Team"
         subtitle="Manage team members, roles and access."
-        actions={isOwner && tab === 'members' && <div className="team-actions">
+        actions={isOwner && rolesReady && tab === 'members' && <div className="team-actions">
           <button type="button" className="button button-secondary" onClick={startCreate}><Icon name="plus" size={16} /> Add member</button>
           <button type="button" className="button button-primary" onClick={() => setShowInvite(true)}><Icon name="plus" size={16} /> Invite member</button>
         </div>}
@@ -224,7 +228,9 @@ export default function TeamPage() {
         <button type="button" className="button button-secondary" aria-pressed={tab === 'members'} onClick={() => setTab('members')}>Members</button>
         <button type="button" className="button button-secondary" aria-pressed={tab === 'roles'} onClick={() => setTab('roles')}>Role management</button>
       </nav>}
-      {isOwner && tab === 'roles' ? <RoleManagement catalog={catalog} onSaved={async () => { await loadRoles(); await loadUsers() }} /> : <>
+      {isOwner && tab === 'roles' ? (rolesReady
+        ? <RoleManagement catalog={catalog} onSaved={async () => { await loadRoles(); await loadUsers() }} />
+        : <div className="alert alert-info" role="status">Role management requires the database role migration. Your Owner access is active.</div>) : <>
       {error && <div className="alert alert-error">{error}</div>}
       {notice && <div className="alert alert-success">{notice}</div>}
 
@@ -337,10 +343,10 @@ export default function TeamPage() {
                       <td><span className={`status-dot ${member.is_active === false ? 'is-offline' : 'is-online'}`} /> {member.is_active === false ? 'Inactive' : 'Active'}</td>
                       <td>
                         <div className="team-actions">
-                          {isOwner && (member.id === user.id || member.assigned_role?.slug !== 'owner') && (
+                          {isOwner && rolesReady && (member.id === user.id || member.assigned_role?.slug !== 'owner') && (
                             <button type="button" className="button button-sm button-secondary" onClick={() => startEdit(member)}><Icon name="edit" size={14} /> Edit</button>
                           )}
-                          {isOwner && member.assigned_role?.slug !== 'owner' && member.is_active && (
+                          {isOwner && rolesReady && member.assigned_role?.slug !== 'owner' && member.is_active && (
                             <button type="button" className="button button-sm button-secondary" onClick={() => setTransferTarget(member)}>Transfer ownership</button>
                           )}
                         </div>
@@ -362,7 +368,7 @@ export default function TeamPage() {
           </div>
         </section>
       </div>
-      {isOwner && <TeamInvitations roles={roles} showForm={showInvite} onClose={() => setShowInvite(false)} />}
+      {isOwner && rolesReady && <TeamInvitations roles={roles} showForm={showInvite} onClose={() => setShowInvite(false)} />}
       <ConfirmDialog
         open={Boolean(transferTarget)}
         title="Transfer ownership?"

@@ -3,22 +3,8 @@ import { Link, router, usePage } from '@inertiajs/react'
 import { useSearchParams } from '../lib/navigation.js'
 import api, { csrf } from '../api/client.js'
 import { useAuth } from '../context/AuthContext.jsx'
-import BrandLogo from '../components/common/BrandLogo.jsx'
+import AuthShell from '../components/common/AuthShell.jsx'
 import { errorMessage } from '../lib/utils.js'
-
-function AuthShell({ title, subtitle, children, footer }) {
-  return (
-    <main className="auth-wrap">
-      <section className="auth-card">
-        <div className="auth-brand"><BrandLogo className="auth-logo" /></div>
-        <h1 className="auth-title">{title}</h1>
-        <p className="auth-subtitle">{subtitle}</p>
-        {children}
-        <div className="auth-footer">{footer}</div>
-      </section>
-    </main>
-  )
-}
 
 export function LoginPage() {
   const { login } = useAuth()
@@ -34,7 +20,7 @@ export function LoginPage() {
     setError('')
     try {
       await login(values)
-      router.visit('/', { replace: true })
+      window.location.replace('/')
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to sign in.'))
     } finally {
@@ -46,10 +32,10 @@ export function LoginPage() {
     <AuthShell
       title="Welcome back"
       subtitle="Sign in to your WhatsApp CRM workspace."
-      footer={<>Need access? Ask an administrator to add your account.</>}
+      footer={<>Need access? Ask your workspace administrator for an invitation.</>}
     >
       <form className="auth-form" onSubmit={submit}>
-        {error && <div className="alert alert-error">{error}</div>}
+        {error && <div className="alert alert-error" role="alert">{error}</div>}
         <div className="field">
           <label className="field-label" htmlFor="login-email">Email address</label>
           <input id="login-email" className="input" type="email" autoComplete="email" required value={values.email} onChange={(event) => setValues({ ...values, email: event.target.value })} />
@@ -73,11 +59,10 @@ export function LoginPage() {
 export function RegisterPage() {
   return (
     <AuthShell
-      title="Registration is disabled"
-      subtitle="Aayojan AI CRM accounts are created by an administrator."
-      footer={<>Already have an account? <Link href="/login">Sign in</Link></>}
+      title="Join by invitation"
+      subtitle="Ask your workspace administrator for an invitation."
     >
-      <div className="alert alert-info">Ask your administrator to add you as a team member, then sign in with the credentials they provide.</div>
+      <Link className="button button-primary button-block" href="/login">Back to sign in</Link>
     </AuthShell>
   )
 }
@@ -114,7 +99,7 @@ export function InviteJoinPage() {
       await csrf()
       const { data } = await api.post(`/api/invitations/${encodeURIComponent(token)}/redeem`, values)
       setUser(data.user)
-      router.visit('/', { replace: true })
+      window.location.replace('/')
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to accept the invitation.'))
     } finally {
@@ -135,11 +120,13 @@ export function InviteJoinPage() {
   return (
     <AuthShell
       title="Join your workspace"
+      icon="users"
       subtitle={invitation ? `You’ve been invited to join as ${invitation.role}.` : 'Accept your team invitation.'}
       footer={<Link href={user ? '/' : '/login'}>{user ? 'Go to dashboard' : 'Back to sign in'}</Link>}
     >
       {error && <div className="alert alert-error" role="alert">{error}</div>}
       {loadingPage && <div className="app-loading"><span className="spinner" /> Checking the invitation…</div>}
+      {!loadingPage && !invitation && !error && <div className="alert alert-error" role="alert">This invitation link is missing or invalid.</div>}
       {!loadingPage && invitation && (user ? (
         <div className="auth-form">
           <div className="alert alert-info">You’re signed in as {user.email}. Sign out to register with this invitation.</div>
@@ -170,9 +157,8 @@ export function ForgotPasswordPage() {
     setError('')
     try {
       await csrf()
-      const { data } = await api.post('/api/forgot-password', { email })
+      await api.post('/api/forgot-password', { email })
       setSent(true)
-      setError(data?.status || '')
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to send the reset link.'))
     } finally {
@@ -183,14 +169,15 @@ export function ForgotPasswordPage() {
   return (
     <AuthShell
       title="Reset your password"
+      icon="send"
       subtitle="Enter your email address and we will send you a reset link."
       footer={<>Remembered your password? <Link href="/login">Back to sign in</Link></>}
     >
       {sent ? (
-        <div className="alert alert-success">If the email belongs to an account, a reset link has been sent.</div>
+        <div className="alert alert-success" role="status">If the email belongs to an account, a reset link has been sent.</div>
       ) : (
         <form className="auth-form" onSubmit={submit}>
-          {error && <div className="alert alert-error">{error}</div>}
+          {error && <div className="alert alert-error" role="alert">{error}</div>}
           <div className="field">
             <label className="field-label" htmlFor="forgot-email">Email address</label>
             <input id="forgot-email" className="input" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
@@ -235,7 +222,7 @@ export function ResetPasswordPage() {
         <div className="alert alert-error">This reset link is invalid. Request a new one.</div>
       ) : (
         <form className="auth-form" onSubmit={submit}>
-          {error && <div className="alert alert-error">{error}</div>}
+          {error && <div className="alert alert-error" role="alert">{error}</div>}
           <div className="field">
             <label className="field-label" htmlFor="reset-password">New password</label>
             <input id="reset-password" className="input" type="password" autoComplete="new-password" minLength="8" required value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} />

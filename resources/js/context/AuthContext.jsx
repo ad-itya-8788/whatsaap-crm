@@ -39,7 +39,18 @@ export function AuthProvider({ children, initialUser }) {
   useEffect(() => {
     if (!memberId) return
     const controller = new AbortController()
-    const sync = () => refresh(controller.signal).catch(() => {})
+    let checking = false
+    const sync = async () => {
+      if (checking || document.hidden) return
+      checking = true
+      try {
+        await refresh(controller.signal)
+      } catch {
+        // Retry on the next check if the server is temporarily unavailable.
+      } finally {
+        checking = false
+      }
+    }
     window.addEventListener('focus', sync)
     const timer = window.setInterval(sync, 5000)
     return () => {
