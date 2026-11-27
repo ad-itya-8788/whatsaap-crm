@@ -14,6 +14,11 @@ class ConversationUpdated implements ShouldBroadcastNow
         return new PrivateChannel('account.default');
     }
 
+    public function broadcastWith(): array
+    {
+        return [];
+    }
+
     public function broadcastAs(): string
     {
         return 'conversation.updated';

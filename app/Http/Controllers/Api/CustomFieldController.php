@@ -15,7 +15,7 @@ class CustomFieldController extends Controller
     {
         $query = CustomField::query()->orderBy('label');
 
-        if (! $request->user()->isAdmin()) {
+        if (! app(\App\Auth\Access::class)->can($request->user(), 'custom_fields.update')) {
             $query->where('is_active', true);
         }
 

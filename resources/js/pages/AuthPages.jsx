@@ -1,3 +1,4 @@
+import { firstAccessiblePage } from '../lib/permissions.js'
 import { useEffect, useState } from 'react'
 import { Link, router, usePage } from '@inertiajs/react'
 import { useSearchParams } from '../lib/navigation.js'
@@ -33,8 +34,8 @@ export function LoginPage() {
     setSaving(true)
     setError('')
     try {
-      await login(values)
-      router.visit('/dashboard', { replace: true })
+      const { user: member } = await login(values)
+      router.visit(firstAccessiblePage(member), { replace: true })
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to sign in.'))
     } finally {
@@ -114,7 +115,7 @@ export function InviteJoinPage() {
       await csrf()
       const { data } = await api.post(`/api/invitations/${encodeURIComponent(token)}/redeem`, values)
       setUser(data.user)
-      router.visit('/dashboard', { replace: true })
+      router.visit(firstAccessiblePage(data.user), { replace: true })
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to accept the invitation.'))
     } finally {
@@ -136,7 +137,7 @@ export function InviteJoinPage() {
     <AuthShell
       title="Join your workspace"
       subtitle={invitation ? `You’ve been invited to join as ${invitation.role}.` : 'Accept your team invitation.'}
-      footer={<Link href={user ? '/dashboard' : '/login'}>{user ? 'Go to dashboard' : 'Back to sign in'}</Link>}
+      footer={<Link href={user ? firstAccessiblePage(user) : '/login'}>{user ? 'Go to workspace' : 'Back to sign in'}</Link>}
     >
       {error && <div className="alert alert-error" role="alert">{error}</div>}
       {loadingPage && <div className="app-loading"><span className="spinner" /> Checking the invitation…</div>}

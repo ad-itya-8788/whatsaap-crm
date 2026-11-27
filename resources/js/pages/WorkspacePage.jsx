@@ -8,7 +8,7 @@ import InteractiveBuilder from '../components/chat/InteractiveBuilder.jsx'
 import InteractivePreview from '../components/chat/InteractivePreview.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
-import { errorMessage, extractList, isAdmin } from '../lib/utils.js'
+import { errorMessage, extractList } from '../lib/utils.js'
 
 const tabs = [
   { key: 'tags', label: 'Tags', icon: 'tag' },
@@ -48,13 +48,12 @@ function FieldRow({ label, children, full = false }) {
 }
 
 export default function WorkspacePage() {
-  const { user } = useAuth()
+  const { user, can } = useAuth()
   const toast = useToast()
-  const canManage = isAdmin(user)
-  const canManageReplies = ['owner', 'admin', 'agent'].includes(user?.role)
+  const availableTabs = tabs.filter(({ key }) => can({ tags: 'tags.view', fields: 'custom_fields.view', 'quick-replies': 'quick_replies.view' }[key]))
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')
-  const tab = tabs.some((item) => item.key === requestedTab) ? requestedTab : 'tags'
+  const tab = availableTabs.some((item) => item.key === requestedTab) ? requestedTab : availableTabs[0]?.key
   const [tags, setTags] = useState([])
   const [fields, setFields] = useState([])
   const [replies, setReplies] = useState([])
@@ -79,9 +78,9 @@ export default function WorkspacePage() {
     setError('')
     try {
       const [tagResult, fieldResult, replyResult] = await Promise.all([
-        api.get('/api/app/tags'),
-        api.get('/api/app/custom-fields'),
-        api.get('/api/app/quick-replies'),
+        can('tags.view') ? api.get('/api/app/tags') : { data: [] },
+        can('custom_fields.view') ? api.get('/api/app/custom-fields') : { data: [] },
+        can('quick_replies.view') ? api.get('/api/app/quick-replies') : { data: [] },
       ])
       setTags(extractList(tagResult.data))
       setFields(extractList(fieldResult.data))
@@ -91,7 +90,7 @@ export default function WorkspacePage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [can])
 
   useEffect(() => { load() }, [load])
 
@@ -255,7 +254,7 @@ export default function WorkspacePage() {
     <>
       <PageHeader title="Workspace" subtitle="Manage tags, custom contact fields and reusable quick replies." />
       <div className="workspace-tabs" role="tablist" aria-label="Workspace sections">
-        {tabs.map((item) => (
+        {availableTabs.map((item) => (
           <button
             key={item.key}
             type="button"
@@ -275,7 +274,7 @@ export default function WorkspacePage() {
         <section className="card workspace-card">
           <header className="panel-header">
             <h2>Tags</h2>
-            <button type="button" className="button button-sm button-primary" onClick={() => startTag(null)}><Icon name="plus" size={15} /> New tag</button>
+            {can('tags.create') && <button type="button" className="button button-sm button-primary" onClick={() => startTag(null)}><Icon name="plus" size={15} /> New tag</button>}
           </header>
           {showTagForm && (
             <form className="workspace-form" onSubmit={saveTag}>
@@ -314,8 +313,8 @@ export default function WorkspacePage() {
                     <span className="muted">{Number(tag.contacts_count || 0)} contacts</span>
                   </div>
                   <div className="workspace-item-actions">
-                    <button type="button" className="icon-button" onClick={() => startTag(tag)} aria-label={`Edit ${tag.name}`}><Icon name="edit" size={16} /></button>
-                    <button type="button" className="icon-button is-danger" onClick={() => deleteTag(tag)} aria-label={`Delete ${tag.name}`}><Icon name="trash" size={16} /></button>
+                    {can('tags.update') && <button type="button" className="icon-button" onClick={() => startTag(tag)} aria-label={`Edit ${tag.name}`}><Icon name="edit" size={16} /></button>}
+                    {can('tags.delete') && <button type="button" className="icon-button is-danger" onClick={() => deleteTag(tag)} aria-label={`Delete ${tag.name}`}><Icon name="trash" size={16} /></button>}
                   </div>
                 </article>
               ))}
@@ -329,12 +328,9 @@ export default function WorkspacePage() {
         <section className="card workspace-card">
           <header className="panel-header">
             <h2>Custom fields</h2>
-            <button type="button" className="button button-sm button-primary" onClick={() => startField(null)} disabled={!canManage}><Icon name="plus" size={15} /> New field</button>
+            {can('custom_fields.create') && <button type="button" className="button button-sm button-primary" onClick={() => startField(null)}><Icon name="plus" size={15} /> New field</button>}
           </header>
-          {!canManage && (
-            <div className="alert alert-info alert-inline"><Icon name="shield" size={16} /> Only admins and owners can manage custom fields.</div>
-          )}
-          {showFieldForm && canManage && (
+          {showFieldForm && can(editField ? 'custom_fields.update' : 'custom_fields.create') && (
             <form className="workspace-form" onSubmit={saveField}>
               <FieldRow label="Name">
                 <input className="input" required value={fieldForm.name} onChange={(event) => setFieldForm({ ...fieldForm, name: event.target.value })} />
@@ -376,8 +372,8 @@ export default function WorkspacePage() {
                     <span className="muted">{[field.required ? 'Required' : '', field.is_active === false ? 'Inactive' : ''].filter(Boolean).join(' · ') || 'Optional'}</span>
                   </div>
                   <div className="workspace-item-actions">
-                    <button type="button" className="icon-button" onClick={() => startField(field)} disabled={!canManage} aria-label={`Edit ${field.label || field.name}`}><Icon name="edit" size={16} /></button>
-                    <button type="button" className="icon-button is-danger" onClick={() => deleteField(field)} disabled={!canManage} aria-label={`Delete ${field.label || field.name}`}><Icon name="trash" size={16} /></button>
+                    {can('custom_fields.update') && <button type="button" className="icon-button" onClick={() => startField(field)} aria-label={`Edit ${field.label || field.name}`}><Icon name="edit" size={16} /></button>}
+                    {can('custom_fields.delete') && <button type="button" className="icon-button is-danger" onClick={() => deleteField(field)} aria-label={`Delete ${field.label || field.name}`}><Icon name="trash" size={16} /></button>}
                   </div>
                 </article>
               ))}
@@ -391,9 +387,9 @@ export default function WorkspacePage() {
         <section className="card workspace-card">
           <header className="panel-header">
             <h2>Quick replies</h2>
-            {canManageReplies && <button type="button" className="button button-sm button-primary" onClick={() => startReply(null)}><Icon name="plus" size={15} /> New reply</button>}
+            {can('quick_replies.create') && <button type="button" className="button button-sm button-primary" onClick={() => startReply(null)}><Icon name="plus" size={15} /> New reply</button>}
           </header>
-          {showReplyForm && canManageReplies && (
+          {showReplyForm && can(editReply ? 'quick_replies.update' : 'quick_replies.create') && (
             <form className="workspace-form" onSubmit={saveReply}>
               <FieldRow label="Title">
                 <input className="input" aria-label="Quick reply title" required maxLength="255" value={replyForm.title} onChange={(event) => setReplyForm({ ...replyForm, title: event.target.value })} />
@@ -433,10 +429,10 @@ export default function WorkspacePage() {
                     {reply.kind === 'interactive' && <span className="muted">Interactive</span>}
                     <span className="muted">{reply.is_global ? 'Shared with everyone' : 'Personal reply'}</span>
                   </div>
-                  {canManageReplies && (
+                  {(can('quick_replies.update') || can('quick_replies.delete')) && (!reply.is_global || can('quick_replies.manage_global')) && (
                     <div className="workspace-item-actions">
-                      <button type="button" className="icon-button" onClick={() => startReply(reply)} aria-label={`Edit ${reply.title}`}><Icon name="edit" size={16} /></button>
-                      <button type="button" className="icon-button is-danger" onClick={() => deleteReply(reply)} aria-label={`Delete ${reply.title}`}><Icon name="trash" size={16} /></button>
+                      {can('quick_replies.update') && <button type="button" className="icon-button" onClick={() => startReply(reply)} aria-label={`Edit ${reply.title}`}><Icon name="edit" size={16} /></button>}
+                      {can('quick_replies.delete') && <button type="button" className="icon-button is-danger" onClick={() => deleteReply(reply)} aria-label={`Delete ${reply.title}`}><Icon name="trash" size={16} /></button>}
                     </div>
                   )}
                 </article>

@@ -29,7 +29,7 @@ function tagStyle(tag) {
   return tag?.color ? { backgroundColor: tag.color } : undefined
 }
 
-export default function ContactDetail({ initialContact, customFields, onClose, onEdit, onOpenChat, readOnly }) {
+export default function ContactDetail({ initialContact, customFields, onClose, onEdit, onOpenChat, readOnly, can }) {
   const toast = useToast()
   const dialog = useRef(null)
   const attempt = useRef(null)
@@ -62,7 +62,7 @@ export default function ContactDetail({ initialContact, customFields, onClose, o
     api.get(contactPath, options).then(({ data }) => setContact(data)).catch((err) => {
       if (!controller.signal.aborted) setError(errorMessage(err, 'Unable to load contact details.'))
     })
-    api.get(contactPath + '/notes', options).then(({ data }) => setNotes(data)).catch((err) => {
+    if (can('contact_notes.view')) api.get(contactPath + '/notes', options).then(({ data }) => setNotes(data)).catch((err) => {
       if (!controller.signal.aborted) toast.error(errorMessage(err, 'Unable to load notes.'))
     }).finally(() => {
       if (!controller.signal.aborted) setNotesLoading(false)
@@ -147,9 +147,9 @@ export default function ContactDetail({ initialContact, customFields, onClose, o
           </div>
           <button className="icon-button" type="button" onClick={onClose} disabled={sending || noteBusy || openingChat} aria-label="Close contact"><Icon name="close" size={18} /></button>
         </div>
-        {!readOnly && <div className="contact-sheet-actions">
-          <button type="button" className="button button-sm button-secondary" onClick={() => onEdit(contact)}><Icon name="edit" size={15} /> Edit</button>
-          <button type="button" className="button button-sm button-secondary" onClick={() => setPickerOpen(true)}><Icon name="template" size={15} /> Send template</button>
+        {(!readOnly || can('conversations.start')) && <div className="contact-sheet-actions">
+          {!readOnly && <button type="button" className="button button-sm button-secondary" onClick={() => onEdit(contact)}><Icon name="edit" size={15} /> Edit</button>}
+          {can('conversations.start') && <button type="button" className="button button-sm button-secondary" onClick={() => setPickerOpen(true)}><Icon name="template" size={15} /> Send template</button>}
           <button type="button" className="button button-sm button-primary" disabled={openingChat} onClick={async () => {
             setOpeningChat(true)
             try { await onOpenChat(contact) } finally { setOpeningChat(false) }
@@ -225,7 +225,7 @@ export default function ContactDetail({ initialContact, customFields, onClose, o
         {tab === 'Notes' && (
           <section className="contact-detail-section">
             <h3>Notes</h3>
-            {!readOnly && <form className="contact-note-form" onSubmit={saveNote}>
+            {can('contact_notes.create') && <form className="contact-note-form" onSubmit={saveNote}>
               <label className="field-label" htmlFor="contact-note">Add a note</label>
               <textarea id="contact-note" className="input" rows={3} maxLength={5000} value={draft} onChange={(event) => setDraft(event.target.value)} />
               <button type="submit" className="button button-sm button-primary" disabled={noteBusy || notesLoading || !draft.trim()}>Add note</button>
@@ -236,7 +236,7 @@ export default function ContactDetail({ initialContact, customFields, onClose, o
               <article className="contact-note" key={note.id}>
                 <div className="contact-sheet-title">
                   <small className="muted">{note.user?.name || 'Team member'} · {formatDate(note.created_at)}</small>
-                  {!readOnly && confirmNoteId !== note.id && <button type="button" className="icon-button icon-button-sm is-danger" aria-label="Delete note" onClick={() => setConfirmNoteId(note.id)}><Icon name="trash" size={14} /></button>}
+                  {can('contact_notes.delete') && confirmNoteId !== note.id && <button type="button" className="icon-button icon-button-sm is-danger" aria-label="Delete note" onClick={() => setConfirmNoteId(note.id)}><Icon name="trash" size={14} /></button>}
                 </div>
                 <p>{note.body}</p>
                 {confirmNoteId === note.id && <div className="contact-sheet-actions">

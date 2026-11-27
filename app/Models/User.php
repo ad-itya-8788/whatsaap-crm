@@ -36,9 +36,4 @@ class User extends Authenticatable
             'last_seen_at' => 'datetime',
         ];
     }
-
-    public function isAdmin(): bool
-    {
-        return in_array($this->role, ['admin', 'owner'], true);
-    }
 }

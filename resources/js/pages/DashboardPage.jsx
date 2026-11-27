@@ -242,7 +242,7 @@ function dayLabel(value, days = 7) {
     : date.toLocaleDateString([], days <= 7 ? { weekday: 'short' } : { day: 'numeric', month: 'short' })
 }
 
-function MessageVolume({ series, hours, view, onViewChange, hourlyLoading, hourlyError }) {
+function MessageVolume({ series, hours, view, onViewChange, hourlyLoading, hourlyError, canViewHourly }) {
   const rows = Array.isArray(view === 'hours' ? hours : series) ? (view === 'hours' ? hours : series) : []
   const max = Math.max(1, ...rows.map((row) => Math.max(Number(row.inbound) || 0, Number(row.outbound) || 0)))
   const totalInbound = sum(series.map((row) => row.inbound))
@@ -264,7 +264,7 @@ function MessageVolume({ series, hours, view, onViewChange, hourlyLoading, hourl
         </div>
         <div className="dash-chart-tabs" role="group" aria-label="Message volume view">
           <button type="button" className={view === 'days' ? 'is-active' : ''} aria-pressed={view === 'days'} onClick={() => onViewChange('days')}>By day</button>
-          <button type="button" className={view === 'hours' ? 'is-active' : ''} aria-pressed={view === 'hours'} onClick={() => onViewChange('hours')}>Busiest hours</button>
+          {canViewHourly && <button type="button" className={view === 'hours' ? 'is-active' : ''} aria-pressed={view === 'hours'} onClick={() => onViewChange('hours')}>Busiest hours</button>}
         </div>
       </div>
       <div className="dash-volume-summary">
@@ -622,11 +622,11 @@ function DashboardSkeleton() {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth()
+  const { user, can } = useAuth()
   const [params, setParams] = useSearchParams()
   const rawRange = Number(params.get('range'))
   const range = RANGES.some((option) => option.days === rawRange) ? rawRange : 7
-  const { data: whatsappConfig } = useWhatsappConfig({ enabled: Boolean(user) })
+  const { data: whatsappConfig } = useWhatsappConfig({ enabled: can('whatsapp.view') })
 
   const [overview, setOverview] = useState(null)
   const [campaigns, setCampaigns] = useState(null)
@@ -651,8 +651,8 @@ export default function DashboardPage() {
     }
 
     const [campaignsResult, activityResult] = await Promise.allSettled([
-      api.get('/api/app/dashboard/campaigns', { ...options, params: { days: range } }),
-      api.get('/api/app/dashboard/activity', { ...options, params: { limit: 5 } }),
+      can('dashboard.campaigns') ? api.get('/api/app/dashboard/campaigns', { ...options, params: { days: range } }) : {},
+      can('dashboard.activity') ? api.get('/api/app/dashboard/activity', { ...options, params: { limit: 5 } }) : {},
     ])
     if (signal?.aborted) return
     if (campaignsResult.status === 'fulfilled') setCampaigns(campaignsResult.value.data)
@@ -661,10 +661,10 @@ export default function DashboardPage() {
       setActivity(Array.isArray(data) ? data.slice(0, 5) : [])
     }
     setActivityLoading(false)
-  }, [range])
+  }, [range, can])
 
   useEffect(() => {
-    if (volumeView !== 'hours') return undefined
+    if (volumeView !== 'hours' || !can('dashboard.hourly')) return undefined
 
     const controller = new AbortController()
     setHourlyLoading(true)
@@ -681,7 +681,7 @@ export default function DashboardPage() {
       })
 
     return () => controller.abort()
-  }, [range, volumeView])
+  }, [range, volumeView, can])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -822,6 +822,7 @@ export default function DashboardPage() {
               hours={hourlyVolume}
               view={volumeView}
               onViewChange={setVolumeView}
+              canViewHourly={can('dashboard.hourly')}
               hourlyLoading={hourlyLoading}
               hourlyError={hourlyError}
             />
@@ -829,8 +830,8 @@ export default function DashboardPage() {
           </div>
 
           <div className="dash-split">
-            <RecentActivity items={activity} loading={activityLoading} />
-            <WhatsAppAccounts config={whatsappConfig} setup={setup} />
+            {can('dashboard.activity') && <RecentActivity items={activity} loading={activityLoading} />}
+            {can('whatsapp.view') && <WhatsAppAccounts config={whatsappConfig} setup={setup} />}
           </div>
 
           <div className="dash-split">
@@ -838,7 +839,7 @@ export default function DashboardPage() {
             <TeamCard team={overview.replies?.team} />
           </div>
 
-          <CampaignsCard campaigns={campaigns} />
+          {can('dashboard.campaigns') && <CampaignsCard campaigns={campaigns} />}
 
           {hasBroadcasts && readRate !== null && (
             <div className="dash-card dash-broadcast-summary">

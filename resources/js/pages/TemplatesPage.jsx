@@ -7,7 +7,7 @@ import Icon from '../components/common/Icon.jsx'
 import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
-import { createIdempotencyKey, errorMessage, extractList, isAdmin, placeholders, relativeTime } from '../lib/utils.js'
+import { createIdempotencyKey, errorMessage, extractList, placeholders, relativeTime } from '../lib/utils.js'
 import TemplateCard from '../components/templates/TemplateCard.jsx'
 import TemplatePreview from '../components/templates/TemplatePreview.jsx'
 import TemplatePreviewModal from '../components/templates/TemplatePreviewModal.jsx'
@@ -121,14 +121,13 @@ function revisionTemplateName(name, templates) {
 const visitTemplates = (url, options) => router.visit(url, { preserveState: true, ...options })
 
 export default function TemplatesPage() {
-  const { user } = useAuth()
+  const { can } = useAuth()
   const { pathname, search } = usePageLocation()
   const { templateId } = usePage().props
   const revisionId = new URLSearchParams(search).get('revision')
   const isEditor = pathname === '/templates/create' || Boolean(templateId)
   const editorRoute = templateId ? `edit:${templateId}` : `create:${revisionId || ''}`
   const toast = useToast()
-  const canManage = isAdmin(user)
   const [templates, setTemplates] = useState([])
   const [contacts, setContacts] = useState([])
   const revisionSource = revisionId ? templates.find((item) => String(item.id) === revisionId) : null
@@ -159,7 +158,7 @@ export default function TemplatesPage() {
     try {
       const [templateResult, contactResult] = await Promise.all([
         api.get('/api/app/whatsapp/templates'),
-        api.get('/api/app/contacts', { params: { per_page: 100 } }).catch(() => ({ data: {} })),
+        can('messages.send_templates') ? api.get('/api/app/contacts', { params: { per_page: 100 } }).catch(() => ({ data: {} })) : {},
       ])
       setTemplates(extractList(templateResult.data))
       setContacts(extractList(contactResult.data))
@@ -168,7 +167,7 @@ export default function TemplatesPage() {
     } finally {
       if (initial) setLoading(false)
     }
-  }, [])
+  }, [can])
 
   useEffect(() => { load({ initial: true }) }, [load])
 
@@ -363,7 +362,7 @@ export default function TemplatesPage() {
   }
 
   const createRevision = (template) => {
-    if (!canManage) return
+    if (!can('templates.create')) return
     visitTemplates(`/templates/create?revision=${encodeURIComponent(template.id)}`)
   }
 
@@ -375,7 +374,7 @@ export default function TemplatesPage() {
 
   const saveTemplate = async (event) => {
     event.preventDefault()
-    if (!canManage) return
+    if (!can(editingId === null ? 'templates.create' : 'templates.update')) return
     const buttonLabels = form.buttons.split('\n').map((value) => value.trim()).filter(Boolean)
     if (buttonLabels.length > 3) {
       setError('WhatsApp templates can have up to 3 quick-reply buttons.')
@@ -415,7 +414,7 @@ export default function TemplatesPage() {
   const uploadHeader = async (event) => {
     const file = event.target.files?.[0]
     event.target.value = ''
-    if (!file || !canManage) return
+    if (!file || !can('templates.upload')) return
 
     const type = form.header_type
     const payload = new FormData()
@@ -436,12 +435,12 @@ export default function TemplatesPage() {
   }
 
   const sync = () => {
-    if (!canManage) return Promise.resolve(false)
+    if (!can('templates.sync')) return Promise.resolve(false)
     return run('sync', () => api.post('/api/app/whatsapp/templates/sync'), 'Templates synced from Meta.')
   }
 
   const submitTemplate = (template) => {
-    if (!canManage) return Promise.resolve(false)
+    if (!can('templates.submit')) return Promise.resolve(false)
     return run(
       `submit-${template.id}`,
       () => api.post(`/api/app/whatsapp/templates/${template.id}/submit`),
@@ -450,7 +449,7 @@ export default function TemplatesPage() {
   }
 
   const deleteTemplate = (template) => {
-    if (!canManage) return
+    if (!can('templates.delete')) return
     setError('')
     setNotice('')
     setPreviewTarget(null)
@@ -489,7 +488,7 @@ export default function TemplatesPage() {
   }
 
   const sendTemplate = async () => {
-    if (!canManage) return
+    if (!can('messages.send_templates')) return
     if (!sendTarget) {
       setError('Choose a template before sending.')
       return
@@ -556,16 +555,15 @@ export default function TemplatesPage() {
           </button>
         ) : (
           <>
-            <button type="button" className="button button-secondary" onClick={sync} disabled={busy === 'sync' || !canManage}>
+            {can('templates.sync') && <button type="button" className="button button-secondary" onClick={sync} disabled={busy === 'sync'}>
               <Icon name="sync" size={16} /> Sync from Meta
-            </button>
-            <button type="button" className="button button-primary" onClick={() => visitTemplates('/templates/create')} disabled={!canManage}>
+            </button>}
+            {can('templates.create') && <button type="button" className="button button-primary" onClick={() => visitTemplates('/templates/create')}>
               <Icon name="plus" size={16} /> New Template
-            </button>
+            </button>}
           </>
         )}
       />
-      {!canManage && <div className="alert alert-info">Only administrators can create, submit, sync, send, or delete message templates.</div>}
       {error && <div className="alert alert-error">{error}</div>}
       {notice && <div className="alert alert-success">{notice}</div>}
 
@@ -652,7 +650,7 @@ export default function TemplatesPage() {
                         template={template}
                         statusLabel={statuses[status] || status}
                         statusTone={statusTone(status)}
-                        canManage={canManage}
+                        can={can}
                         hasContacts={contacts.length > 0}
                         busy={busy}
                         isEditing={editingId === template.id}
@@ -772,7 +770,7 @@ export default function TemplatesPage() {
                         type="file"
                         accept={headerAccept[form.header_type]}
                         onChange={uploadHeader}
-                        disabled={busy === 'header-media' || !canManage}
+                        disabled={busy === 'header-media' || !can('templates.upload')}
                       />
                       <span className="field-hint">
                         {busy === 'header-media' ? 'Uploading to Meta...' : 'Choose a file and upload it to Meta before saving.'}
@@ -828,7 +826,7 @@ export default function TemplatesPage() {
                     <strong>Variables &amp; sample values</strong>
                     <p>These values appear only in the preview.</p>
                   </div>
-                  <button type="button" className="button button-sm button-secondary" onClick={addVariable} disabled={!canManage}><Icon name="plus" size={14} /> Add variable</button>
+                  <button type="button" className="button button-sm button-secondary" onClick={addVariable}><Icon name="plus" size={14} /> Add variable</button>
                 </div>
                 {form.variables.length ? form.variables.map((row) => (
                   <div className="var-row" key={row.key}>
@@ -847,7 +845,6 @@ export default function TemplatesPage() {
                     busy === 'create'
                     || busy === `update-${editingId}`
                     || busy === 'header-media'
-                    || !canManage
                     || (mediaHeaderTypes.includes(form.header_type) && !form.header_handle)
                   }
                 >
@@ -897,7 +894,7 @@ export default function TemplatesPage() {
                     </div>
                   ))}
                 </div>
-                <button type="button" className="button button-primary" onClick={sendTemplate} disabled={!sendContact || busy === `send-${sendTarget.id}` || !canManage}>
+                <button type="button" className="button button-primary" onClick={sendTemplate} disabled={!sendContact || busy === `send-${sendTarget.id}`}>
                   {busy === `send-${sendTarget.id}` ? 'Sending...' : 'Send template'}
                 </button>
               </div>
@@ -910,7 +907,7 @@ export default function TemplatesPage() {
         template={activePreview}
         statusLabel={activePreview ? statuses[templateStatus(activePreview)] || templateStatus(activePreview) : ''}
         statusTone={activePreview ? statusTone(templateStatus(activePreview)) : 'neutral'}
-        canManage={canManage}
+        can={can}
         hasContacts={contacts.length > 0}
         busy={busy}
         onClose={() => setPreviewTarget(null)}

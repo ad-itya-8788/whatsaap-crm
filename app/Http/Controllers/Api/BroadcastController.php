@@ -29,14 +29,17 @@ class BroadcastController extends Controller
         );
     }
 
-    public function options(): JsonResponse
+    public function options(Request $request): JsonResponse
     {
+        $access = app(\App\Auth\Access::class);
         return response()->json([
             'templates' => MessageTemplate::query()
                 ->approved()
                 ->get(['id', 'name', 'language', 'body_text', 'header_type']),
-            'tags' => Tag::query()->orderBy('name')->get(['id', 'name']),
-            'custom_fields' => CustomField::query()->where('is_active', true)->orderBy('label')->get(['id', 'name', 'label', 'type']),
+            'tags' => $access->can($request->user(), 'tags.view') ? Tag::query()->orderBy('name')->get(['id', 'name']) : [],
+            'custom_fields' => $access->can($request->user(), 'custom_fields.view')
+                ? CustomField::query()->where('is_active', true)->orderBy('label')->get(['id', 'name', 'label', 'type'])
+                : [],
         ]);
     }
 
@@ -59,6 +62,14 @@ class BroadcastController extends Controller
 
     public function store(StoreBroadcastRequest $request): JsonResponse
     {
+        $access = app(\App\Auth\Access::class);
+        if ($request->boolean('send_now')) {
+            abort_unless($access->can($request->user(), 'broadcasts.send'), 403);
+        }
+        if ($request->filled('scheduled_at')) {
+            abort_unless($access->can($request->user(), 'broadcasts.schedule'), 403);
+        }
+
         $broadcast = $this->broadcasts->create([
             'name' => $request->validated('name'),
             'template_id' => $request->validated('template_id'),
@@ -69,7 +80,7 @@ class BroadcastController extends Controller
 
         if ($request->boolean('send_now') || $broadcast->scheduled_at) {
             try {
-                $broadcast = $this->broadcasts->send($broadcast);
+                $broadcast = $this->broadcasts->send($broadcast, request()->user()->id);
             } catch (MessagingException $exception) {
                 return response()->json(['message' => $exception->getMessage()], $exception->status);
             }
@@ -97,7 +108,7 @@ class BroadcastController extends Controller
     public function send(Broadcast $broadcast): JsonResponse
     {
         try {
-            $broadcast = $this->broadcasts->send($broadcast);
+            $broadcast = $this->broadcasts->send($broadcast, request()->user()->id);
         } catch (MessagingException $exception) {
             return response()->json(['message' => $exception->getMessage()], $exception->status);
         }
@@ -118,7 +129,7 @@ class BroadcastController extends Controller
     private function retry(Broadcast $broadcast, string $status): JsonResponse
     {
         try {
-            return response()->json(['queued' => $this->broadcasts->retry($broadcast, $status)]);
+            return response()->json(['queued' => $this->broadcasts->retry($broadcast, $status, request()->user()->id)]);
         } catch (MessagingException $exception) {
             return response()->json(['message' => $exception->getMessage()], $exception->status);
         }
@@ -161,6 +172,13 @@ class BroadcastController extends Controller
 
     private function audience(Request $request, array $audience): array
     {
+        $access = app(\App\Auth\Access::class);
+        if (($audience['type'] ?? null) === 'tags' || ! empty($audience['tag_ids']) || ! empty($audience['exclude_tag_ids'])) {
+            abort_unless($access->can($request->user(), 'tags.view'), 403);
+        }
+        if (($audience['type'] ?? null) === 'custom_field' || ! empty($audience['custom_field_id'])) {
+            abort_unless($access->can($request->user(), 'custom_fields.view'), 403);
+        }
         if ($request->hasFile('audience.csv_file')) {
             $audience['csv_file'] = $request->file('audience.csv_file');
         }

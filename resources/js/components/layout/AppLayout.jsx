@@ -1,3 +1,4 @@
+import { pagePermissions } from '../../lib/permissions.js'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from '@inertiajs/react'
 import { usePageLocation } from '../../lib/navigation.js'
@@ -28,6 +29,7 @@ const manageNav = [
   { to: '/templates', label: 'Message Templates', icon: 'template' },
   { to: '/reports', label: 'Reports', icon: 'chart' },
   { to: '/team', label: 'Team', icon: 'users' },
+  { to: '/access', label: 'Roles & permissions', icon: 'settings' },
   { to: '/settings', label: 'Settings', icon: 'settings' },
 ]
 
@@ -42,6 +44,7 @@ const pageTitles = [
   ['/templates', 'Message Templates'],
   ['/reports', 'Reports'],
   ['/team', 'Team'],
+  ['/access', 'Roles & permissions'],
   ['/settings', 'Settings'],
 ]
 
@@ -81,6 +84,7 @@ function AccountAvatar({ user }) {
 }
 
 function AccountMenu({ user, onClose, onLogout, showIdentity = true }) {
+  const { can } = useAuth()
   return (
     <div className="account-menu">
       {showIdentity && (
@@ -92,8 +96,8 @@ function AccountMenu({ user, onClose, onLogout, showIdentity = true }) {
           <div className="account-menu-divider" />
         </>
       )}
-      <Link className="account-menu-item" href="/settings?tab=profile" onClick={onClose}><Icon name="user" size={16} /> Profile</Link>
-      <Link className="account-menu-item" href="/settings?tab=whatsapp" onClick={onClose}><Icon name="settings" size={16} /> Settings</Link>
+      {can('account.profile') && <Link className="account-menu-item" href="/settings?tab=profile" onClick={onClose}><Icon name="user" size={16} /> Profile</Link>}
+      {can('whatsapp.view') && <Link className="account-menu-item" href="/settings?tab=whatsapp" onClick={onClose}><Icon name="settings" size={16} /> Settings</Link>}
       <div className="account-menu-divider" />
       <button type="button" className="account-menu-action" onClick={onLogout}><Icon name="logout" size={16} /> Sign out</button>
     </div>
@@ -101,7 +105,7 @@ function AccountMenu({ user, onClose, onLogout, showIdentity = true }) {
 }
 
 export default function AppLayout({ children }) {
-  const { user, logout } = useAuth()
+  const { user, logout, can, canAny } = useAuth()
   const toast = useToast()
   const location = usePageLocation()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -121,9 +125,9 @@ export default function AppLayout({ children }) {
     setNotificationUnread(Number(data?.count || 0))
   }, [])
 
-  usePoll(loadUnread, 60_000, { enabled: Boolean(user), event: 'wacrm:inbox-changed' })
-  usePoll(loadNotificationUnread, 60_000, { enabled: Boolean(user), event: 'wacrm:notifications-changed' })
-  const userId = user?.id
+  usePoll(loadUnread, 60_000, { enabled: can('inbox.view'), event: 'wacrm:inbox-changed' })
+  usePoll(loadNotificationUnread, 60_000, { enabled: can('notifications.view'), event: 'wacrm:notifications-changed' })
+  const userId = can('inbox.view') ? user?.id : null
   useEffect(() => {
     if (!userId) return undefined
     let timer
@@ -132,9 +136,7 @@ export default function AppLayout({ children }) {
       timer = window.setTimeout(() => window.dispatchEvent(new Event('wacrm:inbox-changed')), 250)
     }
     const unsubscribe = subscribeToRealtime({
-      onMessageCreated: ({ message }) => {
-        if (message?.sender_type === 'customer') refreshUnread()
-      },
+      onMessageCreated: refreshUnread,
       onMessageDeleted: refreshUnread,
       onConversationUpdated: refreshUnread,
       onConversationDeleted: refreshUnread,
@@ -145,7 +147,7 @@ export default function AppLayout({ children }) {
       window.clearTimeout(timer)
     }
   }, [userId])
-  const { data: whatsapp } = useWhatsappConfig({ enabled: Boolean(user) })
+  const { data: whatsapp } = useWhatsappConfig({ enabled: can('whatsapp.view') })
 
   useEffect(() => {
     setDrawerOpen(false)
@@ -256,11 +258,11 @@ export default function AppLayout({ children }) {
         <nav className="sidebar-nav">
           <div className="sidebar-group">
             <p className="sidebar-label">Workspace</p>
-            <ul className="sidebar-section">{mainNav.map(renderLink)}</ul>
+            <ul className="sidebar-section">{mainNav.filter((item) => canAny(pagePermissions[item.to])).map(renderLink)}</ul>
           </div>
           <div className="sidebar-group">
             <p className="sidebar-label">Manage</p>
-            <ul className="sidebar-section">{manageNav.map(renderLink)}</ul>
+            <ul className="sidebar-section">{manageNav.filter((item) => canAny(pagePermissions[item.to])).map(renderLink)}</ul>
           </div>
         </nav>
 
@@ -303,14 +305,14 @@ export default function AppLayout({ children }) {
             </nav>
           </div>
           <div className="topbar-actions">
-            <Link className={`topbar-whatsapp${connected ? ' is-connected' : ''}`} href="/settings?tab=whatsapp" title={accountTitle}>
+            {can('whatsapp.view') && <Link className={`topbar-whatsapp${connected ? ' is-connected' : ''}`} href="/settings?tab=whatsapp" title={accountTitle}>
               <Icon name="whatsapp" size={15} />
               <span className="text-truncate">{whatsapp?.configured || whatsapp ? accountLabel : 'WhatsApp status'}</span>
-            </Link>
-            <Link className="topbar-control" href="/notifications" title="Notifications" aria-label={`Notifications${notificationUnread ? `, ${notificationUnread} unread` : ''}`}>
+            </Link>}
+            {can('notifications.view') && <Link className="topbar-control" href="/notifications" title="Notifications" aria-label={`Notifications${notificationUnread ? `, ${notificationUnread} unread` : ''}`}>
               <Icon name="bell" size={17} />
               {notificationUnread > 0 && <span className="nav-dot" />}
-            </Link>
+            </Link>}
             <button
               type="button"
               className="topbar-control"
@@ -339,8 +341,8 @@ export default function AppLayout({ children }) {
             </div>
           </div>
         </header>
-        <BrowserNotificationsListener />
-        <PresenceHeartbeat userId={user?.id} />
+        {can('notifications.browser') && <BrowserNotificationsListener />}
+        {can('presence.update') && <PresenceHeartbeat userId={user?.id} />}
         <main className="app-content">
           {children}
         </main>

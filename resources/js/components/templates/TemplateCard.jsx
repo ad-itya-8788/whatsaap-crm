@@ -7,7 +7,7 @@ export default function TemplateCard({
   template,
   statusLabel,
   statusTone,
-  canManage,
+  can,
   hasContacts,
   busy,
   isEditing,
@@ -70,22 +70,22 @@ export default function TemplateCard({
               <button type="button" role="menuitem" onClick={() => act(() => onPreview(template))}>
                 <Icon name="eye" size={14} /> Preview
               </button>
-              {canManage && approved && (
+              {can('templates.create') && approved && (
                 <button type="button" role="menuitem" disabled={isBusy} onClick={() => act(() => onRevision(template))}>
                   <Icon name="copy" size={14} /> Create revision
                 </button>
               )}
-              {canManage && !approved && (
+              {(can('templates.update') || can('templates.submit')) && !approved && (
                 <>
-                  <button type="button" role="menuitem" disabled={busy === `submit-${template.id}`} onClick={() => act(() => onSubmit(template))}>
+                  {can('templates.submit') && <button type="button" role="menuitem" disabled={busy === `submit-${template.id}`} onClick={() => act(() => onSubmit(template))}>
                     <Icon name="send" size={14} /> Submit to Meta
-                  </button>
-                  <button type="button" role="menuitem" disabled={isBusy} onClick={() => act(() => onEdit(template))}>
+                  </button>}
+                  {can('templates.update') && <button type="button" role="menuitem" disabled={isBusy} onClick={() => act(() => onEdit(template))}>
                     <Icon name="edit" size={14} /> Edit
-                  </button>
+                  </button>}
                 </>
               )}
-              {canManage && (
+              {can('templates.delete') && (
                 <button
                   type="button"
                   role="menuitem"
@@ -120,19 +120,19 @@ export default function TemplateCard({
 
       <footer className="template-actions">
         <div className="template-actions-primary">
-          {approved && canManage && hasContacts && (
+          {approved && can('messages.send_templates') && hasContacts && (
             <button type="button" className="button button-sm button-secondary" onClick={() => onSend(template)} disabled={busy === `send-${template.id}`}>
               <Icon name="send" size={14} /> Send
             </button>
           )}
-          {!approved && canManage && (
+          {!approved && can('templates.create') && (
             <>
-              <button type="button" className="button button-sm button-secondary" onClick={() => onSubmit(template)} disabled={busy === `submit-${template.id}`}>
+              {can('templates.submit') && <button type="button" className="button button-sm button-secondary" onClick={() => onSubmit(template)} disabled={busy === `submit-${template.id}`}>
                 Submit to Meta
-              </button>
-              <button type="button" className="button button-sm button-ghost" onClick={() => onEdit(template)} disabled={isBusy}>
+              </button>}
+              {can('templates.update') && <button type="button" className="button button-sm button-ghost" onClick={() => onEdit(template)} disabled={isBusy}>
                 <Icon name="edit" size={14} /> Edit
-              </button>
+              </button>}
             </>
           )}
         </div>

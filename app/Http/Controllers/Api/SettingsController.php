@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\SessionUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -38,7 +39,7 @@ class SettingsController extends Controller
 
         $user->update($data);
 
-        return response()->json(['user' => $this->userPayload($user)]);
+        return response()->json(['user' => SessionUser::payload($user)]);
     }
 
     public function updatePassword(Request $request): JsonResponse
@@ -114,17 +115,5 @@ class SettingsController extends Controller
             ->where('user_id', $request->user()->id)
             ->where('id', '!=', $request->session()->getId())
             ->delete();
-    }
-
-    private function userPayload($user): array
-    {
-        return [
-            'id' => $user->id,
-            'name' => $user->name,
-            'full_name' => $user->name,
-            'email' => $user->email,
-            'role' => $user->role,
-            'avatar_url' => $user->avatar_url,
-        ];
     }
 }

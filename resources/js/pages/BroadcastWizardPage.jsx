@@ -1,3 +1,4 @@
+import { useAuth } from '../context/AuthContext.jsx'
 import { useEffect, useMemo, useState } from 'react'
 import { router } from '@inertiajs/react'
 import api, { csrf } from '../api/client.js'
@@ -31,6 +32,7 @@ const blank = {
 }
 
 export default function BroadcastWizardPage() {
+  const { can } = useAuth()
   const toast = useToast()
   const [options, setOptions] = useState({ templates: [], tags: [], custom_fields: [] })
   const [form, setForm] = useState(blank)
@@ -260,7 +262,7 @@ export default function BroadcastWizardPage() {
               </div>
             </div>
 
-            <button type="button" className="button button-secondary" onClick={checkAudience} disabled={busy}>{busy ? 'Checking…' : 'Check audience'}</button>
+            {can('broadcasts.preview') && <button type="button" className="button button-secondary" onClick={checkAudience} disabled={busy}>{busy ? 'Checking…' : 'Check audience'}</button>}
             {preview ? (
               <div className="bc-preview">
                 <strong>{preview.count} contacts matched</strong>
@@ -322,8 +324,8 @@ export default function BroadcastWizardPage() {
             </div>
             <div className="settings-actions">
               <button type="button" className="button button-secondary" onClick={() => submit('draft')} disabled={saving}>Save draft</button>
-              <button type="button" className="button button-primary" onClick={() => submit('schedule')} disabled={saving}>{saving ? 'Saving…' : 'Schedule'}</button>
-              <button type="button" className="button button-primary" onClick={() => submit('send')} disabled={saving}><Icon name="send" size={14} /> Send now</button>
+              {can('broadcasts.schedule') && <button type="button" className="button button-primary" onClick={() => submit('schedule')} disabled={saving}>{saving ? 'Saving…' : 'Schedule'}</button>}
+              {can('broadcasts.send') && <button type="button" className="button button-primary" onClick={() => submit('send')} disabled={saving}><Icon name="send" size={14} /> Send now</button>}
             </div>
           </div>
         ) : null}

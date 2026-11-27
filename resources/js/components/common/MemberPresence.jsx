@@ -54,13 +54,13 @@ export function PresenceHeartbeat({ userId }) {
   return null
 }
 
-export function useMemberPresence() {
+export function useMemberPresence(enabled = true) {
   const [members, setMembers] = useState({})
   const load = useCallback(async (signal) => {
     const { data } = await api.get('/api/app/presence', { signal, timeout: 10000 })
     setMembers(data)
   }, [])
-  usePoll(load, refreshInterval)
+  usePoll(load, refreshInterval, { enabled })
   return members
 }
 

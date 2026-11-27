@@ -15,7 +15,23 @@ class DashboardController extends Controller
 
     public function overview(Request $request): JsonResponse
     {
-        return response()->json($this->dashboard->overview($this->days($request)));
+        $data = $this->dashboard->overview($this->days($request));
+        $access = app(\App\Auth\Access::class);
+        $sources = [
+            'whatsapp.view' => ['whatsappConnected', 'whatsappPhoneNumberId', 'whatsappStatus', 'whatsappDisplayPhone', 'whatsappRegistrationError', 'whatsappPendingApproval'],
+            'templates.view' => ['templates'],
+            'quick_replies.view' => ['quickReplies'],
+            'contacts.view' => ['contacts'],
+            'tags.view' => ['tags'],
+            'custom_fields.view' => ['customFields'],
+        ];
+        foreach ($sources as $permission => $keys) {
+            if (! $access->can($request->user(), $permission)) {
+                $data['setup'] = array_diff_key($data['setup'], array_flip($keys));
+            }
+        }
+
+        return response()->json($data);
     }
 
     public function activity(Request $request): JsonResponse

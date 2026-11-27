@@ -9,7 +9,7 @@ Route::prefix('invitations/{token}')->where(['token' => '[A-Za-z0-9_-]{43}'])
         Route::post('/redeem', [InvitationController::class, 'redeem']);
     });
 
-Route::prefix('app/invitations')->middleware(['auth:sanctum', 'active', 'role:admin,owner'])->group(function () {
+Route::prefix('app/invitations')->middleware(['auth:sanctum', 'active', 'rbac'])->group(function () {
     Route::get('/', [InvitationController::class, 'index']);
     Route::post('/', [InvitationController::class, 'store']);
     Route::delete('/{invitation}', [InvitationController::class, 'destroy']);

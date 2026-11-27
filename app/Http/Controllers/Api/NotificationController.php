@@ -13,8 +13,7 @@ class NotificationController extends Controller
     public function index(Request $request): JsonResponse
     {
         return response()->json(
-            Notification::query()
-                ->where('user_id', $request->user()->id)
+            $this->visibleNotifications($request)
                 ->latest()
                 ->paginate(min(max($request->integer('per_page', 50), 1), 100))
         );
@@ -23,8 +22,7 @@ class NotificationController extends Controller
     public function unreadCount(Request $request): JsonResponse
     {
         return response()->json([
-            'count' => Notification::query()
-                ->where('user_id', $request->user()->id)
+            'count' => $this->visibleNotifications($request)
                 ->unread()
                 ->count(),
         ]);
@@ -32,7 +30,7 @@ class NotificationController extends Controller
 
     public function markRead(Request $request, Notification $notification): JsonResponse
     {
-        if ($notification->user_id !== $request->user()->id) {
+        if (! $this->visibleNotifications($request)->whereKey($notification->id)->exists()) {
             abort(403);
         }
 
@@ -46,14 +44,7 @@ class NotificationController extends Controller
         $user = $request->user();
         $query = Message::query()
             ->where('sender_type', 'customer')
-            ->whereHas('conversation', function ($query) use ($user) {
-                if (in_array($user->role, ['admin', 'owner'], true)) {
-                    return;
-                }
-
-                $query->where('user_id', $user->id)
-                    ->orWhere('assigned_agent_id', $user->id);
-            });
+            ->whereHas('conversation', fn ($query) => app(\App\Auth\Access::class)->conversationQuery($query, $user));
 
         if (! $request->has('after')) {
             return response()->json(['latest_id' => (int) $query->max('id'), 'events' => []]);
@@ -79,6 +70,21 @@ class NotificationController extends Controller
         ]);
     }
 
+    private function visibleNotifications(Request $request): \Illuminate\Database\Eloquent\Builder
+    {
+        $user = $request->user();
+        $access = app(\App\Auth\Access::class);
+        $conversations = $access->conversationQuery(\App\Models\Conversation::query(), $user)->select('id');
+
+        return Notification::query()->where('user_id', $user->id)
+            ->where(function ($query) use ($access, $user, $conversations) {
+                $query->whereNull('data->conversation_id');
+                if ($access->can($user, 'inbox.view')) {
+                    $query->orWhereIn('data->conversation_id', $conversations);
+                }
+            });
+    }
+
     private function browserContactName(Message $message): string
     {
         $contact = $message->conversation?->contact;
@@ -90,8 +96,7 @@ class NotificationController extends Controller
 
     public function markAllRead(Request $request): JsonResponse
     {
-        $updated = Notification::query()
-            ->where('user_id', $request->user()->id)
+        $updated = $this->visibleNotifications($request)
             ->unread()
             ->update(['read_at' => now()]);
 

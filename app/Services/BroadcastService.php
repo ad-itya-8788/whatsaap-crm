@@ -70,13 +70,13 @@ class BroadcastService
         ];
     }
 
-    public function send(Broadcast $broadcast): Broadcast
+    public function send(Broadcast $broadcast, ?int $actorId = null): Broadcast
     {
         $this->assertApproved($broadcast);
-        [$broadcast, $prepared] = $this->prepare($broadcast);
+        [$broadcast, $prepared] = $this->prepare($broadcast, $actorId !== null);
 
         if ($prepared && $broadcast->status === 'sending') {
-            $this->dispatchJobs($broadcast);
+            $this->dispatchJobs($broadcast, $actorId);
         }
 
         return $broadcast;
@@ -92,7 +92,18 @@ class BroadcastService
             ->where('scheduled_at', '<=', now())
             ->each(function (Broadcast $broadcast) use (&$count) {
                 if (Broadcast::query()->whereKey($broadcast->id)->where('status', 'scheduled')->update(['status' => 'sending'])) {
-                    $this->dispatchJobs($broadcast);
+                    if ($broadcast->workspace_authorized && $broadcast->user_id === null) {
+                        $broadcast->recipients()->where('status', 'pending')->update([
+                            'status' => 'failed', 'error' => 'The requesting member is no longer available.',
+                        ]);
+                        $this->refreshCounters($broadcast);
+                    } else {
+                        $this->dispatchJobs(
+                            $broadcast,
+                            $broadcast->workspace_authorized ? $broadcast->user_id : null,
+                            'broadcasts.schedule',
+                        );
+                    }
                     $count++;
                 }
             });
@@ -100,7 +111,7 @@ class BroadcastService
         return $count;
     }
 
-    public function retry(Broadcast $broadcast, string $status = 'failed'): int
+    public function retry(Broadcast $broadcast, string $status = 'failed', ?int $actorId = null): int
     {
         $this->assertApproved($broadcast);
         $ids = DB::transaction(function () use ($broadcast, $status) {
@@ -125,7 +136,7 @@ class BroadcastService
             return $recipients->modelKeys();
         });
         foreach ($ids as $id) {
-            SendBroadcastRecipient::dispatch($id);
+            SendBroadcastRecipient::dispatch($id, $actorId, $status === 'failed' ? 'broadcasts.resume' : 'broadcasts.retry');
         }
 
         return count($ids);
@@ -175,7 +186,7 @@ class BroadcastService
         }
     }
 
-    private function prepare(Broadcast $broadcast): array
+    private function prepare(Broadcast $broadcast, bool $workspaceAuthorized = false): array
     {
         $contacts = $this->resolveAudience($broadcast->audience);
         $template = $broadcast->template;
@@ -198,6 +209,7 @@ class BroadcastService
 
             $broadcast->update([
                 'status' => $isScheduled ? 'scheduled' : 'sending',
+                'workspace_authorized' => $workspaceAuthorized,
             ]);
             $this->refreshCounters($broadcast);
 
@@ -205,11 +217,11 @@ class BroadcastService
         });
     }
 
-    private function dispatchJobs(Broadcast $broadcast): void
+    private function dispatchJobs(Broadcast $broadcast, ?int $actorId = null, string $permission = 'broadcasts.send'): void
     {
         $broadcast->recipients()
             ->where('status', 'pending')
-            ->eachById(fn (BroadcastRecipient $recipient) => SendBroadcastRecipient::dispatch($recipient->id));
+            ->eachById(fn (BroadcastRecipient $recipient) => SendBroadcastRecipient::dispatch($recipient->id, $actorId, $permission));
     }
 
     private function resolveAudience(array $audience): Collection

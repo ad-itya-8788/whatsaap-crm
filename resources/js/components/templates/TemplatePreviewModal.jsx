@@ -7,7 +7,7 @@ export default function TemplatePreviewModal({
   template,
   statusLabel,
   statusTone,
-  canManage,
+  can,
   hasContacts,
   busy,
   onClose,
@@ -108,27 +108,27 @@ export default function TemplatePreviewModal({
 
         <footer className="template-preview-modal-actions">
           <button type="button" className="button button-sm button-secondary" onClick={onClose}>Close</button>
-          {approved && canManage && hasContacts && (
+          {approved && can('messages.send_templates') && hasContacts && (
             <button type="button" className="button button-sm button-secondary" onClick={() => onSend(template)} disabled={busy === `send-${template.id}`}>
               <Icon name="send" size={14} /> Send
             </button>
           )}
-          {approved && canManage && (
+          {approved && can('templates.create') && (
             <button type="button" className="button button-sm button-secondary" onClick={() => onRevision(template)} disabled={isBusy}>
               <Icon name="copy" size={14} /> Create revision
             </button>
           )}
-          {!approved && canManage && (
+          {!approved && can('templates.create') && (
             <>
-              <button type="button" className="button button-sm button-secondary" onClick={() => onSubmit(template)} disabled={busy === `submit-${template.id}`}>
+              {can('templates.submit') && <button type="button" className="button button-sm button-secondary" onClick={() => onSubmit(template)} disabled={busy === `submit-${template.id}`}>
                 Submit to Meta
-              </button>
-              <button type="button" className="button button-sm button-ghost" onClick={() => onEdit(template)} disabled={isBusy}>
+              </button>}
+              {can('templates.update') && <button type="button" className="button button-sm button-ghost" onClick={() => onEdit(template)} disabled={isBusy}>
                 <Icon name="edit" size={14} /> Edit
-              </button>
+              </button>}
             </>
           )}
-          {canManage && (
+          {can('templates.delete') && (
             <button type="button" className="button button-sm button-ghost is-danger" onClick={() => onDelete(template)} disabled={busy === `delete-${template.id}`}>
               <Icon name="trash" size={14} /> Delete
             </button>

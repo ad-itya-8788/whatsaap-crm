@@ -6,7 +6,7 @@ import { errorMessage, relativeTime } from '../../lib/utils.js'
 
 const EMPTY = { title: '', content: '', source: '', is_active: true }
 
-export default function AiKnowledgePanel({ canManage }) {
+export default function AiKnowledgePanel({ can }) {
   const toast = useToast()
   const [documents, setDocuments] = useState([])
   const [form, setForm] = useState(EMPTY)
@@ -77,7 +77,7 @@ export default function AiKnowledgePanel({ canManage }) {
             <h2>Knowledge base</h2>
             <p>Add policies, product details, and answers the AI may use.</p>
           </div>
-          {canManage && <button type="button" className="button button-secondary button-sm" onClick={reindex} disabled={reindexing}><Icon name="refresh" size={14} /> {reindexing ? 'Indexing...' : 'Reindex all'}</button>}
+          {can('ai.knowledge_reindex') && <button type="button" className="button button-secondary button-sm" onClick={reindex} disabled={reindexing}><Icon name="refresh" size={14} /> {reindexing ? 'Indexing...' : 'Reindex all'}</button>}
         </div>
         {!documents.length && <div className="list-placeholder">No knowledge documents yet.</div>}
         <div className="agents-doc-list">
@@ -88,10 +88,10 @@ export default function AiKnowledgePanel({ canManage }) {
                 <div className="agents-doc-title">{document.title} {!document.is_active && <span className="agents-muted">(inactive)</span>}</div>
                 <div className="agents-muted">{document.source || 'Manual entry'} · {relativeTime(document.updated_at || document.created_at)}</div>
               </div>
-              {canManage && (
+              {(can('ai.knowledge_update') || can('ai.knowledge_delete')) && (
                 <div className="agents-doc-actions">
-                  <button type="button" className="icon-button" title="Edit" onClick={() => { setEditing(document.id); setForm({ title: document.title, content: document.content, source: document.source || '', is_active: document.is_active }) }}><Icon name="settings" size={15} /></button>
-                  <button type="button" className="icon-button" title="Delete" onClick={() => remove(document)}><Icon name="trash" size={15} /></button>
+                  {can('ai.knowledge_update') && <button type="button" className="icon-button" title="Edit" onClick={() => { setEditing(document.id); setForm({ title: document.title, content: document.content, source: document.source || '', is_active: document.is_active }) }}><Icon name="settings" size={15} /></button>}
+                  {can('ai.knowledge_delete') && <button type="button" className="icon-button" title="Delete" onClick={() => remove(document)}><Icon name="trash" size={15} /></button>}
                 </div>
               )}
             </div>
@@ -99,7 +99,7 @@ export default function AiKnowledgePanel({ canManage }) {
         </div>
       </div>
 
-      {canManage && (
+      {can(editing ? 'ai.knowledge_update' : 'ai.knowledge_create') && (
         <div className="agents-card agents-form-card">
           <div className="agents-card-head"><h2>{editing ? 'Edit document' : 'Add document'}</h2></div>
           <form className="agents-form-grid" onSubmit={save}>

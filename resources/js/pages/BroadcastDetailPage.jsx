@@ -5,7 +5,7 @@ import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
 import Icon from '../components/common/Icon.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
-import { errorMessage, extractList, extractPaginator, isAdmin, relativeTime } from '../lib/utils.js'
+import { errorMessage, extractList, extractPaginator, relativeTime } from '../lib/utils.js'
 
 const STATS = [
   ['Total', 'total', 'users'],
@@ -39,7 +39,7 @@ function DeliveryFunnel({ broadcast }) {
 export default function BroadcastDetailPage() {
   const { id } = usePage().props
   const toast = useToast()
-  const { user } = useAuth()
+  const { can } = useAuth()
   const [broadcast, setBroadcast] = useState(null)
   const [recipients, setRecipients] = useState([])
   const [pagination, setPagination] = useState({ currentPage: 1, lastPage: 1, total: 0 })
@@ -49,7 +49,7 @@ export default function BroadcastDetailPage() {
   const [busy, setBusy] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const request = useRef(null)
-  const canSend = user?.role !== 'viewer'
+  const canSend = can('broadcasts.send')
 
   const load = useCallback(async (page = 1, background = false) => {
     if (background && request.current) return
@@ -149,7 +149,7 @@ export default function BroadcastDetailPage() {
         </div>
         <div className="bc-detail-actions">
           {canSend && broadcast?.status === 'draft' && <button type="button" className="button button-primary" disabled={Boolean(busy)} onClick={() => action('send')}>Send now</button>}
-          {broadcast && isAdmin(user) && (
+          {broadcast && can('broadcasts.delete') && (
             <button type="button" className="button button-danger" disabled={Boolean(busy) || broadcast.status === 'sending'} onClick={() => setConfirmDelete(true)}><Icon name="trash" size={14} /> Delete</button>
           )}
         </div>
@@ -158,15 +158,15 @@ export default function BroadcastDetailPage() {
       {error && <div className="alert alert-error">{error} <button type="button" className="link-button" onClick={() => load(pagination.currentPage)}>Retry</button></div>}
       {!broadcast && loading && <div className="dash-empty"><span className="spinner" /> Loading broadcast…</div>}
 
-      {broadcast && canSend && broadcast.status !== 'scheduled' && (pending > 0 || failed > 0) && (
+      {broadcast && (can('broadcasts.retry') || can('broadcasts.resume')) && broadcast.status !== 'scheduled' && (pending > 0 || failed > 0) && (
         <div className="dash-card bc-recovery">
           <div>
             <strong>Outstanding recipients</strong>
             <p className="muted">{pending} pending · {failed} failed</p>
           </div>
           <div className="bc-detail-actions">
-            {pending > 0 && <button type="button" className="button button-sm button-primary" disabled={Boolean(busy)} onClick={() => action('retry-pending')}>Resume pending</button>}
-            {failed > 0 && <button type="button" className="button button-sm button-secondary" disabled={Boolean(busy)} onClick={() => action('resume')}>Retry failed</button>}
+            {pending > 0 && can('broadcasts.retry') && <button type="button" className="button button-sm button-primary" disabled={Boolean(busy)} onClick={() => action('retry-pending')}>Resume pending</button>}
+            {failed > 0 && can('broadcasts.resume') && <button type="button" className="button button-sm button-secondary" disabled={Boolean(busy)} onClick={() => action('resume')}>Retry failed</button>}
           </div>
         </div>
       )}
@@ -189,7 +189,7 @@ export default function BroadcastDetailPage() {
               <option value="">All statuses</option>
               {['pending', 'sent', 'delivered', 'read', 'replied', 'failed', 'skipped'].map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
-            <a className="button button-secondary" href={`/api/app/broadcasts/${id}/export`}><Icon name="download" size={14} /> Export CSV</a>
+            {can('broadcasts.export') && <a className="button button-secondary" href={`/api/app/broadcasts/${id}/export`}><Icon name="download" size={14} /> Export CSV</a>}
           </div>
         </header>
         <div className="bc-table-wrap">

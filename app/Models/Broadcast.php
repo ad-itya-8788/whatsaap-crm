@@ -14,6 +14,7 @@ class Broadcast extends Model
         'name',
         'status',
         'scheduled_at',
+        'workspace_authorized',
         'audience',
         'personalization',
         'total',
@@ -25,6 +26,7 @@ class Broadcast extends Model
     ];
 
     protected $casts = [
+        'workspace_authorized' => 'boolean',
         'scheduled_at' => 'datetime',
         'audience' => 'array',
         'personalization' => 'array',

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Auth\Access;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Notification;
@@ -14,7 +15,7 @@ use Illuminate\Support\Facades\DB;
 
 class ConversationController extends Controller
 {
-    public function __construct(private RealtimeBroadcaster $realtime) {}
+    public function __construct(private RealtimeBroadcaster $realtime, private Access $access) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -29,7 +30,7 @@ class ConversationController extends Controller
             }],
         ]);
 
-        $query = Conversation::query()
+        $query = $this->access->conversationQuery(Conversation::query(), $request->user())
             ->with(['contact.tags', 'assignedAgent:id,name,avatar_url'])
             ->withCount('notes');
 
@@ -43,6 +44,9 @@ class ConversationController extends Controller
 
         $status = $filters['status'] ?? 'all';
         $waitingFirst = false;
+        if ($status !== 'all') {
+            abort_unless($this->access->can($request->user(), 'conversations.filter_'.$status), 403);
+        }
 
         if ($status === 'unread') {
             $query->where('unread_count', '>', 0);
@@ -78,18 +82,22 @@ class ConversationController extends Controller
             ? $query->orderBy('last_inbound_at')->orderByDesc('updated_at')
             : $query->orderByDesc('last_message_at')->orderByDesc('updated_at');
 
-        return response()->json($query->orderByDesc('id')->paginate($perPage));
+        return response()->json($query->orderByDesc('id')->paginate($perPage)
+            ->through(fn (Conversation $row) => $this->access->redactConversation($row, $request->user())));
     }
 
-    public function show(Conversation $conversation): JsonResponse
+    public function show(Request $request, Conversation $conversation): JsonResponse
     {
-        return response()->json($conversation->load(['contact.tags', 'assignedAgent:id,name,avatar_url'])->loadCount('notes'));
+        return response()->json($this->access->redactConversation(
+            $conversation->load(['contact.tags', 'assignedAgent:id,name,avatar_url'])->loadCount('notes'), $request->user()
+        ));
     }
 
     public function destroy(Conversation $conversation, InboundMediaMirror $mediaMirror): JsonResponse
     {
         $mediaMessageIds = DB::transaction(function () use ($conversation) {
             $conversation = Conversation::query()->lockForUpdate()->findOrFail($conversation->id);
+            $this->access->authorizeConversation(request()->user(), $conversation);
             $mediaMessageIds = $conversation->messages()
                 ->where('sender_type', 'customer')
                 ->whereNotNull('media_url')
@@ -110,9 +118,9 @@ class ConversationController extends Controller
         return response()->json(['ok' => true]);
     }
 
-    public function unreadCount(): JsonResponse
+    public function unreadCount(Request $request): JsonResponse
     {
-        return response()->json(['count' => Conversation::query()->where('unread_count', '>', 0)->count()]);
+        return response()->json(['count' => $this->access->conversationQuery(Conversation::query(), $request->user())->where('unread_count', '>', 0)->count()]);
     }
 
     public function markRead(Conversation $conversation): JsonResponse
@@ -130,21 +138,14 @@ class ConversationController extends Controller
     {
         $data = $request->validate(['contact_id' => ['required', 'integer', 'exists:contacts,id']]);
 
-        $conversation = Conversation::firstOrCreate(
-            ['contact_id' => $data['contact_id']],
-            ['user_id' => $request->user()->id, 'status' => 'open'],
-        );
+        $conversation = $this->access->conversationForContact($request->user(), $data['contact_id']);
 
-        return response()->json($conversation->load('contact'));
+        return response()->json($this->access->redactConversation($conversation->load('contact'), $request->user()));
     }
 
     public function agents(): JsonResponse
     {
-        $agents = User::query()
-            ->where('is_active', true)
-            ->whereIn('role', ['agent', 'admin', 'owner'])
-            ->orderBy('name')
-            ->get(['id', 'name']);
+        $agents = $this->access->assignableUsers()->map->only(['id', 'name'])->values();
 
         return response()->json($agents);
     }
@@ -155,7 +156,13 @@ class ConversationController extends Controller
             'assignee_id' => ['nullable', 'integer', 'exists:users,id'],
         ]);
 
-        DB::transaction(function () use ($conversation, $data, $request) {
+        $conversation = DB::transaction(function () use ($conversation, $data, $request) {
+            $conversation = Conversation::query()->lockForUpdate()->findOrFail($conversation->id);
+            $this->access->authorizeConversation($request->user(), $conversation);
+            if (isset($data['assignee_id'])) {
+                $assignee = User::find($data['assignee_id']);
+                abort_unless($this->access->canBeAssigned($assignee), 422, 'Select an eligible active assignee.');
+            }
             $conversation->update(['assigned_agent_id' => $data['assignee_id'] ?? null]);
 
             if (! empty($data['assignee_id']) && (int) $data['assignee_id'] !== $request->user()->id) {
@@ -170,11 +177,14 @@ class ConversationController extends Controller
                     'data' => ['conversation_id' => $conversation->id],
                 ]);
             }
-        });
+            return $conversation;
+        }, 3);
 
         $this->realtime->conversationUpdated($conversation->fresh());
 
-        return response()->json($conversation->load(['contact', 'assignedAgent']));
+        return response()->json($this->access->redactConversation(
+            $conversation->load(['contact', 'assignedAgent:id,name,avatar_url']), $request->user()
+        ));
     }
 
     public function updateStatus(Request $request, Conversation $conversation): JsonResponse
@@ -183,12 +193,20 @@ class ConversationController extends Controller
             'status' => ['required', 'in:open,pending,closed'],
         ]);
 
+        if ($data['status'] === 'closed') {
+            abort_unless($this->access->can($request->user(), 'conversations.close'), 403);
+        } elseif ($conversation->status === 'closed') {
+            abort_unless($this->access->can($request->user(), 'conversations.reopen'), 403);
+        }
+
         $conversation->update([
             'status' => $data['status'],
             'closed_at' => $data['status'] === 'closed' ? now() : null,
         ]);
         $this->realtime->conversationUpdated($conversation->fresh());
 
-        return response()->json($conversation->load(['contact', 'assignedAgent']));
+        return response()->json($this->access->redactConversation(
+            $conversation->load(['contact', 'assignedAgent:id,name,avatar_url']), $request->user()
+        ));
     }
 }

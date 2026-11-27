@@ -27,20 +27,29 @@ class InvitationController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'role' => ['required', Rule::in(['admin', 'agent', 'viewer'])],
+            'role' => ['required', Rule::exists('crm_roles', 'key')->whereNot('key', 'owner')],
             'label' => ['nullable', 'string', 'max:80'],
             'expiresInDays' => ['sometimes', 'integer', 'min:1', 'max:365'],
         ]);
 
         $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
         $days = $data['expiresInDays'] ?? 7;
-        $invitation = AccountInvitation::create([
+        $invitation = DB::transaction(function () use ($request, $data, $token, $days) {
+            DB::table('crm_roles')->where('key', 'owner')->lockForUpdate()->first();
+            $actor = User::query()->lockForUpdate()->findOrFail($request->user()->id);
+            abort_unless(app(\App\Auth\Access::class)->owner($actor), 403);
+            abort_unless(DB::table('crm_roles')->where('key', $data['role'])->exists(), 422);
+            $invitation = AccountInvitation::create([
             'role' => $data['role'],
             'label' => $data['label'] ?? null,
             'expires_at' => now()->addDays($days),
             'created_by' => $request->user()->id,
             'token_hash' => hash('sha256', $token),
-        ]);
+            ]);
+            \App\Auth\AuthorizationAudit::record($actor->id, 'invitation.created', 'invitation:'.$invitation->id, null, ['role' => $invitation->role]);
+
+            return $invitation;
+        }, 3);
 
         return response()->json([
             'invitation' => $invitation,
@@ -50,7 +59,13 @@ class InvitationController extends Controller
 
     public function destroy(AccountInvitation $invitation): Response
     {
-        abort_unless(AccountInvitation::query()->pending()->whereKey($invitation->id)->delete(), 404);
+        DB::transaction(function () use ($invitation) {
+            DB::table('crm_roles')->where('key', 'owner')->lockForUpdate()->first();
+            $actor = User::query()->lockForUpdate()->findOrFail(request()->user()->id);
+            abort_unless(app(\App\Auth\Access::class)->owner($actor), 403);
+            abort_unless(AccountInvitation::query()->pending()->whereKey($invitation->id)->delete(), 404);
+            \App\Auth\AuthorizationAudit::record($actor->id, 'invitation.revoked', 'invitation:'.$invitation->id, ['role' => $invitation->role], null);
+        }, 3);
 
         return response()->noContent();
     }
@@ -82,6 +97,7 @@ class InvitationController extends Controller
                     ->lockForUpdate()->first();
                 abort_unless($invitation && $invitation->expires_at->isFuture(), 404, 'This invitation has expired, was revoked, or has already been used.');
 
+                abort_if($invitation->role === 'owner' || ! DB::table('crm_roles')->where('key', $invitation->role)->exists(), 422);
                 $email = strtolower($data['email']);
                 if (User::query()->where('email', $email)->exists()) {
                     throw ValidationException::withMessages(['email' => 'This email address already belongs to a team member.']);

@@ -77,6 +77,7 @@ function ConversationComposer({
   conversationId = null,
   windowOpen = true,
   readOnly = false,
+  can = () => false,
   onSendInteractive,
   onSendTemplate,
   onQuickReplySaved,
@@ -318,6 +319,13 @@ function ConversationComposer({
     />
   )
 
+  const attachmentOptions = ATTACHMENT_OPTIONS.filter(({ kind }) => {
+    if (kind === 'replies') return can('quick_replies.view')
+    if (kind === 'template') return Boolean(onSendTemplate)
+    if (kind === 'interactive') return Boolean(onSendInteractive)
+    return can('messages.send_' + (kind === 'voice' ? 'audio' : kind))
+  })
+
   if (readOnly) return <div className="composer"><span className="muted">Read-only access</span></div>
   if (!windowOpen) {
     return (
@@ -368,7 +376,7 @@ function ConversationComposer({
         event.preventDefault()
         if ((draft.trim() || file) && !sending) onSend()
       }}>
-        <div className="composer-attach-wrap">
+        {attachmentOptions.length > 0 && <div className="composer-attach-wrap">
           <button
             type="button"
             className={`icon-button composer-attach${openMenu === 'attachments' ? ' is-open' : ''}`}
@@ -382,10 +390,7 @@ function ConversationComposer({
           </button>
           {openMenu === 'attachments' && (
             <div className="attachment-sheet" role="menu" aria-label="Attachment options">
-              {ATTACHMENT_OPTIONS
-                .filter((option) => option.kind !== 'interactive' || onSendInteractive)
-                .filter((option) => option.kind !== 'template' || onSendTemplate)
-                .map((option) => (
+              {attachmentOptions.map((option) => (
                   <button
                     type="button"
                     key={option.kind}
@@ -398,11 +403,11 @@ function ConversationComposer({
                 ))}
             </div>
           )}
-        </div>
+        </div>}
         <button type="button" className={`icon-button${openMenu === 'emoji' ? ' is-open' : ''}`} onClick={() => setOpenMenu((value) => value === 'emoji' ? '' : 'emoji')} aria-label="Emoji picker" aria-expanded={openMenu === 'emoji'}>
           <Icon name="emoji" size={20} />
         </button>
-        {conversationId && (
+        {conversationId && can('messages.ai_draft') && (
           <button type="button" className="icon-button composer-ai" onClick={draftWithAi} disabled={drafting} aria-label="Draft with AI" title={drafting ? 'Drafting...' : 'Draft a reply with AI'}>
             <Icon name="bot" size={19} />
           </button>
@@ -444,7 +449,7 @@ function ConversationComposer({
             {!quickReplies.length && <div className="list-placeholder">No quick replies yet.</div>}
           </div>
         )}
-        <button
+        {(draft.trim() || file || can('messages.send_audio')) && <button
           className={`composer-send${!draft.trim() && !file ? ' is-voice' : ''}${recording ? ' is-recording' : ''}`}
           type={draft.trim() || file ? 'submit' : 'button'}
           onClick={!draft.trim() && !file ? () => openAttachmentOption('voice') : undefined}
@@ -453,7 +458,7 @@ function ConversationComposer({
           title={recording ? 'Stop recording and attach' : draft.trim() || file ? 'Send message' : 'Record a voice note'}
         >
           <Icon name={recording ? 'pause' : draft.trim() || file ? 'send' : 'mic'} size={18} />
-        </button>
+        </button>}
       </form>
       <div className="composer-actions">
         <span className="composer-hint">Enter to send · Shift + Enter for a new line</span>

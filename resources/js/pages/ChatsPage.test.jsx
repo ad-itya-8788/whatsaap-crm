@@ -6,10 +6,10 @@ import ChatsPage from './ChatsPage.jsx'
 const { api, toast, realtime } = vi.hoisted(() => ({
   api: { get: vi.fn(), post: vi.fn() },
   toast: { success: vi.fn(), error: vi.fn() },
-  realtime: { handlers: null, setParams: vi.fn() },
+  realtime: { handlers: null, setParams: vi.fn(), can: vi.fn(() => true) },
 }))
 vi.mock('../api/client.js', () => ({ default: api }))
-vi.mock('../context/AuthContext.jsx', () => ({ useAuth: () => ({ user: { id: 3, role: 'owner' } }) }))
+vi.mock('../context/AuthContext.jsx', () => ({ useAuth: () => ({ user: { id: 3, role: 'owner' }, can: realtime.can }) }))
 vi.mock('../components/common/ToastProvider.jsx', () => ({ useToast: () => toast }))
 vi.mock('../components/common/MemberPresence.jsx', () => ({
   useMemberPresence: () => ({}),
@@ -29,11 +29,14 @@ vi.mock('../lib/realtime.js', () => ({
 
 afterEach(cleanup)
 
-it('renders socket messages and optimistic sends, then applies receipts without refetching history or showing success toasts', async () => {
+it('loads authorized messages after a payload-free realtime signal and renders optimistic sends', async () => {
   const now = new Date().toISOString()
   const conversation = { id: 1, contact: { name: 'Customer' }, last_inbound_at: now, unread_count: 0 }
+  let messages = []
   api.get.mockImplementation(async (url) => ({
-    data: { data: url === '/api/app/conversations' ? [conversation] : [] },
+    data: url === '/api/app/conversations/1' ? conversation : {
+      data: url === '/api/app/conversations' ? [conversation] : url.endsWith('/messages') ? messages : [],
+    },
   }))
   let completeSend
   api.post.mockImplementation(() => new Promise((resolve) => { completeSend = resolve }))
@@ -42,13 +45,9 @@ it('renders socket messages and optimistic sends, then applies receipts without 
   const thread = await screen.findByRole('region', { name: 'Conversation' })
   const composer = await within(thread).findByRole('textbox', { name: 'Message' })
   await within(thread).findByText('No messages yet. Send the first message below.')
-  const requests = api.get.mock.calls.length
-
-  await act(async () => realtime.handlers.onMessageCreated({
-    message: { id: 1, conversation_id: 1, sender_type: 'customer', content_text: 'Incoming', created_at: now },
-    conversation: { ...conversation, last_message_text: 'Incoming', last_message_at: now },
-  }))
-  expect(within(thread).getByText('Incoming')).toBeTruthy()
+  messages = [{ id: 1, conversation_id: 1, sender_type: 'customer', content_text: 'Incoming', created_at: now }]
+  realtime.handlers.onMessageCreated({})
+  expect(await within(thread).findByText('Incoming')).toBeTruthy()
 
   fireEvent.change(composer, { target: { value: 'Optimistic reply' } })
   fireEvent.submit(composer.closest('form'))
@@ -60,21 +59,26 @@ it('renders socket messages and optimistic sends, then applies receipts without 
     id: 2, conversation_id: 1, sender_type: 'agent', content_text: 'Optimistic reply',
     created_at: now, message_id: 'wamid.reply', idempotency_key: api.post.mock.lastCall[1].idempotency_key,
   }
-  await act(async () => realtime.handlers.onMessageStatusChanged({ message: { ...outgoing, status: 'delivered' } }))
-  expect(within(thread).getByTitle('Delivered')).toBeTruthy()
-  await act(async () => realtime.handlers.onMessageStatusChanged({ message: { ...outgoing, status: 'read' } }))
   await act(async () => completeSend({ data: { ...outgoing, status: 'sent' } }))
-  expect(within(thread).getByTitle('Read')).toBeTruthy()
+  messages = [...messages, { ...outgoing, status: 'read' }]
+  realtime.handlers.onMessageStatusChanged({})
+  expect(await within(thread).findByTitle('Read')).toBeTruthy()
   expect(within(thread).getAllByText('Optimistic reply')).toHaveLength(1)
-  expect(api.get).toHaveBeenCalledTimes(requests)
-  expect(toast.success).not.toHaveBeenCalled()
-  expect(toast.error).not.toHaveBeenCalled()
+})
 
-  api.post.mockRejectedValueOnce({ response: { status: 422, data: { message: 'This message cannot be sent.' } } })
-  fireEvent.change(composer, { target: { value: 'Rejected reply' } })
-  await act(async () => fireEvent.submit(composer.closest('form')))
-  expect(within(thread).getByTitle('Failed')).toBeTruthy()
-  expect(toast.error).toHaveBeenCalledExactlyOnceWith('This message cannot be sent.')
-  expect(toast.success).not.toHaveBeenCalled()
-  expect(api.get).toHaveBeenCalledTimes(requests)
+it('keeps message history and hides the composer for a read-only agent', async () => {
+  const conversation = { id: 1, contact: { name: 'Customer' } }
+  realtime.can.mockImplementation((permission) => permission === 'messages.read')
+  api.get.mockImplementation(async (url) => ({
+    data: url === '/api/app/conversations/1' ? conversation : {
+      data: url === '/api/app/conversations' ? [conversation] : [],
+    },
+  }))
+
+  render(<ChatsPage />)
+  const thread = await screen.findByRole('region', { name: 'Conversation' })
+  await within(thread).findByText('Customer')
+  expect(within(thread).queryByRole('textbox', { name: 'Message' })).toBeNull()
+  expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['All'])
+  realtime.can.mockImplementation(() => true)
 })

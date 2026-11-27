@@ -32,8 +32,8 @@ const INBOX_FILTERS = ['all', 'waiting', 'unassigned', 'expiring', 'unread', 'op
 
 export default function ChatsPage() {
   const [params, setParams] = useSearchParams()
-  const { user } = useAuth()
-  const presence = useMemberPresence()
+  const { user, can } = useAuth()
+  const presence = useMemberPresence(can('presence.view'))
   const toast = useToast()
   const urlConversation = params.get('c') || params.get('conversation')
   const urlFilter = params.get('filter')
@@ -87,7 +87,6 @@ export default function ChatsPage() {
   const [listError, setListError] = useState('')
   const [threadError, setThreadError] = useState('')
   const [mediaViewer, setMediaViewer] = useState(null)
-  const [realtimeConnected, setRealtimeConnected] = useState(false)
 
   const realtimeConnectedRef = useRef(false)
   const threadRef = useRef(null)
@@ -95,7 +94,6 @@ export default function ChatsPage() {
   const listAbortRef = useRef(null)
   const threadAbortRef = useRef(null)
   const loadingMessageUpdatesRef = useRef(null)
-  const listChangesRef = useRef(null)
   const sendAttemptRef = useRef(null)
   const richSendAttemptRef = useRef(null)
   const selectedIdRef = useRef(selectedId)
@@ -106,9 +104,6 @@ export default function ChatsPage() {
   const assigneeFilterRef = useRef(assigneeFilter)
   const debouncedQueryRef = useRef(debouncedQuery)
   const currentUserIdRef = useRef(user?.id)
-  const messagesRef = useRef(messages)
-  const realtimeSinceRef = useRef(new Date(Date.now() - 60_000).toISOString())
-  const recoveryInFlightRef = useRef(false)
   const readRequestRef = useRef(null)
   const messageSearchRef = useRef(debouncedMessageSearch)
   const loadedMessageSearchRef = useRef(debouncedMessageSearch)
@@ -118,12 +113,13 @@ export default function ChatsPage() {
   assigneeFilterRef.current = assigneeFilter
   debouncedQueryRef.current = debouncedQuery
   currentUserIdRef.current = user?.id
-  messagesRef.current = messages
 
   const selected = conversations.find((item) => String(item.id) === String(selectedId))
     || (String(linkedConversation?.id) === selectedId ? linkedConversation : null)
-  const readOnly = user?.role === 'viewer'
-  const canDelete = ['admin', 'owner'].includes(user?.role)
+  const readOnly = !can('messages.send')
+  const canRead = can('messages.read')
+  const canMarkRead = can('conversations.mark_read')
+  const canDelete = can('conversations.delete')
   const windowOpen = Date.now() - Date.parse(selected?.last_inbound_at) < 24 * 60 * 60 * 1000
   const contactTags = selected?.contact?.tags || []
 
@@ -134,8 +130,6 @@ export default function ChatsPage() {
     listAbortRef.current?.abort()
     const controller = new AbortController()
     listAbortRef.current = controller
-    const liveChanges = new Set()
-    listChangesRef.current = liveChanges
     if (!background && page === 1) setLoadingList(true)
     if (append) setLoadingMore(true)
     try {
@@ -143,7 +137,7 @@ export default function ChatsPage() {
         signal: controller.signal,
         params: {
           search: debouncedQuery || undefined,
-          status: statusFilter,
+          status: can('conversations.filter_' + statusFilter) ? statusFilter : 'all',
           assigned: assigneeFilter,
           per_page: 30,
           page,
@@ -167,19 +161,18 @@ export default function ChatsPage() {
     } finally {
       if (listAbortRef.current === controller) {
         listAbortRef.current = null
-        listChangesRef.current = null
         setLoadingList(false)
         setLoadingMore(false)
       }
     }
-  }, [debouncedQuery, statusFilter, assigneeFilter])
+  }, [debouncedQuery, statusFilter, assigneeFilter, can])
 
   const loadOptions = useCallback(async (signal) => {
     try {
       const [agentResult, replyResult, tagResult] = await Promise.all([
-        api.get('/api/app/agents', { signal }),
-        api.get('/api/app/quick-replies', { signal }),
-        api.get('/api/app/tags', { signal }),
+        can('presence.assignment_candidates') ? api.get('/api/app/agents', { signal }) : { data: [] },
+        can('quick_replies.view') ? api.get('/api/app/quick-replies', { signal }) : { data: [] },
+        can('tags.view') ? api.get('/api/app/tags', { signal }) : { data: [] },
       ])
       setAgents(extractList(agentResult.data))
       setQuickReplies(extractList(replyResult.data))
@@ -187,7 +180,7 @@ export default function ChatsPage() {
     } catch (requestError) {
       if (requestError.code !== 'ERR_CANCELED') toast.error(errorMessage(requestError, 'Unable to load chat options.'))
     }
-  }, [toast])
+  }, [toast, can])
 
   const loadNotes = useCallback(async (id, signal) => {
     if (!id) return
@@ -203,8 +196,8 @@ export default function ChatsPage() {
   }, [toast])
 
   const loadMessages = useCallback(async (id, options = {}) => {
-    const { background = false, cursor = null, search = debouncedMessageSearch, markRead = false } = options
-    if (!id) return false
+    const { background = false, cursor = null, search = debouncedMessageSearch, markRead = false, reconcile = false } = options
+    if (!canRead || !id) return false
 
     if (threadAbortRef.current && background) return false
     threadAbortRef.current?.abort()
@@ -240,7 +233,13 @@ export default function ChatsPage() {
           return [...batch.filter((message) => !seen.has(String(message.id))), ...current]
         })
       } else if (messagesConversationRef.current === id && loadedMessageSearchRef.current === search) {
-        setMessages((current) => mergeMessageList(current, batch))
+        setMessages((current) => {
+          if (!reconcile) return mergeMessageList(current, batch)
+          const oldest = Number(history.at(-1)?.id)
+          return mergeMessageList(current.filter((message) =>
+            !Number.isInteger(Number(message.id)) || historyIds.has(String(message.id)) || (history.length >= 50 && Number(message.id) < oldest)
+          ), batch)
+        })
       } else {
         setMessages(batch)
       }
@@ -275,7 +274,7 @@ export default function ChatsPage() {
         setLoadingOlder(false)
       }
     }
-  }, [debouncedMessageSearch, toast])
+  }, [debouncedMessageSearch, toast, canRead])
 
   const applyMessages = useCallback((incoming, existingOnly = false) => {
     const rows = Array.isArray(incoming) ? incoming : [incoming]
@@ -304,7 +303,6 @@ export default function ChatsPage() {
   const applyConversations = useCallback((incoming) => {
     const rows = Array.isArray(incoming) ? incoming : [incoming]
     if (!rows.length) return
-    rows.forEach((row) => { if (row?.id) listChangesRef.current?.add(String(row.id)) })
 
     setConversations((current) => {
       let next = current
@@ -341,61 +339,17 @@ export default function ChatsPage() {
     setMessages((current) => removeMessages(current, ids))
   }, [])
 
-  const removeConversationItems = useCallback((ids) => {
-    const removed = Array.isArray(ids) ? ids : [ids]
-    removed.forEach((id) => listChangesRef.current?.add(String(id)))
-    setConversations((current) => removeConversations(current, removed))
-    if (removed.some((id) => String(id) === String(selectedIdRef.current))) {
-      setSelectedId('')
-      setMessages([])
-      setLinkedConversation(null)
-      setParams((current) => {
-        const next = new URLSearchParams(current)
-        next.delete('conversation')
-        next.delete('c')
-        return next
-      }, { replace: true })
-    }
-  }, [setParams])
 
   const markIncomingRead = useCallback((conversation) => {
     if (!conversation?.unread_count || String(conversation.id) !== selectedIdRef.current
-      || document.visibilityState !== 'visible' || !threadRef.current?.getClientRects().length || readOnly || readRequestRef.current) return
+      || document.visibilityState !== 'visible' || !threadRef.current?.getClientRects().length || !canMarkRead || readRequestRef.current) return
     readRequestRef.current = window.setTimeout(() => {
       readRequestRef.current = null
       if (String(conversation.id) !== selectedIdRef.current || document.visibilityState !== 'visible' || !threadRef.current?.getClientRects().length) return
       api.post(`/api/app/conversations/${conversation.id}/read`).catch(() => {})
     }, 150)
-  }, [readOnly])
+  }, [canMarkRead])
 
-  const recoverRealtime = useCallback(async () => {
-    if (recoveryInFlightRef.current) return
-    recoveryInFlightRef.current = true
-
-    try {
-      const conversationId = selectedIdRef.current || undefined
-      const ids = conversationId && messagesConversationRef.current === conversationId
-        ? messagesRef.current.map((message) => Number(message.id)).filter(Number.isFinite)
-        : []
-      const { data } = await api.get('/api/app/realtime/sync', {
-        params: {
-          conversation_id: conversationId,
-          after_id: ids.length ? Math.max(...ids) : undefined,
-          since: realtimeSinceRef.current,
-        },
-      })
-      if (data.messages?.length) applyMessages(data.messages)
-      if (data.conversations?.length) {
-        applyConversations(data.conversations)
-        markIncomingRead(data.conversations.find((row) => String(row.id) === selectedIdRef.current))
-      }
-      if (data.server_time) realtimeSinceRef.current = data.server_time
-    } catch {
-      void 0
-    } finally {
-      recoveryInFlightRef.current = false
-    }
-  }, [applyConversations, applyMessages, markIncomingRead])
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 300)
@@ -440,8 +394,8 @@ export default function ChatsPage() {
   }, [loadConversations])
 
   useEffect(() => {
-    setStatusFilter(INBOX_FILTERS.includes(urlFilter) ? urlFilter : 'all')
-  }, [urlFilter])
+    setStatusFilter(INBOX_FILTERS.includes(urlFilter) && can('conversations.filter_' + urlFilter) ? urlFilter : 'all')
+  }, [urlFilter, can])
 
   useEffect(() => {
     setSelectedId((current) => {
@@ -486,7 +440,7 @@ export default function ChatsPage() {
   useEffect(() => {
     if (!selectedId) return
     const timer = window.setTimeout(() => {
-      loadMessages(selectedId, { markRead: !readOnly && !debouncedMessageSearch && Boolean(threadRef.current?.getClientRects().length) })
+      loadMessages(selectedId, { markRead: canMarkRead && !debouncedMessageSearch && Boolean(threadRef.current?.getClientRects().length) })
     }, 0)
     return () => {
       window.clearTimeout(timer)
@@ -494,57 +448,58 @@ export default function ChatsPage() {
       threadAbortRef.current = null
       loadingMessageUpdatesRef.current = null
     }
-  }, [debouncedMessageSearch, loadMessages, readOnly, selectedId])
+  }, [debouncedMessageSearch, loadMessages, canMarkRead, selectedId, canRead])
 
   useEffect(() => {
-    if (sidePanel !== 'notes' || !selectedId) return
+    if (sidePanel !== 'notes' || !selectedId || !can('conversation_notes.view')) return
     const controller = new AbortController()
     loadNotes(selectedId, controller.signal)
     return () => controller.abort()
-  }, [sidePanel, selectedId, loadNotes])
-
-  useEffect(() => subscribeToRealtime({
-    onConnectionChange: (ready) => {
-      realtimeConnectedRef.current = ready
-      setRealtimeConnected(ready)
-    },
-    onMessageCreated: (payload) => {
-      if (payload?.message) applyMessages(payload.message)
-      if (payload?.conversation) {
-        applyConversations(payload.conversation)
-        if (payload.message?.sender_type === 'customer') markIncomingRead(payload.conversation)
-      }
-    },
-    onMessageUpdated: (payload) => {
-      if (payload?.message) applyMessages(payload.message, true)
-    },
-    onMessageStatusChanged: (payload) => {
-      if (payload?.message) applyMessages(payload.message, true)
-    },
-    onMessageDeleted: (payload) => {
-      if (payload?.message_id || payload?.messageId) removeMessageItems(payload.message_id || payload.messageId)
-      if (payload?.conversation) applyConversations(payload.conversation)
-    },
-    onConversationUpdated: (payload) => {
-      if (payload?.conversation) applyConversations(payload.conversation)
-    },
-    onConversationDeleted: (payload) => {
-      if (payload?.conversation_id || payload?.conversationId) removeConversationItems(payload.conversation_id || payload.conversationId)
-    },
-    onReconnected: recoverRealtime,
-  }), [applyConversations, applyMessages, recoverRealtime, removeConversationItems, removeMessageItems, markIncomingRead])
+  }, [sidePanel, selectedId, loadNotes, can])
 
   useEffect(() => {
-    const recoverVisible = () => {
-      if (document.visibilityState === 'visible') void recoverRealtime()
+    const controller = new AbortController()
+    let timer
+    const refresh = () => {
+      if (timer) return
+      timer = window.setTimeout(async () => {
+        timer = null
+        await loadConversations(1, false, true)
+        const id = selectedIdRef.current
+        if (!id || controller.signal.aborted) return
+        try {
+          const { data } = await api.get(`/api/app/conversations/${id}`, { signal: controller.signal })
+          if (controller.signal.aborted || selectedIdRef.current !== id) return
+          setLinkedConversation(data)
+          if (canRead) await loadMessages(id, { background: true, reconcile: true })
+          markIncomingRead(data)
+        } catch (error) {
+          if (selectedIdRef.current === id && [403, 404].includes(error.response?.status)) {
+            setLinkedConversation(null)
+            setConversations((items) => items.filter((item) => String(item.id) !== String(id)))
+            setMessages([])
+          }
+        }
+      }, 250)
     }
-    const timer = realtimeConnected ? null : window.setInterval(recoverVisible, 5_000)
-    document.addEventListener('visibilitychange', recoverVisible)
+    const unsubscribe = subscribeToRealtime({
+      onConnectionChange: (ready) => {
+        realtimeConnectedRef.current = ready
+      },
+      onMessageCreated: refresh, onMessageUpdated: refresh, onMessageStatusChanged: refresh,
+      onMessageDeleted: refresh, onConversationUpdated: refresh, onConversationDeleted: refresh,
+      onReconnected: refresh,
+    })
+    const poll = window.setInterval(() => {
+      if (!realtimeConnectedRef.current && document.visibilityState === 'visible') refresh()
+    }, 5000)
     return () => {
-      window.clearInterval(timer)
-      document.removeEventListener('visibilitychange', recoverVisible)
+      controller.abort()
+      unsubscribe()
+      window.clearInterval(poll)
+      window.clearTimeout(timer)
     }
-  }, [realtimeConnected, recoverRealtime])
+  }, [loadConversations, loadMessages, canRead, markIncomingRead])
 
   useEffect(() => {
     if (mobileView === 'thread') markIncomingRead(selected)
@@ -964,7 +919,7 @@ export default function ChatsPage() {
   ], (key, replyToId) => templateMessagePayload(template, values, key, replyToId))
 
   const reactToMessage = async (message, emoji) => {
-    if (reactingId != null || readOnly) return
+    if (reactingId != null || !can('messages.react')) return
     const businessReaction = message.reactions?.find((reaction) => reaction.actor_type === 'agent')
     setReactingId(message.id)
     try {
@@ -1002,6 +957,7 @@ export default function ChatsPage() {
   return (
     <div className={`chats-shell${mobileView === 'thread' ? ' is-thread' : ''}`}>
       <ConversationList
+        can={can}
         conversations={conversations}
         agents={agents}
         selectedId={selectedId}
@@ -1030,7 +986,7 @@ export default function ChatsPage() {
                 </div>
               </div>
               {hasWhatsApp(selected) && <span className="thread-channel" title="Linked to a WhatsApp number"><Icon name="whatsapp" size={15} /> WhatsApp</span>}
-              <div className="thread-search search-wrap">
+              {canRead && <div className="thread-search search-wrap">
                 <Icon name="search" size={14} />
                 <input
                   className="input search-input"
@@ -1040,33 +996,33 @@ export default function ChatsPage() {
                   value={messageSearch}
                   onChange={(event) => setMessageSearch(event.target.value)}
                 />
-              </div>
+              </div>}
               <div className="thread-more" ref={threadMoreRef}>
                 <button type="button" className="icon-button" onClick={() => setMoreOpen((value) => !value)} aria-label="More actions" aria-expanded={moreOpen}><Icon name="more" size={20} /></button>
                 {moreOpen && (
                   <div className="thread-more-menu">
-                    <button type="button" onClick={() => { setThreadSearchOpen((value) => !value); setMoreOpen(false) }}><Icon name="search" size={14} /> Search in chat</button>
-                    <button type="button" onClick={() => { setSidePanel('info'); setMoreOpen(false) }}><Icon name="contacts" size={14} /> Contact info</button>
-                    <button type="button" onClick={() => { setSidePanel('notes'); setMoreOpen(false) }}><Icon name="note" size={14} /> Notes{Number(selected.notes_count || 0) > 0 ? ` (${selected.notes_count})` : ''}</button>
-                    <label className="thread-menu-field">
+                    {can('messages.read') && <button type="button" onClick={() => { setThreadSearchOpen((value) => !value); setMoreOpen(false) }}><Icon name="search" size={14} /> Search in chat</button>}
+                    {can('contacts.details') && <button type="button" onClick={() => { setSidePanel('info'); setMoreOpen(false) }}><Icon name="contacts" size={14} /> Contact info</button>}
+                    {can('conversation_notes.view') && <button type="button" onClick={() => { setSidePanel('notes'); setMoreOpen(false) }}><Icon name="note" size={14} /> Notes{Number(selected.notes_count || 0) > 0 ? ` (${selected.notes_count})` : ''}</button>}
+                    {can('conversations.status') && (selected.status !== 'closed' || can('conversations.reopen')) && <label className="thread-menu-field">
                       <span>Status</span>
                       <select
                         className="select select-sm"
                         value={selected.status || 'open'}
-                        disabled={readOnly || busyAction === 'status'}
+                        disabled={busyAction === 'status'}
                         onChange={(event) => { changeStatus(event.target.value); setMoreOpen(false) }}
                       >
                         <option value="open">Open</option>
                         <option value="pending">Pending</option>
-                        <option value="closed">Closed</option>
+                        {can('conversations.close') && <option value="closed">Closed</option>}
                       </select>
-                    </label>
-                    <label className="thread-menu-field">
+                    </label>}
+                    {can('conversations.assign') && <label className="thread-menu-field">
                       <span>Assignee</span>
                       <select
                         className="select select-sm"
                         value={selected.assignedAgent?.id ? String(selected.assignedAgent.id) : 'unassigned'}
-                        disabled={readOnly || busyAction === 'assignee'}
+                        disabled={busyAction === 'assignee'}
                         onChange={(event) => { changeAssignee(event.target.value); setMoreOpen(false) }}
                       >
                         <option value="unassigned">Unassigned</option>
@@ -1076,7 +1032,7 @@ export default function ChatsPage() {
                           <option value={selected.assignedAgent.id}>{selected.assignedAgent.name}</option>
                         )}
                       </select>
-                    </label>
+                    </label>}
                     <button type="button" onClick={copyPhone}><Icon name="copy" size={14} /> Copy phone number</button>
                     <button type="button" onClick={refreshConversation}><Icon name="sync" size={14} /> Refresh conversation</button>
                     {canDelete && <button type="button" onClick={() => { setMoreOpen(false); setDeleteConversationOpen(true) }}><Icon name="trash" size={14} /> Delete chat from CRM</button>}
@@ -1085,15 +1041,16 @@ export default function ChatsPage() {
               </div>
             </header>
 
-            <AiThreadBanner conversation={selected} readOnly={readOnly} onChange={(data) => {
+            {can('ai.view') && <AiThreadBanner conversation={selected}
+              readOnly={!can('conversations.ai') || !can('conversations.assign') || (!selected.ai_autoreply_disabled && !can('presence.assignable'))} onChange={(data) => {
               setConversations((items) => items.map((item) => item.id === data.id ? { ...item, ...data } : item))
-            }} />
+            }} />}
 
             {sidePanel && (
               <aside className="thread-side-panel" aria-label={sidePanel === 'notes' ? 'Conversation notes' : 'Contact information'}>
                 <div className="side-panel-tabs">
-                  <button type="button" className={sidePanel === 'info' ? 'is-active' : ''} onClick={() => setSidePanel('info')}>Contact</button>
-                  <button type="button" className={sidePanel === 'notes' ? 'is-active' : ''} onClick={() => setSidePanel('notes')}>Notes</button>
+                  {can('contacts.details') && <button type="button" className={sidePanel === 'info' ? 'is-active' : ''} onClick={() => setSidePanel('info')}>Contact</button>}
+                  {can('conversation_notes.view') && <button type="button" className={sidePanel === 'notes' ? 'is-active' : ''} onClick={() => setSidePanel('notes')}>Notes</button>}
                   <button type="button" className="icon-button" onClick={() => setSidePanel('')} aria-label="Close panel"><Icon name="close" size={16} /></button>
                 </div>
                 {sidePanel === 'info' && (
@@ -1110,14 +1067,14 @@ export default function ChatsPage() {
                     </dl>
                     <h3>Labels</h3>
                     <div className="tag-picker">
-                      {tags.map((tag) => (
+                      {(can('contacts.tags') ? tags : contactTags).map((tag) => (
                         <button
                           type="button"
                           key={tag.id}
                           className={`tag-chip${selectedTagIds.includes(Number(tag.id)) ? ' is-selected' : ''}`}
                           style={{ backgroundColor: tag.color || '#2563eb' }}
-                          onClick={() => toggleTag(tag.id)}
-                          disabled={readOnly}
+                          onClick={can('contacts.tags') ? () => toggleTag(tag.id) : undefined}
+                          disabled={!can('contacts.tags')}
                           aria-pressed={selectedTagIds.includes(Number(tag.id))}
                         >
                           {tag.name}
@@ -1136,11 +1093,11 @@ export default function ChatsPage() {
                         <div className="note-body">{note.body ?? note.note ?? note.content ?? ''}</div>
                         <div className="note-meta">
                           <span>{note.user?.name || note.author?.name || 'Team'} · {formatDate(note.created_at)}</span>
-                          {!readOnly && (user?.id === note.user_id || ['admin', 'owner'].includes(user?.role)) && <button type="button" className="icon-button is-danger" onClick={() => setDeleteNoteId(note.id)} aria-label="Delete note"><Icon name="trash" size={14} /></button>}
+                          {can('conversation_notes.delete') && (user?.id === note.user_id || can('conversation_notes.delete_others')) && <button type="button" className="icon-button is-danger" onClick={() => setDeleteNoteId(note.id)} aria-label="Delete note"><Icon name="trash" size={14} /></button>}
                         </div>
                       </article>
                     ))}
-                    {!readOnly && <form className="notes-compose" onSubmit={addNote}>
+                    {can('conversation_notes.create') && <form className="notes-compose" onSubmit={addNote}>
                       <textarea className="textarea" rows="2" aria-label="New note" placeholder="Write a note..." value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} />
                       <button type="submit" className="button button-sm button-primary" disabled={savingNote || !noteDraft.trim()}>{savingNote ? 'Adding...' : 'Add note'}</button>
                     </form>}
@@ -1149,7 +1106,7 @@ export default function ChatsPage() {
               </aside>
             )}
 
-            <div className="thread-scroll" ref={threadRef}>
+            {canRead && <div className="thread-scroll" ref={threadRef}>
               {messageCursor.hasMore && (
                 <button type="button" className="button button-sm button-secondary message-load-older" onClick={loadOlderMessages} disabled={loadingOlder}>
                   {loadingOlder ? 'Loading older messages...' : 'Load older messages'}
@@ -1178,11 +1135,13 @@ export default function ChatsPage() {
                       message={message}
                       incoming={incoming}
                       mediaItems={mediaItems}
-                      onOpenMedia={openMediaViewer}
-                      onReply={readOnly ? undefined : setReplyTo}
-                      onRetry={readOnly ? undefined : retryMessage}
-                      onReact={!readOnly && reactingId == null && message.message_id ? reactToMessage : undefined}
-                      onDelete={canDelete ? setMessageToDelete : undefined}
+                      onOpenMedia={can('messages.download') ? openMediaViewer : undefined}
+                      showMedia={can('messages.download')}
+                      onReply={can('messages.reply') ? setReplyTo : undefined}
+                      onRetry={!readOnly && (message.content_type === 'text'
+                        || can('messages.send_' + message.content_type)) ? retryMessage : undefined}
+                      onReact={can('messages.react') && reactingId == null && message.message_id ? reactToMessage : undefined}
+                      onDelete={can('messages.delete') ? setMessageToDelete : undefined}
                       reactions={message.reactions}
                       retrying={retryingId === String(message.id)}
                       grouped={grouped}
@@ -1190,10 +1149,11 @@ export default function ChatsPage() {
                   </Fragment>
                 )
               })}
-            </div>
+            </div>}
 
             {replyTo && <div className="reply-context"><Icon name="reply" size={14} /><span>{messageText(replyTo) || 'Attachment'}</span><button type="button" className="icon-button" onClick={() => setReplyTo(null)} aria-label="Cancel reply"><Icon name="close" size={14} /></button></div>}
-            <ChatComposer
+            {!readOnly && <ChatComposer
+              can={can}
               draft={draft}
               onDraftChange={setDraft}
               onSend={send}
@@ -1204,11 +1164,10 @@ export default function ChatsPage() {
               uploadProgress={uploadProgress}
               quickReplies={quickReplies}
               conversationId={selectedId}
-              readOnly={readOnly}
               windowOpen={windowOpen}
-              onSendInteractive={sendInteractive}
-              onSendTemplate={sendTemplate}
-            />
+              onSendInteractive={can('messages.send_interactive') ? sendInteractive : undefined}
+              onSendTemplate={can('messages.send_templates') ? sendTemplate : undefined}
+            />}
           </>
         ) : (
           <div className="thread-placeholder"><Icon name="chat" size={36} /><p>Select a conversation to start chatting.</p></div>

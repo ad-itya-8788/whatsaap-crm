@@ -55,6 +55,24 @@ class MessageController extends Controller
 
     public function store(SendMessageRequest $request, Conversation $conversation): JsonResponse
     {
+        $access = app(\App\Auth\Access::class);
+        $permission = match ($request->validated('content_type')) {
+            'image', 'video', 'audio', 'document' => 'messages.send_'.$request->validated('content_type'),
+            'template' => 'messages.send_templates',
+            'interactive' => 'messages.send_interactive',
+            default => 'messages.send',
+        };
+        abort_unless($access->can($request->user(), $permission), 403);
+        if ($request->filled('reply_to_message_id')) {
+            abort_unless($access->can($request->user(), 'messages.reply')
+                && $conversation->messages()->whereKey($request->integer('reply_to_message_id'))->exists(), 403);
+        }
+        if ($request->validated('content_type') === 'template' && $request->hasFile('header_file')) {
+            $type = \App\Models\MessageTemplate::query()->where('name', $request->validated('template_name'))
+                ->value('header_type');
+            abort_unless($access->can($request->user(), 'messages.send_'.strtolower((string) $type)), 403);
+        }
+
         try {
             $message = $this->messaging->send($conversation, $request->validated(), $request->user()->id);
         } catch (MessagingException $e) {

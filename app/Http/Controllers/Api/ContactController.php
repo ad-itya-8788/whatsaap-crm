@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Auth\Access;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ContactRequest;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\CustomField;
 use App\Models\Tag;
+use App\Models\User;
 use App\Support\Phone;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,13 +31,21 @@ class ContactController extends Controller
             'field_value' => ['sometimes', 'required_with:field_id', 'nullable', 'string', 'max:1000'],
         ]);
 
+        $access = app(Access::class);
+        if (! empty($filters['tag_ids'])) {
+            abort_unless($access->can($request->user(), 'tags.view'), 403);
+        }
+        if (! empty($filters['field_id'])) {
+            abort_unless($access->can($request->user(), 'custom_fields.view'), 403);
+        }
+
         $query = Contact::query()
             ->with(['tags', 'customFieldValues.customField'])
             ->withCount('tags')
             ->addSelect([
-                'conversation_id' => Conversation::query()
+                'conversation_id' => app(Access::class)->conversationQuery(Conversation::query(), $request->user())
                     ->select('id')->whereColumn('contact_id', 'contacts.id')->limit(1),
-                'last_interaction_at' => Conversation::query()
+                'last_interaction_at' => app(Access::class)->conversationQuery(Conversation::query(), $request->user())
                     ->select('last_message_at')->whereColumn('contact_id', 'contacts.id')
                     ->orderByDesc('last_message_at')->limit(1),
             ]);
@@ -63,17 +73,17 @@ class ContactController extends Controller
         }
 
         $paginator = $query->orderByDesc('updated_at')->orderByDesc('id')->paginate($perPage);
-        $paginator->additional(['summary' => [
+        $summary = [
             'total' => Contact::count(),
-            'with_conversation' => Contact::has('conversations')->count(),
+            'with_conversation' => Contact::whereHas('conversations', fn ($query) => app(Access::class)->conversationQuery($query, $request->user()))->count(),
             'recently_added' => Contact::where('created_at', '>=', now()->subDays(7))->count(),
-            'tags' => Tag::count(),
-        ]]);
+            'tags' => $access->can($request->user(), 'tags.view') ? Tag::count() : 0,
+        ];
         $paginator->setCollection(
             $paginator->getCollection()->map(fn (Contact $contact) => $this->contactPayload($contact))
         );
 
-        return response()->json($paginator);
+        return response()->json($paginator->toArray() + ['summary' => $summary]);
     }
 
     public function store(ContactRequest $request): JsonResponse
@@ -81,6 +91,12 @@ class ContactController extends Controller
         $data = $request->validated();
         $customValues = $request->customFieldValues();
         $tagIds = $data['tags'] ?? null;
+        if ($tagIds !== null) {
+            abort_unless(app(Access::class)->can($request->user(), 'contacts.tags'), 403);
+        }
+        if (array_key_exists('custom_fields', $data)) {
+            abort_unless(app(Access::class)->can($request->user(), 'contacts.custom_values'), 403);
+        }
         unset($data['tags'], $data['custom_fields']);
 
         $data['phone_normalized'] = Phone::normalize($data['phone']);
@@ -97,12 +113,15 @@ class ContactController extends Controller
             ], 422);
         }
 
-        $contact = Contact::create($data);
-        $this->syncCustomValues($contact, $customValues);
+        $contact = DB::transaction(function () use ($data, $customValues, $tagIds) {
+            $contact = Contact::create($data);
+            $this->syncCustomValues($contact, $customValues);
+            if ($tagIds !== null) {
+                $contact->tags()->sync($tagIds);
+            }
 
-        if ($tagIds !== null) {
-            $contact->tags()->sync($tagIds);
-        }
+            return $contact;
+        }, 3);
 
         return response()->json($this->contactPayload($contact), 201);
     }
@@ -138,6 +157,12 @@ class ContactController extends Controller
         $hasCustomFields = array_key_exists('custom_fields', $data);
         $customValues = $request->customFieldValues();
         $tagIds = array_key_exists('tags', $data) ? $data['tags'] : null;
+        if ($tagIds !== null) {
+            abort_unless(app(Access::class)->can($request->user(), 'contacts.tags'), 403);
+        }
+        if (array_key_exists('custom_fields', $data)) {
+            abort_unless(app(Access::class)->can($request->user(), 'contacts.custom_values'), 403);
+        }
         unset($data['tags'], $data['custom_fields']);
 
         if (array_key_exists('phone', $data)) {
@@ -153,22 +178,29 @@ class ContactController extends Controller
             }
         }
 
-        $contact->update($data);
-
-        if ($hasCustomFields) {
-            $this->syncCustomValues($contact, $customValues);
-        }
-
-        if ($tagIds !== null) {
-            $contact->tags()->sync($tagIds);
-        }
+        DB::transaction(function () use ($contact, $data, $hasCustomFields, $customValues, $tagIds) {
+            $contact->update($data);
+            if ($hasCustomFields) {
+                $this->syncCustomValues($contact, $customValues);
+            }
+            if ($tagIds !== null) {
+                $contact->tags()->sync($tagIds);
+            }
+        }, 3);
 
         return response()->json($this->contactPayload($contact));
     }
 
     public function destroy(Contact $contact): Response
     {
-        $contact->delete();
+        DB::transaction(function () use ($contact) {
+            $locked = Contact::query()->lockForUpdate()->findOrFail($contact->id);
+            $conversation = Conversation::where('contact_id', $locked->id)->lockForUpdate()->first();
+            if ($conversation) {
+                app(Access::class)->authorizeConversation(request()->user(), $conversation);
+            }
+            $locked->delete();
+        }, 3);
 
         return response()->noContent();
     }
@@ -187,34 +219,49 @@ class ContactController extends Controller
 
     public function export(): StreamedResponse
     {
-        $fields = CustomField::query()->where('is_active', true)->orderBy('id')->get(['id', 'name']);
+        $user = request()->user();
+        $access = app(Access::class);
+        $withTags = $access->can($user, 'tags.view');
+        $fields = $access->can($user, 'custom_fields.view')
+            ? CustomField::query()->where('is_active', true)->orderBy('id')->get(['id', 'name'])
+            : collect();
 
-        $headers = ['name', 'phone', 'email', 'company', 'tags'];
+        $headers = ['name', 'phone', 'email', 'company'];
+        if ($withTags) {
+            $headers[] = 'tags';
+        }
         foreach ($fields as $field) {
             $headers[] = 'field:'.$field->name;
         }
 
         $filename = 'contacts-'.now()->toDateString().'.csv';
 
-        return response()->streamDownload(function () use ($fields, $headers) {
+        return response()->streamDownload(function () use ($fields, $headers, $withTags) {
             $handle = fopen('php://output', 'w+');
             fputcsv($handle, $headers);
 
             Contact::query()
                 ->select(['id', 'name', 'phone', 'email', 'company'])
                 ->orderBy('id')
-                ->chunkById(250, function ($contacts) use ($handle, $fields) {
-                    $contacts->load(['tags', 'customFieldValues']);
+                ->chunkById(250, function ($contacts) use ($handle, $fields, $withTags) {
+                    if ($withTags) {
+                        $contacts->load('tags');
+                    }
+                    if ($fields->isNotEmpty()) {
+                        $contacts->load('customFieldValues');
+                    }
 
                     foreach ($contacts as $contact) {
-                        $values = $contact->customFieldValues->pluck('value', 'custom_field_id');
+                        $values = $fields->isEmpty() ? collect() : $contact->customFieldValues->pluck('value', 'custom_field_id');
                         $row = [
                             $contact->name,
                             $contact->phone,
                             $contact->email,
                             $contact->company,
-                            $contact->tags->pluck('name')->implode('; '),
                         ];
+                        if ($withTags) {
+                            $row[] = $contact->tags->pluck('name')->implode('; ');
+                        }
 
                         foreach ($fields as $field) {
                             $row[] = $values->get($field->id, '');
@@ -246,7 +293,6 @@ class ContactController extends Controller
 
         $headers = array_map(fn ($h) => mb_strtolower(trim((string) $h)), $headers);
         $columns = array_flip($headers);
-
         $activeFields = CustomField::query()->where('is_active', true)->get(['id', 'name'])
             ->keyBy(fn (CustomField $field) => mb_strtolower($field->name));
 
@@ -296,12 +342,13 @@ class ContactController extends Controller
                     $errors,
                     $rowNumber,
                     $dryRun,
-                    $request->user()->id,
+                    $request->user(),
                 );
-            } catch (\Throwable $e) {
+            } catch (\Throwable $error) {
+                report($error);
                 $result['skipped']++;
                 if (count($errors) < 20) {
-                    $errors[] = ['row' => $rowNumber, 'message' => 'Could not import this row: '.$e->getMessage()];
+                    $errors[] = ['row' => $rowNumber, 'message' => 'Could not import this row.'];
                 }
             }
         }
@@ -313,8 +360,18 @@ class ContactController extends Controller
 
     private function contactPayload(Contact $contact): array
     {
-        $contact->loadMissing(['tags', 'customFieldValues.customField']);
+        $access = app(Access::class);
+        $user = request()->user();
+        if ($access->can($user, 'tags.view')) {
+            $contact->loadMissing('tags');
+        } else {
+            $contact->makeHidden(['tags', 'tags_count']);
+        }
+        if (! $access->can($user, 'custom_fields.view')) {
+            return $contact->makeHidden('customFieldValues')->toArray();
+        }
 
+        $contact->loadMissing('customFieldValues.customField');
         $data = $contact->toArray();
         $customFields = [];
         foreach ($contact->customFieldValues as $value) {
@@ -350,7 +407,7 @@ class ContactController extends Controller
         array &$errors,
         int $rowNumber,
         bool $dryRun,
-        int $userId,
+        User $user,
     ): void {
         $phoneRaw = $get('phone');
         $normalized = Phone::normalize($phoneRaw);
@@ -387,23 +444,41 @@ class ContactController extends Controller
             }
         }
 
+        $access = app(Access::class);
+        if (($tagNames && ! $access->can($user, 'contacts.tags'))
+            || ($fieldValues && ! $access->can($user, 'contacts.custom_values'))) {
+            $this->importError($result, $errors, $rowNumber, 'You do not have permission to import tags or custom field values in this row.');
+
+            return;
+        }
+        $tagIds = [];
+        if ($tagNames && ! $access->can($user, 'tags.create')) {
+            $tagIds = Tag::query()->whereIn('name', $tagNames)->pluck('id')->all();
+            if (count($tagIds) !== count($tagNames)) {
+                $this->importError($result, $errors, $rowNumber, 'You do not have permission to create new tags.');
+
+                return;
+            }
+        }
+
         if ($dryRun) {
             $existing ? $result['updated']++ : $result['imported']++;
             return;
         }
 
-        DB::transaction(function () use ($attributes, $existing, $tagNames, $fieldValues, $userId) {
+        DB::transaction(function () use ($attributes, $existing, $tagNames, $tagIds, $fieldValues, $user) {
             if ($existing) {
                 $contact = $existing;
                 $contact->update($attributes);
             } else {
-                $contact = Contact::create($attributes + ['user_id' => $userId]);
+                $contact = Contact::create($attributes + ['user_id' => $user->id]);
             }
 
             if ($tagNames) {
-                $tagIds = [];
-                foreach ($tagNames as $name) {
-                    $tagIds[] = Tag::firstOrCreate(['name' => mb_substr($name, 0, 255)])->id;
+                if (! $tagIds) {
+                    foreach ($tagNames as $name) {
+                        $tagIds[] = Tag::firstOrCreate(['name' => mb_substr($name, 0, 255)])->id;
+                    }
                 }
                 $existing ? $contact->tags()->syncWithoutDetaching($tagIds) : $contact->tags()->sync($tagIds);
             }

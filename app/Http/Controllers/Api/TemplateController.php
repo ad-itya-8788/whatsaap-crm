@@ -7,7 +7,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\SendTemplateRequest;
 use App\Http\Requests\StoreTemplateRequest;
 use App\Http\Requests\UploadTemplateMediaRequest;
-use App\Models\Conversation;
 use App\Models\MessageTemplate;
 use App\Models\WhatsappConfig;
 use App\Services\MessagingService;
@@ -155,10 +154,12 @@ class TemplateController extends Controller
             return response()->json(['message' => 'Only an approved template can be sent to a contact.'], 422);
         }
 
-        $conversation = Conversation::firstOrCreate(
-            ['contact_id' => $request->integer('contact_id')],
-            ['user_id' => $request->user()->id, 'status' => 'open'],
-        );
+        if ($request->hasFile('header_file')) {
+            $type = strtolower((string) $message_template->header_type);
+            abort_unless(app(\App\Auth\Access::class)->can($request->user(), 'messages.send_'.$type), 403);
+        }
+
+        $conversation = app(\App\Auth\Access::class)->conversationForContact($request->user(), $request->integer('contact_id'));
 
         try {
             $message = $this->messaging->send($conversation, [

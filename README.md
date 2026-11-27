@@ -47,7 +47,7 @@ php artisan schedule:work
 
 ## Real-time messaging
 
-The inbox uses Laravel Reverb over WebSockets. Laravel broadcasts only after a message or conversation change is saved successfully; the browser listens on the authenticated private `account.default` channel. If Reverb is not configured, the inbox keeps its slower polling fallback.
+The inbox uses Laravel Reverb over WebSockets. After a message or conversation change is saved, the private `account.default` channel sends an invalidation signal. The browser retrieves updated data through authorized HTTP routes. Permission changes use the separate private `account.authorization` channel. Both features have polling fallbacks. See [Roles and permissions](RBAC.md) for setup, migration, and endpoint coverage.
 
 For local development, copy the Reverb variables from [.env.example](.env.example) into `.env`, use the same `REVERB_APP_ID`, `REVERB_APP_KEY`, and `REVERB_APP_SECRET` values, and set `REVERB_ALLOWED_ORIGINS` to the origins you open in the browser. If you use `http://localhost:8000`, `http://127.0.0.1:8000`, `http://localhost:5173`, or `http://127.0.0.1:5173`, list all four exactly as shown above. Then start one extra terminal:
 
@@ -80,7 +80,7 @@ Quick verification:
 4. Stop and restart `php artisan reverb:start`; the next reconnect should fill any messages sent while the browser was offline.
 5. Keep older-message pagination, search, templates, reactions, and WhatsApp config working as before.
 
-This workspace is single-tenant: auth checks that the user is active and uses the one `default` account channel. If tenant columns are added later, `routes/channels.php` and the event channel names need to be updated together. Recovery restores messages and conversation updates; messages or conversations deleted while disconnected are not replayed because their rows no longer exist.
+This CRM has one workspace. Channel authorization requires an active account, and the inbox channel also requires Inbox access. The current inbox and message pages are fetched again after reconnection. Older message pages can be refreshed by reopening the conversation.
 
 For Apache deployments, point the virtual host's document root to this repository's `public/` directory. Set `APP_DEBUG=false` and use HTTPS with `SESSION_SECURE_COOKIE=true`. Use [the production environment example](.env.production.example) when configuring the deployment.
 

@@ -4,7 +4,7 @@ import api from '../api/client.js'
 import Icon from '../components/common/Icon.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
-import { errorMessage, extractList, extractPaginator, isAdmin } from '../lib/utils.js'
+import { errorMessage, extractList, extractPaginator } from '../lib/utils.js'
 
 const ACTIVE = ['sending', 'scheduled']
 
@@ -20,7 +20,7 @@ function RateCell({ value, total, read = false }) {
 
 export default function BroadcastsPage() {
   const toast = useToast()
-  const { user } = useAuth()
+  const { can } = useAuth()
   const [items, setItems] = useState([])
   const [pagination, setPagination] = useState({ currentPage: 1, lastPage: 1, total: 0 })
   const [loading, setLoading] = useState(true)
@@ -89,7 +89,7 @@ export default function BroadcastsPage() {
           <h1>Broadcasts</h1>
           <p>Send approved templates to a targeted audience.</p>
         </div>
-        {user?.role !== 'viewer' && <Link className="button button-primary" href="/broadcasts/new"><Icon name="plus" size={15} /> New broadcast</Link>}
+        {can('broadcasts.create') && <Link className="button button-primary" href="/broadcasts/new"><Icon name="plus" size={15} /> New broadcast</Link>}
       </header>
 
       {error ? <div className="alert alert-error">{error}</div> : null}
@@ -104,22 +104,22 @@ export default function BroadcastsPage() {
                 <tr>
                   <th>Name</th><th className="bc-col-medium">Template</th><th className="bc-col-small">Recipients</th>
                   <th className="bc-col-large">Delivery</th><th className="bc-col-large">Read</th>
-                  <th>Status</th><th className="bc-col-small">Date</th>{isAdmin(user) && <th />}
+                  <th>Status</th><th className="bc-col-small">Date</th>{can('broadcasts.delete') && <th />}
                 </tr>
               </thead>
               <tbody>
                 {items.map((item) => (
                   <tr key={item.id} className="bc-campaign-row" onClick={(event) => {
-                    if (!event.target.closest('a, button')) router.visit(`/broadcasts/${item.id}`)
+                    if (can('broadcasts.recipients') && !event.target.closest('a, button')) router.visit(`/broadcasts/${item.id}`)
                   }}>
-                    <td><Link href={`/broadcasts/${item.id}`}><strong>{item.name}</strong></Link></td>
+                    <td>{can('broadcasts.recipients') ? <Link href={`/broadcasts/${item.id}`}><strong>{item.name}</strong></Link> : <strong>{item.name}</strong>}</td>
                     <td className="bc-col-medium">{item.template?.name || item.template_name || '—'}</td>
                     <td className="bc-col-small">{item.total}</td>
                     <td className="bc-col-large"><RateCell value={item.delivered} total={item.total} /></td>
                     <td className="bc-col-large"><RateCell value={item.read} total={item.total} read /></td>
                     <td><span className={`badge badge-${item.status === 'completed' ? 'approved' : item.status === 'failed' ? 'rejected' : 'pending'}`}>{item.status}</span></td>
                     <td className="bc-col-small">{item.created_at ? new Date(item.created_at).toLocaleDateString() : '—'}</td>
-                    {isAdmin(user) && <td><button type="button" className="icon-button is-danger" disabled={item.status === 'sending'} onClick={() => remove(item)} aria-label={`Delete ${item.name}`}><Icon name="trash" size={15} /></button></td>}
+                    {can('broadcasts.delete') && <td><button type="button" className="icon-button is-danger" disabled={item.status === 'sending'} onClick={() => remove(item)} aria-label={`Delete ${item.name}`}><Icon name="trash" size={15} /></button></td>}
                   </tr>
                 ))}
               </tbody>
@@ -129,7 +129,7 @@ export default function BroadcastsPage() {
           <div className="dash-empty">
             <Icon name="radio" size={22} />
             <span>No broadcasts yet.</span>
-            {user?.role !== 'viewer' && <Link className="button button-primary" href="/broadcasts/new">Create your first broadcast</Link>}
+            {can('broadcasts.create') && <Link className="button button-primary" href="/broadcasts/new">Create your first broadcast</Link>}
           </div>
         )}
         {pagination.lastPage > 1 ? (

@@ -94,13 +94,13 @@ function MessageStatus({ status }) {
   )
 }
 
-export default function MessageBubble({ message, incoming, mediaItems = [], onOpenMedia, onReply, onRetry, onReact, onDelete, reactions = [], retrying = false, grouped = false }) {
+export default function MessageBubble({ message, incoming, mediaItems = [], showMedia = true, onOpenMedia, onReply, onRetry, onReact, onDelete, reactions = [], retrying = false, grouped = false }) {
   const toast = useToast()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
   const text = messageText(message)
   const mediaType = messageMediaType(message)
-  const item = mediaItem(message)
+  const item = showMedia ? mediaItem(message) : null
   const mediaIndex = item ? mediaItems.findIndex((entry) => entry.id === item.id) : -1
   const openMedia = () => { if (mediaIndex >= 0) onOpenMedia(mediaIndex) }
   const location = message?.content_type === 'location' ? locationFromMessage(message) : null

@@ -66,13 +66,21 @@ function resolveTab(value) {
   return SECTIONS.some((section) => section.id === value) ? value : 'overview'
 }
 
-function SettingsRail({ active }) {
+const sectionPermissions = {
+  overview: ['account.profile', 'account.sessions', 'whatsapp.view'],
+  profile: ['account.profile'], security: ['account.password', 'account.sessions', 'account.revoke_sessions'],
+  appearance: ['account.profile'], whatsapp: ['whatsapp.view'], templates: ['templates.view'],
+  'quick-replies': ['quick_replies.view'], inbox: ['inbox_settings.view'], fields: ['custom_fields.view', 'tags.view'],
+  members: ['users.view'], api: ['api_keys.view'],
+}
+
+function SettingsRail({ active, canAny }) {
   return (
     <nav className="settings-rail" aria-label="Settings sections">
       {['Account', 'Workspace'].map((group) => (
         <div className="settings-rail-group" key={group}>
           <span className="settings-rail-label">{group}</span>
-          {SECTIONS.filter((section) => section.group === group).map((section) => (
+          {SECTIONS.filter((section) => section.group === group && canAny(sectionPermissions[section.id])).map((section) => (
             <Link
               key={section.id}
               className={`settings-rail-item${active === section.id ? ' is-active' : ''}`}
@@ -88,17 +96,18 @@ function SettingsRail({ active }) {
 }
 
 function OverviewPanel({ user }) {
+  const { can } = useAuth()
   const [counts, setCounts] = useState(null)
   const [connectionStatus, setConnectionStatus] = useState('checking')
 
   useEffect(() => {
     let cancelled = false
-    const get = (url) => api.get(url).then((response) => response.data).catch(() => [])
+    const get = (url, permission) => can(permission) ? api.get(url).then((response) => response.data).catch(() => []) : []
     Promise.all([
-      get('/api/app/users'),
-      get('/api/app/tags'),
-      get('/api/app/custom-fields'),
-      get('/api/app/whatsapp/templates'),
+      get('/api/app/users', 'users.view'),
+      get('/api/app/tags', 'tags.view'),
+      get('/api/app/custom-fields', 'custom_fields.view'),
+      get('/api/app/whatsapp/templates', 'templates.view'),
     ]).then(([users, tags, fields, templates]) => {
       if (!cancelled) {
         setCounts({
@@ -129,11 +138,11 @@ function OverviewPanel({ user }) {
           updateConnectionStatus()
         })
     }
-    loadConnectionCheck('/api/app/whatsapp/config', (data) => { config = data })
-    loadConnectionCheck('/api/app/whatsapp/health', (data) => { health = data })
+    if (can('whatsapp.view')) loadConnectionCheck('/api/app/whatsapp/config', (data) => { config = data })
+    if (can('whatsapp.health')) loadConnectionCheck('/api/app/whatsapp/health', (data) => { health = data })
 
     return () => { cancelled = true }
-  }, [])
+  }, [can])
 
   const tiles = [
     { label: 'Team members', value: counts?.members, to: '/settings?tab=members' },
@@ -241,14 +250,16 @@ function ProfilePanel() {
 }
 
 function SecurityPanel() {
+  const { can } = useAuth()
   const toast = useToast()
   const [values, setValues] = useState({ current_password: '', password: '', password_confirmation: '' })
   const [sessions, setSessions] = useState([])
   const [saving, setSaving] = useState(false)
 
   const loadSessions = useCallback(() => {
+    if (!can('account.sessions')) return
     api.get('/api/app/sessions').then(({ data }) => setSessions(data?.sessions || [])).catch(() => {})
-  }, [])
+  }, [can])
 
   useEffect(() => { loadSessions() }, [loadSessions])
 
@@ -281,7 +292,7 @@ function SecurityPanel() {
     <div className="settings-panel-stack">
       <section className="card settings-panel">
         <header className="panel-header"><h2>Change password</h2></header>
-        <form className="form-grid" onSubmit={changePassword}>
+        {can('account.password') && <form className="form-grid" onSubmit={changePassword}>
           <div className="field field-full">
             <label className="field-label" htmlFor="current-password">Current password</label>
             <input id="current-password" className="input" type="password" autoComplete="current-password" required value={values.current_password} onChange={(event) => setValues({ ...values, current_password: event.target.value })} />
@@ -297,12 +308,12 @@ function SecurityPanel() {
           <div className="field field-full settings-actions">
             <button className="button button-primary" disabled={saving}>{saving ? 'Saving...' : 'Change password'}</button>
           </div>
-        </form>
+        </form>}
       </section>
       <section className="card settings-panel">
         <header className="panel-header">
           <h2>Active sessions</h2>
-          <button type="button" className="button button-sm button-secondary" onClick={signOutEverywhere}>Sign out everywhere else</button>
+          {can('account.revoke_sessions') && <button type="button" className="button button-sm button-secondary" onClick={signOutEverywhere}>Sign out everywhere else</button>}
         </header>
         {sessions.length ? (
           <ul className="settings-session-list">
@@ -320,9 +331,9 @@ function SecurityPanel() {
 }
 
 function InboxPanel() {
-  const { user } = useAuth()
+  const { user, can, canAny } = useAuth()
   const toast = useToast()
-  const canManage = isAdmin(user)
+  const canManage = can('inbox_settings.update')
   const [target, setTarget] = useState('5')
   const [saving, setSaving] = useState(false)
 
@@ -347,26 +358,27 @@ function InboxPanel() {
   return (
     <section className="card settings-panel">
       <header className="panel-header"><h2>Inbox</h2></header>
-      <form className="form-grid" onSubmit={save}>
+      {canManage ? <form className="form-grid" onSubmit={save}>
         <div className="field field-full">
           <label className="field-label" htmlFor="reply-target">First reply target (minutes)</label>
-          <input id="reply-target" className="input" type="number" min="1" max="1440" required disabled={!canManage} value={target} onChange={(event) => setTarget(event.target.value)} />
+          <input id="reply-target" className="input" type="number" min="1" max="1440" required value={target} onChange={(event) => setTarget(event.target.value)} />
           <p className="field-hint">Dashboard attention alerts use this target. Between 1 and 1440 minutes.</p>
         </div>
         <div className="field field-full settings-actions">
-          <button className="button button-primary" disabled={!canManage || saving}>{saving ? 'Saving...' : 'Save inbox settings'}</button>
+          {canManage && <button className="button button-primary" disabled={saving}>{saving ? 'Saving...' : 'Save inbox settings'}</button>}
         </div>
-      </form>
+      </form> : <p>Reply target is {target} minutes.</p>}
     </section>
   )
 }
 
 export default function SettingsPage() {
-  const { user } = useAuth()
+  const { user, can, canAny } = useAuth()
   const [params] = useSearchParams()
-  const tab = resolveTab(TAB_ALIASES[params.get('tab')] || params.get('tab') || 'overview')
+  const requestedTab = resolveTab(TAB_ALIASES[params.get('tab')] || params.get('tab') || 'overview')
+  const tab = canAny(sectionPermissions[requestedTab]) ? requestedTab : 'denied'
   const toast = useToast()
-  const canManage = isAdmin(user)
+  const canManage = can('whatsapp.configure')
   const [form, setForm] = useState(blankConfig)
   const [savedConfig, setSavedConfig] = useState(null)
   const [registration, setRegistration] = useState(null)
@@ -388,7 +400,7 @@ export default function SettingsPage() {
     try {
       const [configResult, healthResult] = await Promise.all([
         api.get('/api/app/whatsapp/config'),
-        api.get('/api/app/whatsapp/health').catch(() => ({ data: {} })),
+        can('whatsapp.health') ? api.get('/api/app/whatsapp/health').catch(() => ({ data: {} })) : { data: {} },
       ])
       const config = configResult.data || {}
       const health = healthResult.data || {}
@@ -406,7 +418,7 @@ export default function SettingsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [can])
 
   useEffect(() => {
     if (tab === 'whatsapp') load()
@@ -443,7 +455,7 @@ export default function SettingsPage() {
   }
 
   const disconnect = async () => {
-    if (!canManage) return
+    if (!can('whatsapp.disconnect')) return
     setSaving(true)
     setError('')
     try {
@@ -504,13 +516,14 @@ export default function SettingsPage() {
     <>
       <PageHeader title="Settings" subtitle="Manage your account, workspace and WhatsApp connection." />
       <div className="settings-shell">
-        <SettingsRail active={tab} />
+        <SettingsRail active={tab} canAny={canAny} />
         <div className="settings-main">
           {tab === 'overview' && <OverviewPanel user={user} />}
           {tab === 'profile' && <ProfilePanel />}
           {tab === 'security' && <SecurityPanel />}
           {tab === 'inbox' && <InboxPanel />}
-          {tab === 'api' && <ApiKeysPanel canManage={canManage} />}
+          {tab === 'denied' && <p role="alert">Access denied</p>}
+          {tab === 'api' && <ApiKeysPanel can={can} />}
           {tab === 'appearance' && (
             <div className="settings-layout">
               <section className="card appearance-card">
@@ -556,7 +569,7 @@ export default function SettingsPage() {
           {tab === 'whatsapp' && (
             <>
               {error && <div className="alert alert-error">{error}</div>}
-              {!canManage && <div className="alert alert-info">Only administrators can change WhatsApp connection settings.</div>}
+
               <div className="settings-layout">
                 <section className="card connection-card">
                   <header className="panel-header">
@@ -581,9 +594,9 @@ export default function SettingsPage() {
                         <p className="guidance">{savedConfig.registered_at
                           ? `Registered ${new Date(savedConfig.registered_at).toLocaleString()}.`
                           : 'This number has no recorded registration. To register a production number, enter its Meta two-step verification PIN.'}</p>
-                        <button type="button" className="button" onClick={verifyRegistration} disabled={verifying || saving}>
+                        {can('whatsapp.verify') && <button type="button" className="button" onClick={verifyRegistration} disabled={verifying || saving}>
                           {verifying ? 'Verifying…' : 'Verify registration'}
-                        </button>
+                        </button>}
                         {registration && (
                           <div className={`alert ${registration.live ? 'alert-info' : 'alert-error'} alert-inline`} role="status">
                             <strong>{registration.live ? 'Registration verified' : 'Registration checks are incomplete'}</strong>
@@ -593,11 +606,11 @@ export default function SettingsPage() {
                           </div>
                         )}
                         <h3 className="settings-section-title">Inbound media</h3>
-                        <label className="status-row">
+                        {can('whatsapp.mirror') ? <label className="status-row">
                           <input type="checkbox" checked={savedConfig.mirror_inbound_media !== false}
-                            disabled={!canManage || savingMirror || saving} onChange={(event) => updateMirrorMedia(event.target.checked)} />
+                            disabled={savingMirror || saving} onChange={(event) => updateMirrorMedia(event.target.checked)} />
                           Save copies of incoming attachments
-                        </label>
+                        </label> : <p>{savedConfig.mirror_inbound_media !== false ? 'Incoming attachments are mirrored.' : 'Incoming attachment mirroring is off.'}</p>}
                         <p className="guidance">Keeps incoming attachments up to 16 MB available after Meta removes them.</p>
                       </>
                     )}
@@ -608,35 +621,37 @@ export default function SettingsPage() {
                   <header className="panel-header"><h2>Cloud API credentials</h2></header>
                   <form onSubmit={save}>
                     {loading && <div className="list-placeholder"><span className="spinner" /> Loading configuration...</div>}
-                    <div className="form-grid">
+                    {canManage && <>
+<div className="form-grid">
                       <div className="field">
                         <label className="field-label" htmlFor="wa-waba-id">WABA ID</label>
-                        <input id="wa-waba-id" className="input" disabled={!canManage || loading} value={form.waba_id} onChange={(event) => setForm({ ...form, waba_id: event.target.value })} />
+                        <input id="wa-waba-id" className="input" disabled={loading} value={form.waba_id} onChange={(event) => setForm({ ...form, waba_id: event.target.value })} />
                       </div>
                       <div className="field">
                         <label className="field-label" htmlFor="wa-phone-id">Phone Number ID</label>
-                        <input id="wa-phone-id" className="input" disabled={!canManage || loading} value={form.phone_number_id} onChange={(event) => setForm({ ...form, phone_number_id: event.target.value })} />
+                        <input id="wa-phone-id" className="input" disabled={loading} value={form.phone_number_id} onChange={(event) => setForm({ ...form, phone_number_id: event.target.value })} />
                       </div>
                       <div className="field field-full">
                         <label className="field-label" htmlFor="wa-token">Access token</label>
-                        <input id="wa-token" className="input" type="password" autoComplete="new-password" placeholder="Leave blank to keep the saved token" disabled={!canManage || loading} value={form.access_token} onChange={(event) => setForm({ ...form, access_token: event.target.value })} />
+                        <input id="wa-token" className="input" type="password" autoComplete="new-password" placeholder="Leave blank to keep the saved token" disabled={loading} value={form.access_token} onChange={(event) => setForm({ ...form, access_token: event.target.value })} />
                       </div>
                       <div className="field field-full">
                         <label className="field-label" htmlFor="wa-verify-token">Webhook verify token</label>
-                        <input id="wa-verify-token" className="input" type="password" autoComplete="new-password" placeholder="Leave blank to keep the saved token" disabled={!canManage || loading} value={form.verify_token} onChange={(event) => setForm({ ...form, verify_token: event.target.value })} />
+                        <input id="wa-verify-token" className="input" type="password" autoComplete="new-password" placeholder="Leave blank to keep the saved token" disabled={loading} value={form.verify_token} onChange={(event) => setForm({ ...form, verify_token: event.target.value })} />
                       </div>
                       <div className="field field-full">
                         <label className="field-label" htmlFor="wa-pin">Registration PIN</label>
                         <input id="wa-pin" className="input" type="password" inputMode="numeric" autoComplete="new-password"
-                          pattern="[0-9]{6}" maxLength={6} placeholder="6-digit PIN from Meta WhatsApp Manager" disabled={!canManage || loading}
+                          pattern="[0-9]{6}" maxLength={6} placeholder="6-digit PIN from Meta WhatsApp Manager" disabled={loading}
                           value={form.pin} onChange={(event) => setForm({ ...form, pin: event.target.value })} />
                         <span className="field-hint">Optional for Meta test numbers and previously registered numbers.</span>
                       </div>
                     </div>
                     <p className="field-hint settings-hint">Secret fields stay blank when loaded and are only sent when you enter a new value.</p>
+                    </>}
                     <div className="settings-actions">
-                      <button type="submit" className="button button-primary" disabled={saving || loading || !canManage}>Save &amp; connect</button>
-                      <button type="button" className="button button-danger" onClick={() => setConfirmDisconnect(true)} disabled={saving || loading || !canManage}>Disconnect</button>
+                      {canManage && <button type="submit" className="button button-primary" disabled={saving || loading}>Save &amp; connect</button>}
+                      {can('whatsapp.disconnect') && <button type="button" className="button button-danger" onClick={() => setConfirmDisconnect(true)} disabled={saving || loading}>Disconnect</button>}
                     </div>
                   </form>
                 </section>

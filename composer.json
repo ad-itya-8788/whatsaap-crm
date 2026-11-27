@@ -1,10 +1,25 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "whatsapp-crm/backend",
+    "name": "aayojan-ai/whatsapp-crm",
     "type": "project",
-    "description": "Minimal WhatsApp CRM API built with Laravel 11.",
-    "keywords": ["laravel", "whatsapp", "crm"],
-    "license": "MIT",
+    "description": "Aayojan AI WhatsApp CRM - An intelligent WhatsApp Customer Relationship Management platform built with Laravel 11, developed by Aditya Chavan.",
+    "keywords": [
+        "aayojan-ai",
+        "whatsapp-crm",
+        "laravel",
+        "whatsapp",
+        "crm",
+        "ai",
+        "automation",
+        "meta-api"
+    ],
+    "license": "proprietary",
+    "authors": [
+        {
+            "name": "Aditya Chavan",
+            "role": "Developer"
+        }
+    ],
     "require": {
         "php": "^8.2",
         "inertiajs/inertia-laravel": "~2.0",

@@ -14,7 +14,6 @@ use App\Services\AiService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class AiController extends Controller
@@ -43,8 +42,11 @@ class AiController extends Controller
             'is_active' => ['nullable', 'boolean'],
             'auto_reply_enabled' => ['sometimes', 'boolean'],
             'auto_reply_max_per_conversation' => ['sometimes', 'integer', 'min:1', 'max:50'],
-            'handoff_agent_id' => ['sometimes', 'nullable', 'integer', Rule::exists('users', 'id')->where(fn ($query) => $query
-                ->where('is_active', true)->whereIn('role', ['agent', 'admin', 'owner']))],
+            'handoff_agent_id' => ['nullable', 'integer', function ($attribute, $value, $fail) {
+                if (! app(\App\Auth\Access::class)->canBeAssigned(\App\Models\User::find($value))) {
+                    $fail('Select an eligible active assignee.');
+                }
+            }],
         ]);
 
         if ($data['api_key'] === AiConfigService::MASK && ! $this->configs->current()?->api_key) {
@@ -110,9 +112,12 @@ class AiController extends Controller
             'conversation_id' => ['required', 'exists:conversations,id'],
         ]);
 
+        $conversation = Conversation::findOrFail($data['conversation_id']);
+        app(\App\Auth\Access::class)->authorizeConversation($request->user(), $conversation);
+
         try {
             return response()->json($this->ai->draft(
-                Conversation::findOrFail($data['conversation_id']),
+                $conversation,
                 $request->user()->id,
             ));
         } catch (AiException $exception) {
@@ -171,17 +176,26 @@ class AiController extends Controller
         $paused = (bool) $data['paused'];
         $updates = ['ai_autoreply_disabled' => $paused];
 
+        $access = app(\App\Auth\Access::class);
         if ($paused && ($data['assign_to_me'] ?? false)) {
+            abort_unless($access->can($request->user(), 'conversations.assign')
+                && $access->canBeAssigned($request->user()), 403);
             $updates['assigned_agent_id'] = $request->user()->id;
         } elseif (! $paused) {
-            $updates['assigned_agent_id'] = null;
+            if ($conversation->assigned_agent_id !== null) {
+                abort_unless($access->can($request->user(), 'conversations.assign'), 403);
+                $updates['assigned_agent_id'] = null;
+            }
             $updates['ai_reply_count'] = 0;
             $updates['ai_handoff_summary'] = null;
         }
 
         $conversation->update($updates);
 
-        return response()->json($conversation->load(['contact.tags', 'assignedAgent']));
+        app(\App\Services\RealtimeBroadcaster::class)->conversationUpdated($conversation);
+        return response()->json($access->redactConversation(
+            $conversation->load(['contact.tags', 'assignedAgent:id,name,avatar_url']), $request->user()
+        ));
     }
 
     public function knowledge(): JsonResponse
