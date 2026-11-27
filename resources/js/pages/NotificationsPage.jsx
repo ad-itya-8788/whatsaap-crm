@@ -1,4 +1,3 @@
-import { useAuth } from '../context/AuthContext.jsx'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from '@inertiajs/react'
 import api from '../api/client.js'
@@ -7,7 +6,6 @@ import { errorMessage, extractList, extractPaginator, relativeTime } from '../li
 import { useToast } from '../components/common/ToastProvider.jsx'
 
 export default function NotificationsPage() {
-  const { can } = useAuth()
   const toast = useToast()
   const [items, setItems] = useState([])
   const [pagination, setPagination] = useState({ currentPage: 1, lastPage: 1, total: 0 })
@@ -101,7 +99,7 @@ export default function NotificationsPage() {
           <h1>Notifications</h1>
           <p>Updates from your team and conversations.</p>
         </div>
-        {unread > 0 && can('notifications.mark_read') ? (
+        {unread > 0 ? (
           <button type="button" className="button button-secondary" onClick={markAllRead} disabled={busy}>
             Mark all as read
           </button>
@@ -134,14 +132,14 @@ export default function NotificationsPage() {
               return (
                 <li key={item.id} className={item.read_at ? '' : 'is-unread'}>
                   {conversationId ? (
-                    <Link className="note-link" href={`/inbox?c=${conversationId}`} onClick={can('notifications.mark_read') ? () => markRead(item) : undefined}>
+                    <Link className="note-link" href={`/inbox?c=${conversationId}`} onClick={() => markRead(item)}>
                       {content}
                     </Link>
-                  ) : can('notifications.mark_read') ? (
+                  ) : (
                     <button type="button" className="note-link" onClick={() => markRead(item)} disabled={busy}>
                       {content}
                     </button>
-                  ) : <div className="note-link">{content}</div>}
+                  )}
                 </li>
               )
             })}

@@ -1,4 +1,3 @@
-import { useAuth } from '../context/AuthContext.jsx'
 import { useCallback, useEffect, useState } from 'react'
 import api from '../api/client.js'
 import PageHeader from '../components/common/PageHeader.jsx'
@@ -53,7 +52,6 @@ function StatCard({ label, value, sub, icon }) {
 }
 
 export default function ReportsPage() {
-  const { can } = useAuth()
   const initial = defaultDates()
   const [from, setFrom] = useState(initial.from)
   const [to, setTo] = useState(initial.to)
@@ -71,8 +69,8 @@ export default function ReportsPage() {
     try {
       const [overviewResult, agentsResult, trendResult] = await Promise.all([
         api.get('/api/app/reports/overview', { params }),
-        can('reports.agents') ? api.get('/api/app/reports/agents', { params }) : {},
-        can('reports.trend') ? api.get('/api/app/reports/trend', { params }) : {},
+        api.get('/api/app/reports/agents', { params }),
+        api.get('/api/app/reports/trend', { params }),
       ])
       setOverview(unwrap(overviewResult.data) || {})
       setAgents(extractList(agentsResult.data))
@@ -82,7 +80,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false)
     }
-  }, [applied, can])
+  }, [applied])
 
   useEffect(() => { load() }, [load])
 
@@ -134,7 +132,7 @@ export default function ReportsPage() {
             {stats.map((stat) => <StatCard key={stat.label} {...stat} />)}
           </div>
 
-          {can('reports.agents') && <section className="card report-card">
+          <section className="card report-card">
             <header className="panel-header"><h2>Agent workload</h2></header>
             {agents.length ? (
               <div className="table-wrap">
@@ -158,9 +156,9 @@ export default function ReportsPage() {
             ) : (
               <div className="report-empty">No agent activity in this period.</div>
             )}
-          </section>}
+          </section>
 
-          {can('reports.trend') && <section className="card chart-card">
+          <section className="card chart-card">
             <header className="panel-header">
               <h2>Daily trend</h2>
               <span className="report-note">Bar height follows the highest daily total</span>
@@ -185,7 +183,7 @@ export default function ReportsPage() {
             ) : (
               <div className="report-empty">No activity to chart in this period.</div>
             )}
-          </section>}
+          </section>
         </>
       )}
     </>

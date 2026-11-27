@@ -6,12 +6,6 @@ export function isIncoming(message) {
   return incomingTypes.includes(String(message?.sender_type || '').toLowerCase())
 }
 
-export function messageTimestamp(message) {
-  return isIncoming(message)
-    ? message.provider_timestamp || message.created_at
-    : message?.created_at || message?.provider_timestamp
-}
-
 export function messageText(message) {
   return message?.content_text
     || message?.message_text

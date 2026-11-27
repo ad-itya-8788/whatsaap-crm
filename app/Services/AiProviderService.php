@@ -135,11 +135,6 @@ class AiProviderService
             throw new AiException('Plain HTTP is only allowed for configured local AI providers.', 422);
         }
 
-        $basePath = rtrim($parts['path'] ?? '', '/');
-        if (preg_match('~(?:^|/)v1$~', $basePath) && str_starts_with($path, '/v1/')) {
-            $path = substr($path, 3);
-        }
-
         return $base.$path;
     }
 }

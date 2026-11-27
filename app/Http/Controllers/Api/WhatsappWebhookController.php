@@ -233,7 +233,7 @@ class WhatsappWebhookController extends Controller
                 $conversation->increment('unread_count');
                 $updates = ['status' => 'open'];
 
-                if (! $conversation->last_message_at || $inboundAt->gte($conversation->last_message_at)) {
+                if (! $conversation->last_message_at || $inboundAt->gt($conversation->last_message_at)) {
                     $updates['last_message_text'] = $text ? Str::limit($text, 500, '') : $type;
                     $updates['last_message_at'] = $inboundAt;
                 }

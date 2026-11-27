@@ -31,8 +31,8 @@ Route::get('/join/{token}', fn (string $token) => Inertia::render('InviteJoinPag
 ]));
 
 Route::middleware(['auth', 'active'])->group(function () {
-    Route::inertia('/dashboard', 'DashboardPage')->name('dashboard')->middleware('rbac:dashboard.view');
-    Route::inertia('/inbox', 'ChatsPage')->middleware('rbac:inbox.view');
+    Route::inertia('/dashboard', 'DashboardPage')->name('dashboard');
+    Route::inertia('/inbox', 'ChatsPage');
     Route::get('/chats', function (Request $request) {
         $query = array_filter([
             'filter' => $request->query('filter'),
@@ -40,21 +40,20 @@ Route::middleware(['auth', 'active'])->group(function () {
         ], fn ($value) => is_string($value) && $value !== '');
 
         return redirect()->to('/inbox'.($query ? '?'.http_build_query($query, '', '&', PHP_QUERY_RFC3986) : ''));
-    })->middleware('rbac:inbox.view');
-    Route::inertia('/notifications', 'NotificationsPage')->middleware('rbac:notifications.view');
-    Route::inertia('/broadcasts', 'BroadcastsPage')->middleware('rbac:broadcasts.view');
-    Route::inertia('/broadcasts/new', 'BroadcastWizardPage')->middleware('rbac:broadcasts.create');
-    Route::get('/broadcasts/{id}', fn (string $id) => Inertia::render('BroadcastDetailPage', ['id' => $id]))->middleware('rbac:broadcasts.recipients');
-    Route::inertia('/agents', 'AgentsPage')->middleware('rbac:ai.view');
-    Route::inertia('/contacts', 'ContactsPage')->middleware('rbac:contacts.view');
-    Route::inertia('/templates', 'TemplatesPage')->middleware('rbac:templates.view');
-    Route::inertia('/templates/create', 'TemplatesPage')->middleware('rbac:templates.create');
+    });
+    Route::inertia('/notifications', 'NotificationsPage');
+    Route::inertia('/broadcasts', 'BroadcastsPage');
+    Route::inertia('/broadcasts/new', 'BroadcastWizardPage');
+    Route::get('/broadcasts/{id}', fn (string $id) => Inertia::render('BroadcastDetailPage', ['id' => $id]));
+    Route::inertia('/agents', 'AgentsPage');
+    Route::inertia('/contacts', 'ContactsPage');
+    Route::inertia('/templates', 'TemplatesPage');
+    Route::inertia('/templates/create', 'TemplatesPage');
     Route::get('/templates/{templateId}/edit', fn (string $templateId) => Inertia::render('TemplatesPage', [
         'templateId' => $templateId,
-    ]))->middleware('rbac:templates.update');
-    Route::inertia('/workspace', 'WorkspacePage')->middleware('rbac:tags.view|custom_fields.view|quick_replies.view');
-    Route::inertia('/reports', 'ReportsPage')->middleware('rbac:reports.view');
-    Route::inertia('/access', 'AuthorizationPage')->middleware('rbac:roles.manage');
-    Route::inertia('/team', 'TeamPage')->middleware('rbac:users.view');
-    Route::inertia('/settings', 'SettingsPage')->middleware('rbac:account.profile|account.password|account.sessions|inbox_settings.view|whatsapp.view|api_keys.view|tags.view|custom_fields.view');
+    ]));
+    Route::inertia('/workspace', 'WorkspacePage');
+    Route::inertia('/reports', 'ReportsPage');
+    Route::inertia('/team', 'TeamPage');
+    Route::inertia('/settings', 'SettingsPage');
 });

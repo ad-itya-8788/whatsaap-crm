@@ -17,13 +17,12 @@ const TABS = [
 ]
 
 export default function AgentsPage() {
-  const { can } = useAuth()
+  const { user } = useAuth()
   const toast = useToast()
   const [config, setConfig] = useState({ configured: false, provider: 'openai', model: 'gpt-4o-mini', base_url: '', api_key: '', embeddings_api_key: '', system_prompt: '', is_active: false })
   const [tab, setTab] = useState('playground')
   const [loading, setLoading] = useState(true)
-  const canManage = can('ai.configure')
-  const permissions = { playground: 'ai.playground', setup: 'ai.view', knowledge: 'ai.knowledge', usage: 'ai.usage' }
+  const canManage = ['admin', 'owner'].includes(user?.role)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -45,8 +44,7 @@ export default function AgentsPage() {
     })
   }, [load])
 
-  const tabs = TABS.filter((item) => can(permissions[item.id]))
-  const active = tabs.some(({ id }) => id === tab) ? tab : tabs[0]?.id
+  const tabs = TABS.filter((item) => item.id !== 'usage' || canManage)
 
   return (
     <div className="agents-page">
@@ -63,7 +61,7 @@ export default function AgentsPage() {
 
       <div className="agents-tabs" role="tablist">
         {tabs.map((item) => (
-          <button type="button" role="tab" aria-selected={active === item.id} key={item.id} className={`agents-tab${active === item.id ? ' is-active' : ''}`} onClick={() => setTab(item.id)}>
+          <button type="button" role="tab" aria-selected={tab === item.id} key={item.id} className={`agents-tab${tab === item.id ? ' is-active' : ''}`} onClick={() => setTab(item.id)}>
             <Icon name={item.icon} size={16} /> {item.label}
           </button>
         ))}
@@ -73,10 +71,10 @@ export default function AgentsPage() {
         <div className="agents-empty"><p>Loading AI settings...</p></div>
       ) : (
         <div className="agents-tab-content">
-          {active === 'playground' && <AiPlayground configured={Boolean(config.configured && config.is_active)} />}
-          {active === 'setup' && <AiConfigPanel config={config} onSaved={load} canManage={canManage} />}
-          {active === 'knowledge' && <AiKnowledgePanel can={can} />}
-          {active === 'usage' && <AiUsagePanel />}
+          {tab === 'playground' && <AiPlayground configured={Boolean(config.configured && config.is_active)} />}
+          {tab === 'setup' && <AiConfigPanel config={config} onSaved={load} canManage={canManage} />}
+          {tab === 'knowledge' && <AiKnowledgePanel canManage={canManage} />}
+          {tab === 'usage' && canManage && <AiUsagePanel />}
         </div>
       )}
     </div>

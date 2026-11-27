@@ -88,17 +88,6 @@ export default function AiConfigPanel({ config, onSaved, canManage }) {
     }
   }
 
-  if (!canManage) return (
-    <div className="agents-card">
-      <h2>Provider setup</h2>
-      {config.configured ? <dl>
-        <div><dt>Provider</dt><dd>{PROVIDERS.find(({ value }) => value === config.provider)?.label ?? config.provider}</dd></div>
-        <div><dt>Model</dt><dd>{config.model}</dd></div>
-        <div><dt>Automatic replies</dt><dd>{config.auto_reply_enabled ? 'Enabled' : 'Disabled'}</dd></div>
-      </dl> : <p>No AI provider is configured.</p>}
-    </div>
-  )
-
   return (
     <div className="agents-panel">
       <div className="agents-card">
@@ -112,36 +101,36 @@ export default function AiConfigPanel({ config, onSaved, canManage }) {
         <div className="agents-form-grid">
           <label className="field">
             <span>Provider</span>
-            <select className="input" value={form.provider} onChange={(event) => chooseProvider(event.target.value)}>
+            <select className="input" value={form.provider} onChange={(event) => chooseProvider(event.target.value)} disabled={!canManage}>
               {PROVIDERS.map((provider) => <option key={provider.value} value={provider.value}>{provider.label}</option>)}
             </select>
           </label>
           <label className="field">
             <span>Model</span>
-            <input className="input" value={form.model} onChange={(event) => update('model', event.target.value)} required />
+            <input className="input" value={form.model} onChange={(event) => update('model', event.target.value)} disabled={!canManage} required />
           </label>
           <label className="field field-full">
             <span>Base URL <em>optional</em></span>
-            <input className="input" value={form.base_url} onChange={(event) => update('base_url', event.target.value)} placeholder={PROVIDERS.find((item) => item.value === form.provider)?.base || 'http://localhost:11434/v1'} />
+            <input className="input" value={form.base_url} onChange={(event) => update('base_url', event.target.value)} placeholder={PROVIDERS.find((item) => item.value === form.provider)?.base || 'http://localhost:11434/v1'} disabled={!canManage} />
           </label>
           <label className="field">
             <span>API key {config.has_api_key && <em>saved</em>}</span>
-            <input className="input" type="password" value={form.api_key} onChange={(event) => update('api_key', event.target.value)} placeholder={config.has_api_key ? 'Leave as is to keep current key' : 'Enter API key'} />
+            <input className="input" type="password" value={form.api_key} onChange={(event) => update('api_key', event.target.value)} placeholder={config.has_api_key ? 'Leave as is to keep current key' : 'Enter API key'} disabled={!canManage} />
           </label>
           <label className="field">
             <span>Embeddings key {config.has_embeddings_key && <em>saved</em>}</span>
-            <input className="input" type="password" value={form.embeddings_api_key} onChange={(event) => update('embeddings_api_key', event.target.value)} placeholder="Optional, for semantic search" />
+            <input className="input" type="password" value={form.embeddings_api_key} onChange={(event) => update('embeddings_api_key', event.target.value)} placeholder="Optional, for semantic search" disabled={!canManage} />
           </label>
           <label className="field field-full">
             <span>Instructions</span>
-            <textarea className="textarea" rows="4" value={form.system_prompt} onChange={(event) => update('system_prompt', event.target.value)} placeholder="Describe how the assistant should reply to customers..." />
+            <textarea className="textarea" rows="4" value={form.system_prompt} onChange={(event) => update('system_prompt', event.target.value)} placeholder="Describe how the assistant should reply to customers..." disabled={!canManage} />
           </label>
           <label className="check">
-            <input type="checkbox" checked={form.is_active} onChange={(event) => update('is_active', event.target.checked)} />
+            <input type="checkbox" checked={form.is_active} onChange={(event) => update('is_active', event.target.checked)} disabled={!canManage} />
             <span>Enable AI features</span>
           </label>
           <label className="check">
-            <input type="checkbox" checked={form.auto_reply_enabled} onChange={(event) => update('auto_reply_enabled', event.target.checked)} disabled={!form.is_active} />
+            <input type="checkbox" checked={form.auto_reply_enabled} onChange={(event) => update('auto_reply_enabled', event.target.checked)} disabled={!canManage || !form.is_active} />
             <span>Automatically reply to unassigned conversations</span>
           </label>
           {form.auto_reply_enabled && (
@@ -149,11 +138,11 @@ export default function AiConfigPanel({ config, onSaved, canManage }) {
               <label className="field">
                 <span>Max auto-replies per conversation</span>
                 <input className="input" type="number" min="1" max="50" value={form.auto_reply_max_per_conversation}
-                  onChange={(event) => update('auto_reply_max_per_conversation', event.target.value)} />
+                  onChange={(event) => update('auto_reply_max_per_conversation', event.target.value)} disabled={!canManage} />
               </label>
               <label className="field">
                 <span>Handoff agent</span>
-                <select className="input" value={form.handoff_agent_id} onChange={(event) => update('handoff_agent_id', event.target.value)}>
+                <select className="input" value={form.handoff_agent_id} onChange={(event) => update('handoff_agent_id', event.target.value)} disabled={!canManage}>
                   <option value="">Leave in the shared inbox</option>
                   {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
                 </select>

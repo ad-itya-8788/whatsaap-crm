@@ -24,15 +24,7 @@ class SendBroadcastRecipient implements ShouldQueue
 
     public int $backoff = 30;
 
-    public ?int $actorId = null;
-
-    public string $permission = 'broadcasts.send';
-
-    public function __construct(public int $recipientId, ?int $actorId = null, string $permission = 'broadcasts.send')
-    {
-        $this->actorId = $actorId;
-        $this->permission = $permission;
-    }
+    public function __construct(public int $recipientId) {}
 
     public function middleware(): array
     {
@@ -53,15 +45,6 @@ class SendBroadcastRecipient implements ShouldQueue
 
         if (! $broadcast || ! $template || ! $contact) {
             $recipient->update(['status' => 'failed', 'error' => 'Broadcast, template, or contact is no longer available.']);
-            return;
-        }
-
-        if ($this->actorId !== null && ! app(\App\Auth\Access::class)->allowsFresh(
-            \App\Models\User::find($this->actorId), $this->permission
-        )) {
-            $recipient->update(['status' => 'failed', 'error' => 'The requesting member no longer has permission for this broadcast.']);
-            $broadcasts->refreshCounters($broadcast);
-
             return;
         }
 

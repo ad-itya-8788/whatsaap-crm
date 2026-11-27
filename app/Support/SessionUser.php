@@ -14,7 +14,6 @@ class SessionUser
             'full_name' => $user->name,
             'email' => $user->email,
             'role' => $user->role,
-            'permissions' => app(\App\Auth\Access::class)->effective($user),
             'avatar_url' => $user->avatar_url,
             'email_verified_at' => $user->email_verified_at,
         ];

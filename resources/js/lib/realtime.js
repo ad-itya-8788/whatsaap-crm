@@ -2,7 +2,7 @@ import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
 
 let echoClient = null
-const subscribers = new Map()
+let subscribers = 0
 
 function cookieValue(name) {
   const prefix = `${name}=`
@@ -66,17 +66,6 @@ function getEcho(settings) {
 }
 
 export function subscribeToRealtime(handlers = {}) {
-  return subscribeToChannel('account.default', {
-    'message.created': (payload) => handlers.onMessageCreated?.(payload),
-    'message.updated': (payload) => handlers.onMessageUpdated?.(payload),
-    'message.status': (payload) => handlers.onMessageStatusChanged?.(payload),
-    'message.deleted': (payload) => handlers.onMessageDeleted?.(payload),
-    'conversation.updated': (payload) => handlers.onConversationUpdated?.(payload),
-    'conversation.deleted': (payload) => handlers.onConversationDeleted?.(payload),
-  }, handlers)
-}
-
-export function subscribeToChannel(name, listeners, handlers = {}) {
   const settings = config()
   if (!settings) {
     handlers.onConnectionChange?.(false)
@@ -91,9 +80,17 @@ export function subscribeToChannel(name, listeners, handlers = {}) {
     return () => {}
   }
 
-  const channel = echo.private(name)
+  const channel = echo.private('account.default')
   const subscription = channel.subscription
-  subscribers.set(name, (subscribers.get(name) || 0) + 1)
+  subscribers += 1
+  const listeners = {
+    'message.created': (payload) => handlers.onMessageCreated?.(payload),
+    'message.updated': (payload) => handlers.onMessageUpdated?.(payload),
+    'message.status': (payload) => handlers.onMessageStatusChanged?.(payload),
+    'message.deleted': (payload) => handlers.onMessageDeleted?.(payload),
+    'conversation.updated': (payload) => handlers.onConversationUpdated?.(payload),
+    'conversation.deleted': (payload) => handlers.onConversationDeleted?.(payload),
+  }
 
   Object.entries(listeners).forEach(([event, listener]) => channel.listen(`.${event}`, listener))
 
@@ -118,13 +115,9 @@ export function subscribeToChannel(name, listeners, handlers = {}) {
     subscription.unbind('pusher:subscription_succeeded', onSubscribed)
     subscription.unbind('pusher:subscription_error', onSubscriptionError)
     connection.unbind('state_change', onStateChange)
-    const remaining = subscribers.get(name) - 1
-    if (remaining) subscribers.set(name, remaining)
-    else {
-      subscribers.delete(name)
-      echo.leave(name)
-    }
-    if (!subscribers.size) {
+    subscribers -= 1
+    if (!subscribers) {
+      echo.leave('account.default')
       echo.disconnect()
       echoClient = null
     }

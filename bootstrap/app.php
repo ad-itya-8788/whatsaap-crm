@@ -1,7 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureActiveUser;
-use App\Http\Middleware\AuthorizeCrm;
+use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\StartStatefulApiSession;
 use Illuminate\Console\Scheduling\Schedule;
@@ -38,12 +38,11 @@ return Application::configure(basePath: dirname(__DIR__))
         );
         $middleware->prependToPriorityList(
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
-            AuthorizeCrm::class,
+            EnsureRole::class,
         );
         $middleware->alias([
             'active' => EnsureActiveUser::class,
-            'rbac' => AuthorizeCrm::class,
-            'conversation-scope' => \App\Http\Middleware\AuthorizeConversation::class,
+            'role' => EnsureRole::class,
         ]);
     })
     ->withSchedule(function (Schedule $schedule) {

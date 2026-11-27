@@ -15,7 +15,7 @@ const scopeLabels = {
   'webhooks:manage': 'Manage webhooks',
 }
 
-export default function ApiKeysPanel({ can }) {
+export default function ApiKeysPanel({ canManage }) {
   const toast = useToast()
   const [keys, setKeys] = useState([])
   const [availableScopes, setAvailableScopes] = useState([])
@@ -23,7 +23,6 @@ export default function ApiKeysPanel({ can }) {
   const [scopes, setScopes] = useState([])
   const [token, setToken] = useState('')
   const [revoking, setRevoking] = useState(null)
-  const canManage = can('api_keys.view')
   const [loading, setLoading] = useState(canManage)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -95,7 +94,7 @@ export default function ApiKeysPanel({ can }) {
               <button type="button" className="button button-sm button-ghost" onClick={() => setToken('')}>Done</button>
             </div>
           </div>}
-          {can('api_keys.create') && !token && <form onSubmit={create} className="settings-panel-stack">
+          {!token && <form onSubmit={create} className="settings-panel-stack">
             <div className="field">
               <label className="field-label" htmlFor="key-name">Key name</label>
               <input className="input" id="key-name" value={name} maxLength={100} required onChange={(e) => setName(e.target.value)} />
@@ -118,7 +117,7 @@ export default function ApiKeysPanel({ can }) {
                 <td><strong>{key.name}</strong><br /><code>{key.key_prefix}…</code></td>
                 <td>{key.scopes?.length ? key.scopes.join(', ') : '—'}</td>
                 <td>{key.last_used_at ? formatDate(key.last_used_at) : 'Never'}</td>
-                <td>{key.revoked_at ? 'Revoked' : can('api_keys.delete') && <button type="button" className="button button-sm button-secondary" onClick={() => setRevoking(key)}>Revoke</button>}</td>
+                <td>{key.revoked_at ? 'Revoked' : <button type="button" className="button button-sm button-secondary" onClick={() => setRevoking(key)}>Revoke</button>}</td>
               </tr>)}</tbody>
             </table>
           </div>}

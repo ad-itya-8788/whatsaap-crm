@@ -1,4 +1,3 @@
-import { usePageLocation } from '../lib/navigation.js'
 import { useCallback, useEffect, useState } from 'react'
 import api from '../api/client.js'
 import PageHeader from '../components/common/PageHeader.jsx'
@@ -8,7 +7,7 @@ import { useToast } from '../components/common/ToastProvider.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { PresenceDot, useMemberPresence } from '../components/common/MemberPresence.jsx'
 import TeamInvitations from '../components/settings/TeamInvitations.jsx'
-import { errorMessage, extractList, extractPaginator } from '../lib/utils.js'
+import { errorMessage, extractList, extractPaginator, isAdmin } from '../lib/utils.js'
 
 const blankCreate = { name: '', email: '', password: '', password_confirmation: '', role: 'agent' }
 const blankEdit = { name: '', email: '', role: 'agent', password: '', password_confirmation: '', is_active: true }
@@ -19,22 +18,12 @@ function roleLabel(role) {
 }
 
 export default function TeamPage() {
-  const { can, user } = useAuth()
-  const roleFilter = usePageLocation().searchParams.get('role') || ''
-  const presence = useMemberPresence(can('presence.view'))
+  const { user, refresh } = useAuth()
+  const presence = useMemberPresence()
   const toast = useToast()
-  const canManage = can('users.view')
-  const [roleOptions, setRoleOptions] = useState([])
-  const roles = roleOptions.map(({ key }) => key)
-  const displayRole = (key) => roleOptions.find((item) => item.key === key)?.name || roleLabel(key)
-  useEffect(() => {
-    if (!canManage) return
-    const controller = new AbortController()
-    api.get('/api/app/users/roles', { signal: controller.signal })
-      .then(({ data }) => setRoleOptions(data))
-      .catch(() => {})
-    return () => controller.abort()
-  }, [canManage])
+  const isOwner = String(user?.role || '').toLowerCase() === 'owner'
+  const canManage = isAdmin(user)
+  const roles = isOwner ? ['agent', 'admin', 'viewer'] : ['agent', 'viewer']
   const [users, setUsers] = useState([])
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -45,7 +34,7 @@ export default function TeamPage() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [showCreate, setShowCreate] = useState(false)
-  const [createForm, setCreateForm] = useState({ ...blankCreate, role: 'agent' })
+  const [createForm, setCreateForm] = useState({ ...blankCreate, role: roles[0] })
   const [editId, setEditId] = useState(null)
   const [editForm, setEditForm] = useState(blankEdit)
   const [deactivationTarget, setDeactivationTarget] = useState(null)
@@ -57,7 +46,7 @@ export default function TeamPage() {
     setError('')
     try {
       const { data } = await api.get('/api/app/users', {
-        params: { search: debouncedSearch || undefined, role: roleFilter || undefined, page, per_page: 15 },
+        params: { search: debouncedSearch || undefined, page, per_page: 15 },
       })
       setUsers(extractList(data))
       setPaginator(extractPaginator(data))
@@ -66,7 +55,7 @@ export default function TeamPage() {
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, page, roleFilter])
+  }, [debouncedSearch, page])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -81,7 +70,7 @@ export default function TeamPage() {
   const startCreate = () => {
     setShowCreate(true)
     setEditId(null)
-    setCreateForm({ ...blankCreate, role: 'agent' })
+    setCreateForm({ ...blankCreate, role: roles[0] })
     setError('')
     setNotice('')
   }
@@ -110,7 +99,7 @@ export default function TeamPage() {
       setNotice('Team member created.')
       toast.success('Team member created.')
       setShowCreate(false)
-      setCreateForm({ ...blankCreate, role: 'agent' })
+      setCreateForm({ ...blankCreate, role: roles[0] })
       await loadUsers()
     } catch (requestError) {
       const message = errorMessage(requestError, 'Unable to create the team member.')
@@ -154,7 +143,7 @@ export default function TeamPage() {
     try {
       await api.post(`/api/app/users/${transferTarget.id}/transfer-ownership`)
       setTransferTarget(null)
-      window.dispatchEvent(new Event('wacrm:authorization-changed'))
+      await refresh()
       await loadUsers()
       toast.success('Ownership transferred.')
     } catch (requestError) {
@@ -220,10 +209,10 @@ export default function TeamPage() {
     <>
       <PageHeader
         title="Team"
-        subtitle={roleFilter ? `Members with the ${displayRole(roleFilter)} role` : "Manage team members, roles and access."}
+        subtitle="Manage team members, roles and access."
         actions={<div className="team-actions">
-          {can('users.create') && <button type="button" className="button button-secondary" onClick={startCreate}><Icon name="plus" size={16} /> Add member</button>}
-          {can('invitations.create') && <button type="button" className="button button-primary" onClick={() => setShowInvite(true)}><Icon name="plus" size={16} /> Invite member</button>}
+          <button type="button" className="button button-secondary" onClick={startCreate}><Icon name="plus" size={16} /> Add member</button>
+          <button type="button" className="button button-primary" onClick={() => setShowInvite(true)}><Icon name="plus" size={16} /> Invite member</button>
         </div>}
       />
       {error && <div className="alert alert-error">{error}</div>}
@@ -248,7 +237,7 @@ export default function TeamPage() {
               <div className="field">
                 <label className="field-label" htmlFor="team-create-role">Role</label>
                 <select id="team-create-role" className="select" value={createForm.role} onChange={(event) => setCreateForm({ ...createForm, role: event.target.value })}>
-                  {roles.map((role) => <option key={role} value={role}>{displayRole(role)}</option>)}
+                  {roles.map((role) => <option key={role} value={role}>{roleLabel(role)}</option>)}
                 </select>
               </div>
               <div className="field">
@@ -307,7 +296,7 @@ export default function TeamPage() {
                             <div className="field">
                               <label className="field-label" htmlFor={`team-edit-role-${member.id}`}>Role</label>
                               <select id={`team-edit-role-${member.id}`} className="select" value={editForm.role} disabled={Number(user?.id) === Number(member.id)} onChange={(event) => setEditForm({ ...editForm, role: event.target.value })}>
-                                {Array.from(new Set([...roles, member.role])).map((role) => <option key={role} value={role}>{displayRole(role)}</option>)}
+                                {Array.from(new Set([...roles, member.role])).map((role) => <option key={role} value={role}>{roleLabel(role)}</option>)}
                               </select>
                             </div>
                             <div className="field">
@@ -334,15 +323,14 @@ export default function TeamPage() {
                     <tr key={member.id} className={member.is_active === false ? 'is-inactive' : ''}>
                       <td><PresenceDot member={presence[member.id]} /> <strong>{member.name || 'Unnamed member'}</strong>{Number(user?.id) === Number(member.id) && <span className="muted"> (you)</span>}</td>
                       <td>{member.email}</td>
-                      <td><span className={`role-badge role-${String(member.role || 'agent').toLowerCase()}`}>{displayRole(member.role)}</span></td>
+                      <td><span className={`role-badge role-${String(member.role || 'agent').toLowerCase()}`}>{roleLabel(member.role)}</span></td>
                       <td><span className={`status-dot ${member.is_active === false ? 'is-offline' : 'is-online'}`} /> {member.is_active === false ? 'Inactive' : 'Active'}</td>
                       <td>
                         <div className="team-actions">
-                          {(can('users.update') && (member.id === user.id || member.role !== 'owner')) && (
+                          {(member.id === user.id || (member.role !== 'owner' && (isOwner || member.role !== 'admin'))) && (
                             <button type="button" className="button button-sm button-secondary" onClick={() => startEdit(member)}><Icon name="edit" size={14} /> Edit</button>
                           )}
-                          {can('permissions.manage') && <a className="button button-secondary button-sm" href={`/access?user=${member.id}`}>Manage permissions</a>}
-                          {can('users.transfer') && member.role !== 'owner' && member.is_active && (
+                          {isOwner && member.role !== 'owner' && member.is_active && (
                             <button type="button" className="button button-sm button-secondary" onClick={() => setTransferTarget(member)}>Transfer ownership</button>
                           )}
                         </div>
@@ -364,7 +352,7 @@ export default function TeamPage() {
           </div>
         </section>
       </div>
-      {can('invitations.view') && <TeamInvitations roles={roleOptions} showForm={showInvite} onClose={() => setShowInvite(false)} />}
+      <TeamInvitations showForm={showInvite} onClose={() => setShowInvite(false)} />
       <ConfirmDialog
         open={Boolean(transferTarget)}
         title="Transfer ownership?"

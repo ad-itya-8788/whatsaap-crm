@@ -57,15 +57,11 @@ export function sortConversations(conversations, filter = 'all') {
 }
 
 function mergeMessage(previous, row) {
-  if (previous.id && !String(previous.id).startsWith('tmp-') && String(row.id).startsWith('tmp-')) {
-    return previous
-  }
   const merged = { ...previous, ...row }
   const statusOrder = { sending: 0, queued: 0, pending: 0, sent: 1, failed: 2, delivered: 3, read: 4 }
   if (statusOrder[previous.status] > statusOrder[row.status]) {
     for (const field of ['status', 'provider_timestamp', 'error_code', 'error_title', 'error_details']) {
-      if (Object.hasOwn(previous, field)) merged[field] = previous[field]
-      else delete merged[field]
+      merged[field] = previous[field]
     }
   }
   return merged
@@ -90,7 +86,7 @@ export function mergeMessageList(current, incoming) {
     let merged = row
     matches.forEach((message) => { merged = mergeMessage(message, merged) })
     matches.forEach((message) => unique.delete(message))
-    if (matches.length !== 1 || !sameValue(matches[0], merged)) changed = true
+    if (!matches.length || matches.some((message) => !sameValue(message, merged))) changed = true
     register(merged)
   })
 
@@ -108,7 +104,6 @@ export function mergeConversations(current, incoming, filter = 'all') {
     if (!row?.id) return
     const id = String(row.id)
     const previous = byId.get(id)
-    if (row.updated_at && previous?.updated_at && Date.parse(row.updated_at) < Date.parse(previous.updated_at)) return
     const contact = row.contact && previous?.contact
       ? { ...previous.contact, ...row.contact }
       : row.contact || previous?.contact

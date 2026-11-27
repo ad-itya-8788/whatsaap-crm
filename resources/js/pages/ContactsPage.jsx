@@ -87,11 +87,8 @@ function ImportResult({ result }) {
 
 export default function ContactsPage() {
   const toast = useToast()
-  const { can } = useAuth()
-  const readOnly = !can('contacts.delete')
-  const canCreate = can('contacts.create')
-  const canEdit = can('contacts.update')
-  const canOpenChat = can('conversations.start')
+  const { user } = useAuth()
+  const readOnly = user?.role === 'viewer'
   const [contacts, setContacts] = useState([])
   const [summary, setSummary] = useState(emptySummary)
   const [tags, setTags] = useState([])
@@ -169,8 +166,8 @@ export default function ContactsPage() {
   const loadMeta = useCallback(async (signal) => {
     try {
       const [tagResult, fieldResult] = await Promise.all([
-        can('tags.view') ? api.get('/api/app/tags', { signal }) : { data: [] },
-        can('custom_fields.view') ? api.get('/api/app/custom-fields', { signal }) : { data: [] },
+        api.get('/api/app/tags', { signal }),
+        api.get('/api/app/custom-fields', { signal }),
       ])
       setTags(extractList(tagResult.data))
       setCustomFields(extractList(fieldResult.data).filter((field) => field.is_active !== false))
@@ -337,11 +334,18 @@ export default function ContactsPage() {
         phone: form.phone.trim(),
         email: form.email.trim(),
         company: form.company.trim(),
-        ...(can('contacts.custom_values') ? { custom_fields: custom } : {}),
-        ...(can('contacts.tags') ? { tags: formTagIds } : {}),
+        custom_fields: custom,
       }
-      if (editing) await api.patch(`/api/app/contacts/${editing}`, base)
-      else await api.post('/api/app/contacts', base)
+      let contactId = editing
+      if (editing) {
+        await api.patch(`/api/app/contacts/${editing}`, base)
+      } else {
+        const { data } = await api.post('/api/app/contacts', base)
+        const created = data?.contact || data?.data || data
+        contactId = created?.id
+      }
+      if (!contactId) throw new Error('Contact saved, but its id was missing. Tags could not be synchronized.')
+      await api.put(`/api/app/contacts/${contactId}/tags`, { tags: formTagIds })
       setShowForm(false)
       resetForm()
       setNotice(wasEditing ? 'Contact updated.' : 'Contact added.')
@@ -522,9 +526,9 @@ export default function ContactsPage() {
         subtitle="Manage contacts, tags and WhatsApp conversations."
         actions={
           <>
-            {can('contacts.export') && <button type="button" className="button button-secondary" onClick={exportContacts} disabled={exporting}><Icon name="download" size={16} /> {exporting ? 'Exporting...' : 'Export'}</button>}
-            {can('contacts.import') && <button type="button" className="button button-secondary" onClick={() => { setShowImport((current) => !current); setError(''); setNotice('') }}><Icon name="file" size={16} /> Import CSV</button>}
-            {canCreate && <button type="button" className="button button-primary" onClick={startCreate}><Icon name="plus" size={16} /> Add contact</button>}
+            <button type="button" className="button button-secondary" onClick={exportContacts} disabled={exporting}><Icon name="download" size={16} /> {exporting ? 'Exporting...' : 'Export'}</button>
+            {!readOnly && <button type="button" className="button button-secondary" onClick={() => { setShowImport((current) => !current); setError(''); setNotice('') }}><Icon name="file" size={16} /> Import CSV</button>}
+            {!readOnly && <button type="button" className="button button-primary" onClick={startCreate}><Icon name="plus" size={16} /> Add contact</button>}
           </>
         }
       />
@@ -608,7 +612,7 @@ export default function ContactsPage() {
                     </div>
                   </div>
                 </section>
-                {can('contacts.tags') && <section className="contacts-form-section">
+                <section className="contacts-form-section">
                   <h3>Tags</h3>
                   <div className="tag-picker">
                     {tags.map((tag) => (
@@ -625,8 +629,8 @@ export default function ContactsPage() {
                     ))}
                     {!tags.length && <span className="muted">No tags available yet.</span>}
                   </div>
-                </section>}
-                {can('contacts.custom_values') && customFields.length > 0 && (
+                </section>
+                {customFields.length > 0 && (
                   <section className="contacts-form-section">
                     <h3>Custom fields</h3>
                     <div className="custom-field-grid">
@@ -765,7 +769,7 @@ export default function ContactsPage() {
                   <tr key={contact.id} className={selected ? 'is-selected' : ''}>
                     {!readOnly && <td className="contacts-select-cell"><input type="checkbox" checked={selected} onChange={() => toggleSelect(contact.id)} aria-label={`Select ${contactLabel(contact)}`} /></td>}
                     <td>
-                      <button type="button" className="contact-name-button" onClick={can('contacts.details') ? () => setDetailContact(contact) : undefined} title={`View ${contactLabel(contact)}`}>
+                      <button type="button" className="contact-name-button" onClick={() => setDetailContact(contact)} title={`View ${contactLabel(contact)}`}>
                         <span className="contact-avatar" aria-hidden="true">{contactInitial(contact)}</span>
                         <span className="contact-name-text text-truncate">{contact.name || 'Unnamed contact'}</span>
                       </button>
@@ -789,8 +793,8 @@ export default function ContactsPage() {
                     <td className="col-created"><span className="text-truncate" title={dateTitle(contact.created_at) || undefined}>{displayDate(contact.created_at)}</span></td>
                     <td className="contacts-actions-cell">
                       <div className="actions-cell">
-                        {canOpenChat && <button type="button" className="icon-button" onClick={() => openChat(contact)} aria-label={`Open conversation with ${contactLabel(contact)}`} title="Open conversation"><Icon name="chat" size={16} /></button>}
-                        {canEdit && <button type="button" className="icon-button" onClick={() => startEdit(contact)} aria-label={`Edit ${contactLabel(contact)}`} title="Edit contact"><Icon name="edit" size={16} /></button>}
+                        <button type="button" className="icon-button" onClick={() => openChat(contact)} aria-label={`Open conversation with ${contactLabel(contact)}`} title="Open conversation"><Icon name="chat" size={16} /></button>
+                        {!readOnly && <button type="button" className="icon-button" onClick={() => startEdit(contact)} aria-label={`Edit ${contactLabel(contact)}`} title="Edit contact"><Icon name="edit" size={16} /></button>}
                         <button type="button" className="icon-button contacts-more-button" onClick={(event) => openActionMenu(event, contact)} aria-haspopup="menu" aria-expanded={actionMenu?.contact?.id === contact.id} aria-label={`More actions for ${contactLabel(contact)}`} title="More actions"><Icon name="more" size={16} /></button>
                       </div>
                     </td>
@@ -818,7 +822,7 @@ export default function ContactsPage() {
                       <p>{loadFailed ? error : hasFilters ? 'Try changing or clearing your filters.' : 'Add your first contact to start tracking conversations.'}</p>
                       {loadFailed && <button type="button" className="button button-sm button-secondary" onClick={loadContacts}><Icon name="refresh" size={15} /> Retry</button>}
                       {!loadFailed && hasFilters && <button type="button" className="button button-sm button-secondary" onClick={clearFilters}>Clear filters</button>}
-                      {!loadFailed && !hasFilters && canCreate && <button type="button" className="button button-sm button-primary" onClick={startCreate}><Icon name="plus" size={15} /> Add contact</button>}
+                      {!loadFailed && !hasFilters && !readOnly && <button type="button" className="button button-sm button-primary" onClick={startCreate}><Icon name="plus" size={15} /> Add contact</button>}
                     </div>
                   </td>
                 </tr>
@@ -843,14 +847,14 @@ export default function ContactsPage() {
           style={{ top: actionMenu.top, left: actionMenu.left }}
           onMouseDown={(event) => event.stopPropagation()}
         >
-          {can('contacts.details') && <button type="button" role="menuitem" onClick={() => { setDetailContact(actionMenu.contact); setActionMenu(null) }}><Icon name="eye" size={15} /> View details</button>}
-          {canOpenChat && <button type="button" role="menuitem" onClick={() => { const contact = actionMenu.contact; setActionMenu(null); openChat(contact) }}><Icon name="chat" size={15} /> Open conversation</button>}
-          {(canEdit || !readOnly) && (
+          <button type="button" role="menuitem" onClick={() => { setDetailContact(actionMenu.contact); setActionMenu(null) }}><Icon name="eye" size={15} /> View details</button>
+          <button type="button" role="menuitem" onClick={() => { const contact = actionMenu.contact; setActionMenu(null); openChat(contact) }}><Icon name="chat" size={15} /> Open conversation</button>
+          {!readOnly && (
             <>
               <div className="contacts-menu-divider" />
               <button type="button" role="menuitem" onClick={() => startEdit(actionMenu.contact)}><Icon name="edit" size={15} /> Edit</button>
               <button type="button" role="menuitem" onClick={() => { copyPhone(actionMenu.contact); setActionMenu(null) }}><Icon name="copy" size={15} /> Copy phone</button>
-              {!readOnly && <button type="button" role="menuitem" className="is-danger" onClick={() => remove(actionMenu.contact)}><Icon name="trash" size={15} /> Delete</button>}
+              <button type="button" role="menuitem" className="is-danger" onClick={() => remove(actionMenu.contact)}><Icon name="trash" size={15} /> Delete</button>
             </>
           )}
         </div>
@@ -858,10 +862,9 @@ export default function ContactsPage() {
 
       {detailContact && <ContactDetail
         key={detailContact.id}
-        initialContact={can('contacts.details') ? detailContact : null}
-        can={can}
+        initialContact={detailContact}
         customFields={customFields}
-        readOnly={!canEdit}
+        readOnly={readOnly}
         onClose={() => setDetailContact(null)}
         onEdit={(contact) => { setDetailContact(null); startEdit(contact) }}
         onOpenChat={openChat}

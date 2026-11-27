@@ -15,12 +15,12 @@ import {
 const BODY_MAX_CHARS = 120
 
 const CONTENT_LABELS = {
-  image: 'Photo',
-  video: 'Video',
-  audio: 'Voice message',
-  document: 'Document',
-  location: 'Location',
-  template: 'Template',
+  image: '📷 Photo',
+  video: '🎬 Video',
+  audio: '🎤 Voice message',
+  document: '📄 Document',
+  location: '📍 Location',
+  template: '📋 Template',
   reaction: 'Reaction',
 }
 
@@ -41,6 +41,7 @@ export default function BrowserNotificationsListener() {
   const [canNotify, setCanNotify] = useState(false)
   const locationRef = useRef(location)
   const userId = user?.id
+  const role = user?.role
 
   useEffect(() => { locationRef.current = location }, [location])
 
@@ -71,6 +72,7 @@ export default function BrowserNotificationsListener() {
     let latestId = 0
     let cursorReady = false
     let connected = false
+    const shown = new Set()
 
     const notify = (event) => {
       const { pathname, search } = locationRef.current
@@ -116,7 +118,10 @@ export default function BrowserNotificationsListener() {
           if (id <= latestId) continue
           latestId = id
           localStorage.setItem(storageKey, String(latestId))
-          notify(event)
+          if (!shown.delete(id)) notify(event)
+        }
+        for (const id of shown) {
+          if (id <= latestId) shown.delete(id)
         }
         if (data?.events?.length === 20) queueMicrotask(check)
       } catch {
@@ -130,7 +135,22 @@ export default function BrowserNotificationsListener() {
     const unsubscribe = subscribeToRealtime({
       onConnectionChange: (ready) => { connected = ready },
       onReconnected: check,
-      onMessageCreated: check,
+      onMessageCreated: ({ message, conversation }) => {
+        if (message?.sender_type !== 'customer' || !conversation) return
+        if (!['admin', 'owner'].includes(role)
+          && ![conversation.user_id, conversation.assigned_agent_id].some((id) => String(id) === String(userId))) return
+        const id = Number(message.id)
+        if (id <= latestId || shown.has(id) || id <= (Number(localStorage.getItem(storageKey)) || 0)) return
+        shown.add(id)
+        if (shown.size >= 100) void check()
+        const contact = conversation.contact
+        notify({
+          conversation_id: conversation.id,
+          contact_name: contact?.name || (contact?.wa_username && `@${contact.wa_username}`) || contact?.phone,
+          content_type: message.content_type,
+          body: message.content_text,
+        })
+      },
     })
     const timer = window.setInterval(() => { if (!connected) void check() }, 15000)
     window.addEventListener('focus', check)
@@ -141,7 +161,7 @@ export default function BrowserNotificationsListener() {
       window.removeEventListener('focus', check)
       window.clearInterval(timer)
     }
-  }, [enabled, canNotify, userId])
+  }, [enabled, canNotify, userId, role])
 
   return null
 }

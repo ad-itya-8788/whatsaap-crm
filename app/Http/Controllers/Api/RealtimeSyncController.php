@@ -12,7 +12,7 @@ use Illuminate\Http\Request;
 
 class RealtimeSyncController extends Controller
 {
-    public function __construct(private RealtimePayload $payload, private \App\Auth\Access $access) {}
+    public function __construct(private RealtimePayload $payload) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -34,8 +34,6 @@ class RealtimeSyncController extends Controller
 
         $messages = collect();
         if (! empty($data['conversation_id']) && empty($data['skip_messages'])) {
-            abort_unless($this->access->can($request->user(), 'messages.read'), 403);
-            $this->access->authorizeConversation($request->user(), Conversation::findOrFail($data['conversation_id']));
             $messages = Message::query()
                 ->where('conversation_id', $data['conversation_id'])
                 ->where('id', '>', $data['message_cursor'] ?? 0)
@@ -60,7 +58,7 @@ class RealtimeSyncController extends Controller
 
         $conversations = collect();
         if (empty($data['skip_conversations'])) {
-            $conversations = $this->access->conversationQuery(Conversation::query(), $request->user())
+            $conversations = Conversation::query()
                 ->with(['contact.tags', 'assignedAgent:id,name,avatar_url'])
                 ->withCount('notes')
                 ->when($since, fn ($query) => $query->where('updated_at', '>=', $since))
@@ -72,7 +70,7 @@ class RealtimeSyncController extends Controller
 
         return response()->json([
             'messages' => $messages->take(100)->map(fn (Message $message) => $this->payload->message($message)),
-            'conversations' => $conversations->take(100)->map(fn (Conversation $conversation) => $this->payload->conversation($this->access->redactConversation($conversation, $request->user()))),
+            'conversations' => $conversations->take(100)->map(fn (Conversation $conversation) => $this->payload->conversation($conversation)),
             'next_message_cursor' => $messages->count() > 100 ? $messages[99]->id : null,
             'next_conversation_cursor' => $since && $conversations->count() > 100 ? $conversations[99]->id : null,
             'server_time' => $serverTime->toISOString(),

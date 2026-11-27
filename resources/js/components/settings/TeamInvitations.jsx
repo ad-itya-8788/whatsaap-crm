@@ -1,4 +1,3 @@
-import { useAuth } from '../../context/AuthContext.jsx'
 import { useCallback, useEffect, useState } from 'react'
 import api from '../../api/client.js'
 import { errorMessage, extractList, formatDate } from '../../lib/utils.js'
@@ -6,8 +5,7 @@ import ConfirmDialog from '../common/ConfirmDialog.jsx'
 import Icon from '../common/Icon.jsx'
 import { useToast } from '../common/ToastProvider.jsx'
 
-export default function TeamInvitations({ roles = [], showForm, onClose }) {
-  const { can } = useAuth()
+export default function TeamInvitations({ showForm, onClose }) {
   const toast = useToast()
   const [list, setList] = useState([])
   const [page, setPage] = useState(1)
@@ -108,7 +106,7 @@ export default function TeamInvitations({ roles = [], showForm, onClose }) {
                 <p>Create a one-time invitation link for your workspace.</p>
                 {error && <div className="alert alert-error" role="alert">{error}</div>}
                 <div className="form-grid">
-                  <label className="field">Role<select className="select" name="role" defaultValue="agent">{roles.map(({ key, name }) => <option key={key} value={key}>{name}</option>)}</select></label>
+                  <label className="field">Role<select className="select" name="role" defaultValue="agent"><option value="admin">Admin</option><option value="agent">Agent</option><option value="viewer">Viewer</option></select></label>
                   <label className="field">Expires after<select className="select" name="expiresInDays" defaultValue="7"><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option></select></label>
                 </div>
                 <label className="field">Label (optional)<input className="input" name="label" maxLength={80} /></label>
@@ -129,7 +127,7 @@ export default function TeamInvitations({ roles = [], showForm, onClose }) {
               <td>{invite.label || '—'}</td>
               <td><span className={`role-badge role-${invite.role}`}>{invite.role}</span></td>
               <td>{formatDate(invite.expires_at)}</td>
-              {can('invitations.delete') && <td><button type="button" className="button button-sm button-secondary" onClick={() => setRevoking(invite)}><Icon name="trash" size={14} /> Revoke</button></td>}
+              <td><button type="button" className="button button-sm button-secondary" onClick={() => setRevoking(invite)}><Icon name="trash" size={14} /> Revoke</button></td>
             </tr>)}
             {loading && <tr><td colSpan="4" className="table-empty"><span className="spinner" /> Loading invitations…</td></tr>}
             {!loading && !list.length && !error && <tr><td colSpan="4" className="team-empty">No pending invitations.</td></tr>}

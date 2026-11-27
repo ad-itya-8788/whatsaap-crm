@@ -47,7 +47,7 @@ php artisan schedule:work
 
 ## Real-time messaging
 
-The inbox uses Laravel Reverb over WebSockets. After a message or conversation change is saved, the private `account.default` channel sends an invalidation signal. The browser retrieves updated data through authorized HTTP routes. Permission changes use the separate private `account.authorization` channel. Both features have polling fallbacks. See [Roles and permissions](RBAC.md) for setup, migration, and endpoint coverage.
+The inbox uses Laravel Reverb over WebSockets. Laravel broadcasts only after a message or conversation change is saved successfully; the browser listens on the authenticated private `account.default` channel. If Reverb is not configured, the inbox keeps its slower polling fallback.
 
 For local development, copy the Reverb variables from [.env.example](.env.example) into `.env`, use the same `REVERB_APP_ID`, `REVERB_APP_KEY`, and `REVERB_APP_SECRET` values, and set `REVERB_ALLOWED_ORIGINS` to the origins you open in the browser. If you use `http://localhost:8000`, `http://127.0.0.1:8000`, `http://localhost:5173`, or `http://127.0.0.1:5173`, list all four exactly as shown above. Then start one extra terminal:
 
@@ -57,7 +57,7 @@ php artisan reverb:start
 
 The browser receives the public Reverb connection details from Laravel shared props, so no `VITE_REVERB_*` rebuild is required. Keep `BROADCAST_CONNECTION=reverb` on the web process that answers HTTP requests; the Reverb process itself does not need to broadcast to another Reverb server.
 
-For production, set `REVERB_ALLOWED_ORIGINS` to the exact browser origin(s) that load the CRM, not the WebSocket host and not the localhost values. Use a comma-separated list with the scheme and optional non-default port, for example `https://crm.example.com` or `https://crm.example.com,https://www.example.com`. Laravel normalizes these values to hostnames because Reverb checks the hostname from the browser Origin header. With this image, `REVERB_HOST` is the CRM HTTPS host because `/app` is proxied to Reverb, while `REVERB_ALLOWED_ORIGINS` is the page origin the browser is allowed to connect from.
+For production, set `REVERB_ALLOWED_ORIGINS` to the exact browser origin(s) that load the CRM, not the WebSocket host and not the localhost values. Use a comma-separated list with the scheme and optional non-default port, for example `https://crm.example.com` or `https://crm.example.com,https://www.example.com`. Do not add a path or trailing slash. With this image, `REVERB_HOST` is the CRM HTTPS host because `/app` is proxied to Reverb, while `REVERB_ALLOWED_ORIGINS` is the page origin the browser is allowed to connect from.
 
 In production this project uses one Docker container. The container starts Apache, the queue worker, the scheduler, and Reverb together. Apache proxies `/app` WebSocket traffic and `/apps` server publish traffic to Reverb on `127.0.0.1:8080`, so the browser and PHP both use the same public HTTPS origin and only one public port is needed. The entrypoint derives `REVERB_HOST` and `REVERB_ALLOWED_ORIGINS` from `APP_URL` when they are not set. Keep `APP_URL` on the public HTTPS origin, especially when using a custom domain. Use an always-on plan; a sleeping free service will disconnect clients. This single-container setup is for one app instance; multiple app instances need a separate shared Reverb service or Redis scaling.
 
@@ -80,7 +80,7 @@ Quick verification:
 4. Stop and restart `php artisan reverb:start`; the next reconnect should fill any messages sent while the browser was offline.
 5. Keep older-message pagination, search, templates, reactions, and WhatsApp config working as before.
 
-This CRM has one workspace. Channel authorization requires an active account, and the inbox channel also requires Inbox access. The current inbox and message pages are fetched again after reconnection. Older message pages can be refreshed by reopening the conversation.
+This workspace is single-tenant: auth checks that the user is active and uses the one `default` account channel. If tenant columns are added later, `routes/channels.php` and the event channel names need to be updated together. Recovery restores messages and conversation updates; messages or conversations deleted while disconnected are not replayed because their rows no longer exist.
 
 For Apache deployments, point the virtual host's document root to this repository's `public/` directory. Set `APP_DEBUG=false` and use HTTPS with `SESSION_SECURE_COOKIE=true`. Use [the production environment example](.env.production.example) when configuring the deployment.
 

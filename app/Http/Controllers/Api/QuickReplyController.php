@@ -24,15 +24,15 @@ class QuickReplyController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $this->authorizeWrite($request);
         $data = $this->replyData($request);
-        $canShare = app(\App\Auth\Access::class)->can($request->user(), 'quick_replies.manage_global');
-        if ($data['is_global'] ?? false) {
-            abort_unless($canShare, 403);
+        if (! $request->has('kind') && ($data['is_global'] ?? false)) {
+            abort_unless($request->user()->isAdmin(), 403, 'Only administrators may create global quick replies.');
         }
 
         $reply = QuickReply::create($data + [
             'user_id' => $request->user()->id,
-            'is_global' => $canShare && $request->has('kind'),
+            'is_global' => $request->has('kind'),
         ]);
 
         return response()->json($reply, 201);
@@ -41,11 +41,7 @@ class QuickReplyController extends Controller
     public function update(Request $request, QuickReply $quickReply): JsonResponse
     {
         $this->authorizeQuickReply($request, $quickReply);
-        $data = $this->replyData($request, $quickReply);
-        if ($data['is_global'] ?? false) {
-            abort_unless(app(\App\Auth\Access::class)->can($request->user(), 'quick_replies.manage_global'), 403);
-        }
-        $quickReply->update($data);
+        $quickReply->update($this->replyData($request, $quickReply));
 
         return response()->json($quickReply);
     }
@@ -88,12 +84,20 @@ class QuickReplyController extends Controller
         return $data;
     }
 
+    private function authorizeWrite(Request $request): void
+    {
+        abort_unless(in_array($request->user()->role, ['owner', 'admin', 'agent'], true), 403);
+    }
+
     private function authorizeQuickReply(Request $request, QuickReply $quickReply): void
     {
-        $user = $request->user();
-        $access = app(\App\Auth\Access::class);
-        abort_unless($access->owner($user) || ($quickReply->is_global
-            ? $access->can($user, 'quick_replies.manage_global')
-            : (int) $quickReply->user_id === (int) $user->id), 403);
+        $this->authorizeWrite($request);
+        abort_unless(
+            $quickReply->is_global
+                || (int) $quickReply->user_id === (int) $request->user()->id
+                || $request->user()->isAdmin(),
+            403,
+            'You may only manage your own private quick replies.',
+        );
     }
 }

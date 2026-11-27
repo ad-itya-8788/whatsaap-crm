@@ -17,7 +17,6 @@ const statusTabs = [
 export default function ConversationList({
   conversations = [],
   agents = [],
-  can = () => false,
   selectedId,
   loading = false,
   loadingMore = false,
@@ -48,7 +47,7 @@ export default function ConversationList({
           />
         </div>
         <div className="chat-status-tabs" role="tablist" aria-label="Conversation status">
-          {statusTabs.filter((tab) => tab.value === 'all' || can('conversations.filter_' + tab.value)).map((tab) => (
+          {statusTabs.map((tab) => (
             <button
               type="button"
               role="tab"
@@ -68,9 +67,9 @@ export default function ConversationList({
           onChange={(event) => onFilterChange('assignee', event.target.value)}
         >
           <option value="all">All assignees</option>
-          {(can('conversations.view_all') || can('conversations.view_unassigned')) && <option value="unassigned">Unassigned</option>}
-          {(can('conversations.view_all') || can('conversations.view_assigned')) && <option value="me">Assigned to me</option>}
-          {(can('conversations.view_all') || can('conversations.view_others')) && agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+          <option value="unassigned">Unassigned</option>
+          <option value="me">Assigned to me</option>
+          {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
         </select>
       </header>
 

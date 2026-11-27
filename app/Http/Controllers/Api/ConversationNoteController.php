@@ -38,7 +38,7 @@ class ConversationNoteController extends Controller
             abort(404);
         }
 
-        if ((int) $note->user_id !== (int) $request->user()->id && ! app(\App\Auth\Access::class)->can($request->user(), 'conversation_notes.delete_others')) {
+        if ((int) $note->user_id !== (int) $request->user()->id && ! $request->user()->isAdmin()) {
             abort(403, 'Only the author or an administrator may delete this note.');
         }
 

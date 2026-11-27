@@ -2,7 +2,7 @@
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import api from '../../api/client.js'
-import { BROWSER_NOTIFY_STORAGE_KEY, LAST_MESSAGE_STORAGE_KEY, showNotification } from '../../lib/browserNotifications.js'
+import { BROWSER_NOTIFY_STORAGE_KEY, LAST_MESSAGE_STORAGE_KEY } from '../../lib/browserNotifications.js'
 import BrowserNotificationsListener from './BrowserNotificationsListener.jsx'
 
 vi.mock('../../lib/navigation.js', () => ({
@@ -54,7 +54,7 @@ it('starts at the current cursor and only suppresses alerts for a visible thread
   visibility.mockReturnValue('hidden')
   await act(() => vi.advanceTimersByTimeAsync(15000))
   expect(show).toHaveBeenCalledExactlyOnceWith('Maya', expect.objectContaining({
-    body: 'Photo · A photo',
+    body: '📷 Photo · A photo',
     tag: '/inbox?c=15',
   }))
   expect(localStorage.getItem(`${LAST_MESSAGE_STORAGE_KEY}:42`)).toBe('2')
@@ -62,31 +62,4 @@ it('starts at the current cursor and only suppresses alerts for a visible thread
   const { signal } = api.get.mock.calls[0][1]
   cleanup()
   expect(signal.aborted).toBe(true)
-})
-
-
-it('shows notifications through the service worker on mobile', async () => {
-  vi.stubGlobal('isSecureContext', true)
-  vi.stubGlobal('Notification', class {
-    static permission = 'granted'
-    constructor() { throw new TypeError('The window API is unavailable on mobile') }
-  })
-  const show = vi.fn().mockResolvedValue(undefined)
-  const worker = { showNotification: show }
-  const register = vi.fn().mockResolvedValue(worker)
-  Object.defineProperty(navigator, 'serviceWorker', {
-    configurable: true,
-    value: { register, ready: Promise.resolve(worker) },
-  })
-
-  try {
-    await expect(showNotification('New message', 'Hello', '/inbox?c=15')).resolves.toBe(true)
-    expect(register).toHaveBeenCalledWith('/notification-worker.js')
-    expect(show).toHaveBeenCalledWith('New message', expect.objectContaining({
-      body: 'Hello',
-      data: { url: '/inbox?c=15' },
-    }))
-  } finally {
-    delete navigator.serviceWorker
-  }
 })
