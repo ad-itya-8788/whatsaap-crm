@@ -38,14 +38,14 @@ export default function MediaViewer({ items = [], index = 0, onIndexChange, onCl
           <div className="media-viewer-tools">
             {item.type === 'image' && (
               <>
-                <button type="button" className="icon-button" onClick={() => setZoom((value) => Math.max(1, value - .25))} aria-label="Zoom out"><Icon name="zoomOut" size={18} /></button>
+                <button type="button" className="icon-button" onClick={() => setZoom((value) => Math.max(1, value - .25))} aria-label="Zoom out" title="Zoom out"><Icon name="zoomOut" size={18} /></button>
                 <span className="media-zoom">{Math.round(zoom * 100)}%</span>
-                <button type="button" className="icon-button" onClick={() => setZoom((value) => Math.min(3, value + .25))} aria-label="Zoom in"><Icon name="zoomIn" size={18} /></button>
-                <button type="button" className="icon-button" onClick={() => setZoom(1)} aria-label="Fit to screen"><Icon name="fit" size={18} /></button>
+                <button type="button" className="icon-button" onClick={() => setZoom((value) => Math.min(3, value + .25))} aria-label="Zoom in" title="Zoom in"><Icon name="zoomIn" size={18} /></button>
+                <button type="button" className="icon-button" onClick={() => setZoom(1)} aria-label="Fit to screen" title="Fit to screen"><Icon name="fit" size={18} /></button>
               </>
             )}
-            <a className="icon-button" href={item.src} download={item.name || 'attachment'} aria-label="Download"><Icon name="download" size={18} /></a>
-            <button type="button" className="icon-button" onClick={onClose} aria-label="Close viewer"><Icon name="close" size={18} /></button>
+            <a className="icon-button" href={item.src} download={item.name || 'attachment'} aria-label="Download" title="Download"><Icon name="download" size={18} /></a>
+            <button type="button" className="icon-button" onClick={onClose} aria-label="Close viewer" title="Close viewer"><Icon name="close" size={18} /></button>
           </div>
         </header>
         <div className="media-viewer-body">

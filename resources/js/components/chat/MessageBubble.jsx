@@ -68,7 +68,7 @@ function AudioMessage({ src, name, mediaId, onOpenMedia }) {
         onEnded={() => { setPlaying(false); setCurrent(0) }}
         onError={() => setFailed(true)}
       />
-      <button type="button" className="audio-play" onClick={toggle} aria-label={playing ? 'Pause audio' : 'Play audio'}>
+      <button type="button" className="audio-play" onClick={toggle} aria-label={playing ? 'Pause audio' : 'Play audio'} title={playing ? 'Pause audio' : 'Play audio'}>
         <Icon name={playing ? 'pause' : 'play'} size={16} />
       </button>
       <div className="audio-wave" onClick={seek} role="presentation">
@@ -77,7 +77,7 @@ function AudioMessage({ src, name, mediaId, onOpenMedia }) {
         ))}
       </div>
       <span className="audio-time">{formatDuration(current)} / {formatDuration(duration)}</span>
-      <button type="button" className="icon-button audio-expand" onClick={() => onOpenMedia(mediaId)} aria-label="Open audio viewer"><Icon name="fit" size={15} /></button>
+      <button type="button" className="icon-button audio-expand" onClick={() => onOpenMedia(mediaId)} aria-label="Open audio viewer" title="Open audio viewer"><Icon name="fit" size={15} /></button>
     </div>
   )
 }
@@ -179,8 +179,8 @@ export default function MessageBubble({ message, incoming, mediaItems = [], onOp
             <span>{item.name}</span>
             <small>{String(item.mime || 'Document').split('/').pop()}</small>
           </div>
-          <button type="button" className="icon-button" onClick={openMedia} aria-label="Open document"><Icon name="eye" size={16} /></button>
-          <a className="icon-button" href={item.src} download={item.name} aria-label="Download document"><Icon name="download" size={16} /></a>
+          <button type="button" className="icon-button" onClick={openMedia} aria-label="Open document" title="Open document"><Icon name="eye" size={16} /></button>
+          <a className="icon-button" href={item.src} download={item.name} aria-label="Download document" title="Download document"><Icon name="download" size={16} /></a>
         </div>
       )}
       {message?.content_type === 'reaction' && <div className="message-reaction"><span>{text}</span><small>Reaction</small></div>}
@@ -188,7 +188,7 @@ export default function MessageBubble({ message, incoming, mediaItems = [], onOp
         <div className="message-location">
           <Icon name="pin" size={18} />
           <div><strong>{location.name || 'Location'}</strong><span>{location.address || `${location.lat}, ${location.lng}`}</span></div>
-          <button type="button" className="icon-button" onClick={copyLocation} aria-label="Copy coordinates"><Icon name="copy" size={15} /></button>
+          <button type="button" className="icon-button" onClick={copyLocation} aria-label="Copy coordinates" title="Copy coordinates"><Icon name="copy" size={15} /></button>
         </div>
       )}
       {message?.template_name && <div className="message-template-badge">Template · {message.template_name}</div>}
@@ -215,7 +215,7 @@ export default function MessageBubble({ message, incoming, mediaItems = [], onOp
           </button>
         )}
         <div className="message-action-wrap" ref={menuRef}>
-          <button type="button" className="message-action" onClick={() => setMenuOpen((value) => !value)} aria-label="Message actions" aria-expanded={menuOpen}>
+          <button type="button" className="message-action" onClick={() => setMenuOpen((value) => !value)} aria-label="Message actions" title="Message actions" aria-expanded={menuOpen}>
             <Icon name="more" size={15} />
           </button>
           {menuOpen && (

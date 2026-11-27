@@ -431,7 +431,7 @@ export default function SettingsPage() {
       if (data.success === false) {
         toast.error(data.last_registration_error || 'WhatsApp registration failed.')
       } else {
-        toast.success('WhatsApp configuration saved.')
+        toast.success('WhatsApp settings saved successfully.')
       }
       await load()
       window.dispatchEvent(new Event('wacrm:whatsapp-changed'))

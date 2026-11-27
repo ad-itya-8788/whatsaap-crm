@@ -366,8 +366,7 @@ export default function ContactsPage() {
       await api.put(`/api/app/contacts/${contactId}/tags`, { tags: formTagIds })
       setShowForm(false)
       resetForm()
-      setNotice(wasEditing ? 'Contact updated.' : 'Contact added.')
-      toast.success(wasEditing ? 'Contact updated.' : 'Contact added.')
+      toast.success(wasEditing ? 'Contact updated successfully.' : 'Contact created successfully.')
       await loadContacts()
     } catch (requestError) {
       const message = errorMessage(requestError, 'Unable to save contact.')
@@ -545,7 +544,7 @@ export default function ContactsPage() {
         actions={
           <>
             <button type="button" className="button button-secondary" onClick={exportContacts} disabled={exporting}><Icon name="download" size={16} /> {exporting ? 'Exporting...' : 'Export'}</button>
-            {!readOnly && <button type="button" className="button button-secondary" onClick={() => { setShowImport((current) => !current); setError(''); setNotice('') }}><Icon name="file" size={16} /> Import CSV</button>}
+            {!readOnly && <button type="button" className="button button-secondary" onClick={() => { setShowImport((current) => !current); setError(''); setNotice('') }}><Icon name="upload" size={16} /> Import CSV</button>}
             {!readOnly && <button type="button" className="button button-primary" onClick={startCreate}><Icon name="plus" size={16} /> Add contact</button>}
           </>
         }
@@ -573,7 +572,7 @@ export default function ContactsPage() {
         <section className="card import-panel">
           <header className="panel-header">
             <h2>Import contacts</h2>
-            <button type="button" className="icon-button" onClick={() => setShowImport(false)} aria-label="Close import panel"><Icon name="close" size={18} /></button>
+            <button type="button" className="icon-button" onClick={() => setShowImport(false)} aria-label="Close import panel" title="Close import panel"><Icon name="close" size={18} /></button>
           </header>
           <div className="import-panel-body">
             <label className="contacts-file-drop" htmlFor="contact-import-file">
@@ -604,7 +603,7 @@ export default function ContactsPage() {
           <div className="contacts-form-dialog" role="dialog" aria-modal="true" aria-labelledby="contact-form-title">
             <header className="panel-header">
               <h2 id="contact-form-title">{editing ? 'Edit contact' : 'New contact'}</h2>
-              <button type="button" className="icon-button" onClick={() => setShowForm(false)} disabled={saving} aria-label="Close form"><Icon name="close" size={18} /></button>
+              <button type="button" className="icon-button" onClick={() => setShowForm(false)} disabled={saving} aria-label="Close form" title="Close form"><Icon name="close" size={18} /></button>
             </header>
             <form onSubmit={submit}>
               <div className="contacts-form-body">

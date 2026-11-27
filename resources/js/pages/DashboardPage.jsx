@@ -155,7 +155,7 @@ function FailedMessagesDialog({ open, messages, total, onClose }) {
             <h2 id="dash-failed-title">Failed messages</h2>
             <p>Latest delivery failures in the last 24 hours.</p>
           </div>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="Close"><Icon name="close" size={17} /></button>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Close" title="Close"><Icon name="close" size={17} /></button>
         </div>
         {messages?.length ? (
           <ul className="dash-failed-list">
@@ -765,7 +765,7 @@ export default function DashboardPage() {
             ))}
           </div>
           <details className="dash-new-menu">
-            <summary className="dash-new-button"><Icon name="plus" size={15} /> New <span className="dash-new-chevron" /></summary>
+            <summary className="dash-new-button"><Icon name="plus" size={15} /> New <Icon name="chevronDown" size={13} className="dash-new-chevron" /></summary>
             <div className="dash-new-popover">
               <Link href="/contacts"><Icon name="user" size={15} /> New contact</Link>
               <Link href="/broadcasts/new"><Icon name="radio" size={15} /> New broadcast</Link>

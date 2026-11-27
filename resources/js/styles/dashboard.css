@@ -113,16 +113,11 @@
 }
 
 .dash-new-chevron {
-  width: 6px;
-  height: 6px;
   margin-left: 2px;
-  border: solid currentColor;
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg) translate(-1px, -1px);
 }
 
 .dash-new-menu[open] .dash-new-chevron {
-  transform: rotate(225deg) translate(-1px, -1px);
+  transform: rotate(180deg);
 }
 
 .dash-new-popover {

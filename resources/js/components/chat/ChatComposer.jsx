@@ -341,7 +341,7 @@ function ConversationComposer({
           {preview ? <img src={preview} alt="" className="composer-attachment-thumb" /> : <Icon name={fileType(file)} size={20} />}
           <span className="composer-attachment-name">{file.name}</span>
           <span className="composer-attachment-size">{fileSize(file.size)}</span>
-          <button type="button" className="icon-button" onClick={onFileRemove} aria-label="Remove attachment"><Icon name="close" size={16} /></button>
+          <button type="button" className="icon-button" onClick={onFileRemove} aria-label="Remove attachment" title="Remove attachment"><Icon name="close" size={16} /></button>
         </div>
       )}
       {uploadProgress > 0 && uploadProgress < 100 && (
@@ -399,7 +399,7 @@ function ConversationComposer({
             </div>
           )}
         </div>
-        <button type="button" className={`icon-button${openMenu === 'emoji' ? ' is-open' : ''}`} onClick={() => setOpenMenu((value) => value === 'emoji' ? '' : 'emoji')} aria-label="Emoji picker" aria-expanded={openMenu === 'emoji'}>
+        <button type="button" className={`icon-button${openMenu === 'emoji' ? ' is-open' : ''}`} onClick={() => setOpenMenu((value) => value === 'emoji' ? '' : 'emoji')} aria-label="Emoji picker" title="Emoji picker" aria-expanded={openMenu === 'emoji'}>
           <Icon name="emoji" size={20} />
         </button>
         {conversationId && (

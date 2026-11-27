@@ -787,7 +787,7 @@ export default function TemplatesPage() {
                             <button
                               type="button"
                               className="icon-button"
-                              aria-label="Remove header file"
+                              aria-label="Remove header file" title="Remove header file"
                               onClick={() => setForm((current) => ({ ...current, header_file: null, header_handle: '' }))}
                             >
                               <Icon name="close" size={15} />
@@ -862,7 +862,7 @@ export default function TemplatesPage() {
             <section className="card send-panel">
               <header className="panel-header">
                 <h2>Send “{sendTarget.name}”</h2>
-                <button type="button" className="icon-button" onClick={() => setSendTarget(null)} aria-label="Close send panel"><Icon name="close" size={18} /></button>
+                <button type="button" className="icon-button" onClick={() => setSendTarget(null)} aria-label="Close send panel" title="Close send panel"><Icon name="close" size={18} /></button>
               </header>
               <div className="send-panel-body">
                 <div className="field">

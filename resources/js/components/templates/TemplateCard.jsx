@@ -58,7 +58,7 @@ export default function TemplateCard({
           <button
             type="button"
             className="icon-button icon-button-sm"
-            aria-label={`Actions for ${template.name}`}
+            aria-label={`Actions for ${template.name}`} title={`Actions for ${template.name}`}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((current) => !current)}

@@ -312,8 +312,8 @@ export default function WorkspacePage() {
                     <span className="muted">{Number(tag.contacts_count || 0)} contacts</span>
                   </div>
                   <div className="workspace-item-actions">
-                    <button type="button" className="icon-button" onClick={() => startTag(tag)} aria-label={`Edit ${tag.name}`}><Icon name="edit" size={16} /></button>
-                    <button type="button" className="icon-button is-danger" onClick={() => deleteTag(tag)} aria-label={`Delete ${tag.name}`}><Icon name="trash" size={16} /></button>
+                    <button type="button" className="icon-button" onClick={() => startTag(tag)} aria-label={`Edit ${tag.name}`} title={`Edit ${tag.name}`}><Icon name="edit" size={16} /></button>
+                    <button type="button" className="icon-button is-danger" onClick={() => deleteTag(tag)} aria-label={`Delete ${tag.name}`} title={`Delete ${tag.name}`}><Icon name="trash" size={16} /></button>
                   </div>
                 </article>
               ))}
@@ -374,8 +374,8 @@ export default function WorkspacePage() {
                     <span className="muted">{[field.required ? 'Required' : '', field.is_active === false ? 'Inactive' : ''].filter(Boolean).join(' · ') || 'Optional'}</span>
                   </div>
                   <div className="workspace-item-actions">
-                    <button type="button" className="icon-button" onClick={() => startField(field)} disabled={!canManage} aria-label={`Edit ${field.label || field.name}`}><Icon name="edit" size={16} /></button>
-                    <button type="button" className="icon-button is-danger" onClick={() => deleteField(field)} disabled={!canManage} aria-label={`Delete ${field.label || field.name}`}><Icon name="trash" size={16} /></button>
+                    <button type="button" className="icon-button" onClick={() => startField(field)} disabled={!canManage} aria-label={`Edit ${field.label || field.name}`} title={`Edit ${field.label || field.name}`}><Icon name="edit" size={16} /></button>
+                    <button type="button" className="icon-button is-danger" onClick={() => deleteField(field)} disabled={!canManage} aria-label={`Delete ${field.label || field.name}`} title={`Delete ${field.label || field.name}`}><Icon name="trash" size={16} /></button>
                   </div>
                 </article>
               ))}
@@ -433,8 +433,8 @@ export default function WorkspacePage() {
                   </div>
                   {canManageReplies && (
                     <div className="workspace-item-actions">
-                      <button type="button" className="icon-button" onClick={() => startReply(reply)} aria-label={`Edit ${reply.title}`}><Icon name="edit" size={16} /></button>
-                      <button type="button" className="icon-button is-danger" onClick={() => deleteReply(reply)} aria-label={`Delete ${reply.title}`}><Icon name="trash" size={16} /></button>
+                      <button type="button" className="icon-button" onClick={() => startReply(reply)} aria-label={`Edit ${reply.title}`} title={`Edit ${reply.title}`}><Icon name="edit" size={16} /></button>
+                      <button type="button" className="icon-button is-danger" onClick={() => deleteReply(reply)} aria-label={`Delete ${reply.title}`} title={`Delete ${reply.title}`}><Icon name="trash" size={16} /></button>
                     </div>
                   )}
                 </article>

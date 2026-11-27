@@ -90,8 +90,8 @@ export default function AiKnowledgePanel({ canManage }) {
               </div>
               {canManage && (
                 <div className="agents-doc-actions">
-                  <button type="button" className="icon-button" title="Edit" onClick={() => { setEditing(document.id); setForm({ title: document.title, content: document.content, source: document.source || '', is_active: document.is_active }) }}><Icon name="settings" size={15} /></button>
-                  <button type="button" className="icon-button" title="Delete" onClick={() => remove(document)}><Icon name="trash" size={15} /></button>
+                  <button type="button" className="icon-button" title="Edit" aria-label={`Edit ${document.title}`} onClick={() => { setEditing(document.id); setForm({ title: document.title, content: document.content, source: document.source || '', is_active: document.is_active }) }}><Icon name="edit" size={15} /></button>
+                  <button type="button" className="icon-button" title="Delete" aria-label="Delete" onClick={() => remove(document)}><Icon name="trash" size={15} /></button>
                 </div>
               )}
             </div>

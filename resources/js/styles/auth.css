@@ -41,7 +41,7 @@
   background-size: 29px 29px;
   mask-image: linear-gradient(145deg, #000, transparent 82%);
 }
-.auth-logo { width: min(180px, 100%); height: auto; object-fit: contain; }
+.auth-logo { width: min(360px, 100%); height: auto; object-fit: contain; }
 .auth-mobile-brand { display: none; }
 .auth-art { position: relative; align-self: center; width: min(100%, 365px); aspect-ratio: 1.25; }
 .auth-orbit { position: absolute; border: 1px solid #a6ffd33b; border-radius: 50%; inset: 8% 12%; transform: rotate(-18deg); }

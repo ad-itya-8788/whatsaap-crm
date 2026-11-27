@@ -117,7 +117,7 @@ export default function BroadcastsPage() {
                     <td className="bc-col-large"><RateCell value={item.read} total={item.total} read /></td>
                     <td><span className={`badge badge-${item.status === 'completed' ? 'approved' : item.status === 'failed' ? 'rejected' : 'pending'}`}>{item.status}</span></td>
                     <td className="bc-col-small">{item.created_at ? new Date(item.created_at).toLocaleDateString() : '—'}</td>
-                    <td><button type="button" className="icon-button is-danger" disabled={item.status === 'sending'} onClick={() => remove(item)} aria-label={`Delete ${item.name}`}><Icon name="trash" size={15} /></button></td>
+                    <td><button type="button" className="icon-button is-danger" disabled={item.status === 'sending'} onClick={() => remove(item)} aria-label={`Delete ${item.name}`} title={`Delete ${item.name}`}><Icon name="trash" size={15} /></button></td>
                   </tr>
                 ))}
               </tbody>

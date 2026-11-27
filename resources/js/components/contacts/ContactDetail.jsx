@@ -147,9 +147,9 @@ export default function ContactDetail({ initialContact, customFields, onClose, o
           <span className="contact-avatar contact-sheet-avatar" aria-hidden="true">{initial}</span>
           <div className="contact-sheet-heading">
             <h2 id="contact-sheet-title">{contact.name || 'Unnamed contact'}</h2>
-            {phone && <button className="link-button contact-sheet-phone" type="button" onClick={copyPhone} title="Copy phone number">{phone} <Icon name="copy" size={14} /></button>}
+            {phone && <button className="link-button contact-sheet-phone" type="button" onClick={copyPhone} title="Copy phone number" aria-label="Copy phone number">{phone} <Icon name="copy" size={14} /></button>}
           </div>
-          <button className="icon-button" type="button" onClick={onClose} disabled={sending || noteBusy || openingChat} aria-label="Close contact"><Icon name="close" size={18} /></button>
+          <button className="icon-button" type="button" onClick={onClose} disabled={sending || noteBusy || openingChat} aria-label="Close contact" title="Close contact"><Icon name="close" size={18} /></button>
         </div>
         {!readOnly && <div className="contact-sheet-actions">
           <button type="button" className="button button-sm button-secondary" onClick={() => onEdit(contact)}><Icon name="edit" size={15} /> Edit</button>
@@ -240,7 +240,7 @@ export default function ContactDetail({ initialContact, customFields, onClose, o
               <article className="contact-note" key={note.id}>
                 <div className="contact-sheet-title">
                   <small className="muted">{note.user?.name || 'Team member'} · {formatDate(note.created_at)}</small>
-                  {!readOnly && confirmNoteId !== note.id && <button type="button" className="icon-button icon-button-sm is-danger" aria-label="Delete note" onClick={() => setConfirmNoteId(note.id)}><Icon name="trash" size={14} /></button>}
+                  {!readOnly && confirmNoteId !== note.id && <button type="button" className="icon-button icon-button-sm is-danger" aria-label="Delete note" title="Delete note" onClick={() => setConfirmNoteId(note.id)}><Icon name="trash" size={14} /></button>}
                 </div>
                 <p>{note.body}</p>
                 {confirmNoteId === note.id && <div className="contact-sheet-actions">

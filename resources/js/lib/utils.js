@@ -52,6 +52,7 @@ function isSafeMessage(message) {
 }
 
 export function errorMessage(error, fallback = 'Something went wrong. Please try again.') {
+  if (error?.response?.status === 403) return 'You do not have permission to perform this action.'
   const data = error?.response?.data
   const providerMessage = providerMessageFromData(data)
   if (providerMessage) return providerMessage

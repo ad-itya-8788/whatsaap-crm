@@ -56,7 +56,7 @@ export default function TemplatePreviewModal({
               {[template.category || 'UTILITY', template.language || 'en_US'].join(' · ')}
             </p>
           </div>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="Close preview"><Icon name="close" size={18} /></button>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Close preview" title="Close preview"><Icon name="close" size={18} /></button>
         </header>
 
         <div className="template-preview-modal-body">

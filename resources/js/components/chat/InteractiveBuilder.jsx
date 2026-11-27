@@ -61,7 +61,7 @@ export default function InteractiveBuilder({
             <h2 id="interactive-builder-title">Interactive message</h2>
             <p>Build buttons or a list your contacts can tap.</p>
           </div>
-          <button type="button" className="icon-button" onClick={onClose} disabled={sending} aria-label="Close"><Icon name="close" size={17} /></button>
+          <button type="button" className="icon-button" onClick={onClose} disabled={sending} aria-label="Close" title="Close"><Icon name="close" size={17} /></button>
         </div>
         <div className="interactive-kind-switch" role="group" aria-label="Interactive type">
           <button type="button" className={`button button-sm ${payload.kind === 'buttons' ? 'button-primary' : 'button-secondary'}`} aria-pressed={payload.kind === 'buttons'} disabled={sending} onClick={() => payload.kind !== 'buttons' && switchKind('buttons')}>Buttons</button>
@@ -94,7 +94,7 @@ export default function InteractiveBuilder({
                 <div className="interactive-row" key={index}>
                   <input className="input" maxLength="20" placeholder="Reply ID" aria-label={`Reply ID ${index + 1}`} value={button.id || ''} onChange={(event) => updateButton(index, 'id', event.target.value)} />
                   <input className="input" maxLength="20" placeholder="Button title" aria-label={`Button title ${index + 1}`} value={button.title || ''} onChange={(event) => updateButton(index, 'title', event.target.value)} />
-                  <button type="button" className="icon-button is-danger" disabled={payload.buttons.length <= 1} onClick={() => update('buttons', payload.buttons.filter((_, position) => position !== index))} aria-label={`Remove button ${index + 1}`}><Icon name="trash" size={14} /></button>
+                  <button type="button" className="icon-button is-danger" disabled={payload.buttons.length <= 1} onClick={() => update('buttons', payload.buttons.filter((_, position) => position !== index))} aria-label={`Remove button ${index + 1}`} title={`Remove button ${index + 1}`}><Icon name="trash" size={14} /></button>
                 </div>
               ))}
             </div>
@@ -108,7 +108,7 @@ export default function InteractiveBuilder({
                 <div className="interactive-section-editor" key={sectionIndex}>
                   <div className="interactive-editor-head">
                     <strong>Section {sectionIndex + 1}</strong>
-                    <button type="button" className="icon-button is-danger" disabled={payload.sections.length <= 1} onClick={() => update('sections', payload.sections.filter((_, position) => position !== sectionIndex))} aria-label={`Remove section ${sectionIndex + 1}`}><Icon name="trash" size={14} /></button>
+                    <button type="button" className="icon-button is-danger" disabled={payload.sections.length <= 1} onClick={() => update('sections', payload.sections.filter((_, position) => position !== sectionIndex))} aria-label={`Remove section ${sectionIndex + 1}`} title={`Remove section ${sectionIndex + 1}`}><Icon name="trash" size={14} /></button>
                   </div>
                   <div className="field">
                     <label htmlFor={`interactive-section-${sectionIndex}`} className="field-label">Section title</label>
@@ -119,7 +119,7 @@ export default function InteractiveBuilder({
                       <input className="input" maxLength="200" placeholder="Row ID" aria-label={`Row ${rowIndex + 1} ID`} value={row.id || ''} onChange={(event) => updateRow(sectionIndex, rowIndex, 'id', event.target.value)} />
                       <input className="input" maxLength="24" placeholder="Row title" aria-label={`Row ${rowIndex + 1} title`} value={row.title || ''} onChange={(event) => updateRow(sectionIndex, rowIndex, 'title', event.target.value)} />
                       <input className="input" maxLength="72" placeholder="Description" aria-label={`Row ${rowIndex + 1} description`} value={row.description || ''} onChange={(event) => updateRow(sectionIndex, rowIndex, 'description', event.target.value)} />
-                      <button type="button" className="icon-button is-danger" disabled={section.rows.length <= 1} onClick={() => updateSection(sectionIndex, 'rows', section.rows.filter((_, position) => position !== rowIndex))} aria-label={`Remove row ${rowIndex + 1}`}><Icon name="trash" size={14} /></button>
+                      <button type="button" className="icon-button is-danger" disabled={section.rows.length <= 1} onClick={() => updateSection(sectionIndex, 'rows', section.rows.filter((_, position) => position !== rowIndex))} aria-label={`Remove row ${rowIndex + 1}`} title={`Remove row ${rowIndex + 1}`}><Icon name="trash" size={14} /></button>
                     </div>
                   ))}
                   <button type="button" className="button button-sm button-secondary" disabled={rows.length >= 10} onClick={() => updateSection(sectionIndex, 'rows', [...section.rows, { id: nextId('row', rows), title: '' }])}>

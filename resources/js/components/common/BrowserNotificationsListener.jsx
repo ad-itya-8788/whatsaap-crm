@@ -15,12 +15,12 @@ import {
 const BODY_MAX_CHARS = 120
 
 const CONTENT_LABELS = {
-  image: '📷 Photo',
-  video: '🎬 Video',
-  audio: '🎤 Voice message',
-  document: '📄 Document',
-  location: '📍 Location',
-  template: '📋 Template',
+  image: 'Photo',
+  video: 'Video',
+  audio: 'Voice message',
+  document: 'Document',
+  location: 'Location',
+  template: 'Template',
   reaction: 'Reaction',
 }
 

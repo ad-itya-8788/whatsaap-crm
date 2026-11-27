@@ -9,6 +9,7 @@ import BrowserNotificationsListener from '../common/BrowserNotificationsListener
 import NotificationPopupListener from '../common/NotificationPopupListener.jsx'
 import { PresenceHeartbeat } from '../common/MemberPresence.jsx'
 import Icon from '../common/Icon.jsx'
+import { NotificationUnreadContext } from '../../context/NotificationUnreadContext.js'
 import { useToast } from '../common/ToastProvider.jsx'
 import { changeAppearance, useColorMode } from '../../lib/appearance.js'
 import { usePoll } from '../../lib/usePoll.js'
@@ -25,7 +26,7 @@ const mainNav = [
 ]
 
 const manageNav = [
-  { to: '/workspace', label: 'Tags & fields', icon: 'tag' },
+  { to: '/workspace', label: 'Tags & fields', icon: 'tags' },
   { to: '/templates', label: 'Message Templates', icon: 'template' },
   { to: '/reports', label: 'Reports', icon: 'chart' },
   { to: '/team', label: 'Team', icon: 'users' },
@@ -111,7 +112,7 @@ export default function AppLayout({ children }) {
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [footerMenuOpen, setFooterMenuOpen] = useState(false)
   const [unread, setUnread] = useState(0)
-  const [notificationUnread, setNotificationUnread] = useState(0)
+  const [notificationUnread, setNotificationUnread] = useState(null)
   const mode = useColorMode()
 
   const loadUnread = useCallback(async (signal) => {
@@ -189,7 +190,7 @@ export default function AppLayout({ children }) {
           href={item.to}
           aria-current={isActive ? 'page' : undefined}
           className={`sidebar-link${isActive ? ' is-active' : ''}`}
-          title={item.label}
+          title={item.label} aria-label={item.label}
         >
           <Icon name={item.icon} size={16} />
           <span className="sidebar-link-label">{item.label}</span>
@@ -230,7 +231,7 @@ export default function AppLayout({ children }) {
           <Link href="/" aria-label="Aayojan AI CRM home">
             <BrandLogo className="brand-logo sidebar-logo" />
           </Link>
-          <button type="button" className="sidebar-close" onClick={() => setDrawerOpen(false)} aria-label="Close navigation">
+          <button type="button" className="sidebar-close" onClick={() => setDrawerOpen(false)} aria-label="Close navigation" title="Close navigation">
             <Icon name="close" size={20} />
           </button>
         </div>
@@ -286,13 +287,13 @@ export default function AppLayout({ children }) {
             </nav>
           </div>
           <div className="topbar-actions">
-            {allowed('settings') && <Link className={`topbar-whatsapp${connected ? ' is-connected' : ''}`} href="/settings?tab=whatsapp" title={accountTitle}>
+            {allowed('settings') && <Link className={`topbar-whatsapp${connected ? ' is-connected' : ''}`} href="/settings?tab=whatsapp" title={accountTitle} aria-label={accountTitle}>
               <Icon name="whatsapp" size={15} />
               <span className="text-truncate">{whatsapp?.configured || whatsapp ? accountLabel : 'WhatsApp status'}</span>
             </Link>}
-            {allowed('notifications') && <Link className="topbar-control" href="/notifications" title="Notifications" aria-label={`Notifications${notificationUnread ? `, ${notificationUnread} unread` : ''}`}>
+            {allowed('notifications') && <Link className="topbar-control" href="/notifications" title="Notifications" aria-current={location.pathname === '/notifications' ? 'page' : undefined} aria-label={`Notifications${notificationUnread ? `, ${notificationUnread} unread` : ''}`}>
               <Icon name="bell" size={17} />
-              {notificationUnread > 0 && <span className="nav-dot" />}
+              {notificationUnread > 0 && <span className="topbar-notification-count" aria-hidden="true">{notificationUnread > 99 ? '99+' : notificationUnread}</span>}
             </Link>}
             <button
               type="button"
@@ -326,7 +327,9 @@ export default function AppLayout({ children }) {
         {allowed('notifications') && allowed('inbox') && <BrowserNotificationsListener />}
         {(allowed('inbox') || allowed('team')) && <PresenceHeartbeat userId={user?.id} />}
         <main className="app-content">
-          {children}
+          <NotificationUnreadContext.Provider value={notificationUnread}>
+            {children}
+          </NotificationUnreadContext.Provider>
         </main>
       </div>
     </div>

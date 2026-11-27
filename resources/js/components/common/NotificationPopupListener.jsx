@@ -1,24 +1,18 @@
 import { useEffect } from 'react'
 import api from '../../api/client.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { hasModuleAccess } from '../../lib/moduleAccess.js'
+import { notificationAppearance } from '../../lib/notificationAppearance.js'
 import { useToast } from './ToastProvider.jsx'
 
-const TYPE_ICONS = {
-  conversation_assigned: 'users',
-  message_sent: 'send',
-  broadcast_sent: 'radio',
-  payment_failed: 'alert',
-}
-
-function popupFromEvent(event) {
+function popupFromEvent(event, canOpenInbox) {
   const data = event.data || {}
   const conversationId = data.conversation_id
   return {
     title: event.title || 'New notification',
     message: event.body || '',
-    type: event.type === 'conversation_assigned' ? 'success' : 'info',
-    icon: TYPE_ICONS[event.type] || 'bell',
-    href: conversationId ? `/inbox?c=${conversationId}` : '/notifications',
+    type: notificationAppearance(event.type).tone,
+    href: conversationId && canOpenInbox ? `/inbox?c=${encodeURIComponent(conversationId)}` : '/notifications',
   }
 }
 
@@ -26,6 +20,7 @@ export default function NotificationPopupListener() {
   const { user } = useAuth()
   const toast = useToast()
   const userId = user?.id
+  const canOpenInbox = hasModuleAccess(user, 'inbox')
 
   useEffect(() => {
     if (!userId) return undefined
@@ -63,13 +58,15 @@ export default function NotificationPopupListener() {
           return
         }
 
+        const previousId = latestId
         for (const event of data?.events || []) {
           const id = Number(event.id)
           if (id <= latestId) continue
           latestId = id
           localStorage.setItem(storageKey, String(latestId))
-          toast.notify(popupFromEvent(event))
+          toast.notify(popupFromEvent(event, canOpenInbox))
         }
+        if (latestId > previousId) window.dispatchEvent(new Event('wacrm:notifications-changed'))
         if (data?.events?.length === 20) queueMicrotask(check)
       } catch {
         return undefined
@@ -89,7 +86,7 @@ export default function NotificationPopupListener() {
       window.removeEventListener('focus', check)
       window.removeEventListener('wacrm:notification-changed', check)
     }
-  }, [userId, toast])
+  }, [userId, toast, canOpenInbox])
 
   return null
 }

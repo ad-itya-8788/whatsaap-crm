@@ -90,6 +90,7 @@ export default function ChatsPage() {
   const [realtimeConnected, setRealtimeConnected] = useState(false)
 
   const realtimeConnectedRef = useRef(false)
+  const hasConnectedRef = useRef(false)
   const threadRef = useRef(null)
   const threadMoreRef = useRef(null)
   const listAbortRef = useRef(null)
@@ -487,6 +488,7 @@ export default function ChatsPage() {
 
   useEffect(() => subscribeToRealtime({
     onConnectionChange: (ready) => {
+      if (ready) hasConnectedRef.current = true
       realtimeConnectedRef.current = ready
       setRealtimeConnected(ready)
     },
@@ -549,6 +551,12 @@ export default function ChatsPage() {
       window.dispatchEvent(new Event('wacrm:inbox-changed'))
     },
   }), [applyConversations, applyMessages, recoverRealtime, removeConversationItems, removeMessageItems, markIncomingRead, loadConversations, loadMessages])
+
+  useEffect(() => {
+    if (realtimeConnected || !hasConnectedRef.current) return undefined
+    const timer = window.setTimeout(() => toast.warning('Connection lost. Reconnecting…'), 2500)
+    return () => window.clearTimeout(timer)
+  }, [realtimeConnected, toast])
 
   useEffect(() => {
     const recoverVisible = () => {
@@ -674,7 +682,7 @@ export default function ChatsPage() {
           setLinkedConversation((current) => current ? { ...current, ...data, assignedAgent: data.assignedAgent || agent || null } : current)
         }
       }
-      toast.success(`Conversation transferred to ${data.assignedAgent?.name || agent?.name || ' teammate'}.`)
+      toast.success(`Conversation assigned to ${data.assignedAgent?.name || agent?.name || 'a teammate'}.`)
     } catch (requestError) {
       toast.error(errorMessage(requestError, 'Unable to transfer the conversation.'))
     } finally {
@@ -862,6 +870,7 @@ export default function ChatsPage() {
       setSelectedFile(null)
       setReplyTo(null)
       setUploadProgress(100)
+      if (saved?.status !== 'failed') toast.success('Message sent successfully.')
     }
 
     try {
@@ -892,7 +901,7 @@ export default function ChatsPage() {
       if (failed?.id) applyMessages([failed])
       else failOptimisticMessage(optimistic.id)
       sendAttemptRef.current = null
-      const message = errorMessage(requestError, 'Unable to send message.')
+      const message = errorMessage(requestError, 'Unable to send message. Please try again.')
       setThreadError(message)
       toast.error(message)
     } finally {
@@ -999,13 +1008,14 @@ export default function ChatsPage() {
       const activityAt = data?.created_at
       applyConversations([{ id: Number(conversationId), last_message_text: messagePreview(data), last_message_at: activityAt, last_reply_at: activityAt }])
       if (selectedIdRef.current === conversationId) setReplyTo(null)
+      if (data?.status !== 'failed') toast.success('Message sent successfully.')
       return true
     } catch (requestError) {
       const failed = requestError.response?.data?.data
       if (failed?.id) applyMessages([failed])
       else failOptimisticMessage(optimistic.id)
       if (failed?.status === 'failed') richSendAttemptRef.current = null
-      toast.error(errorMessage(requestError, 'Unable to send message.'))
+      toast.error(errorMessage(requestError, 'Unable to send message. Please try again.'))
       return false
     } finally {
       setSending(false)
@@ -1084,7 +1094,7 @@ export default function ChatsPage() {
         {selected ? (
           <>
             <header className={`thread-head${threadSearchOpen ? ' is-search-open' : ''}`}>
-              <button type="button" className="icon-button thread-back" onClick={backToList} aria-label="Back to conversations"><Icon name="back" size={20} /></button>
+              <button type="button" className="icon-button thread-back" onClick={backToList} aria-label="Back to conversations" title="Back to conversations"><Icon name="back" size={20} /></button>
               <ChatAvatar contact={selected.contact} name={selectedName} />
               <div className="thread-head-info">
                 <div className="thread-title">{selectedName}</div>
@@ -1106,7 +1116,7 @@ export default function ChatsPage() {
                 />
               </div>
               <div className="thread-more" ref={threadMoreRef}>
-                <button type="button" className="icon-button" onClick={() => setMoreOpen((value) => !value)} aria-label="More actions" aria-expanded={moreOpen}><Icon name="moreVertical" size={20} /></button>
+                <button type="button" className="icon-button" onClick={() => setMoreOpen((value) => !value)} aria-label="More actions" title="More actions" aria-expanded={moreOpen}><Icon name="moreVertical" size={20} /></button>
                 {moreOpen && (
                   <div className="thread-more-menu">
                     <button type="button" onClick={() => { setThreadSearchOpen((value) => !value); setMoreOpen(false) }}><Icon name="search" size={14} /> Search in chat</button>
@@ -1158,7 +1168,7 @@ export default function ChatsPage() {
                 <div className="side-panel-tabs">
                   <button type="button" className={sidePanel === 'info' ? 'is-active' : ''} onClick={() => setSidePanel('info')}>Contact</button>
                   <button type="button" className={sidePanel === 'notes' ? 'is-active' : ''} onClick={() => setSidePanel('notes')}>Notes</button>
-                  <button type="button" className="icon-button" onClick={() => setSidePanel('')} aria-label="Close panel"><Icon name="close" size={16} /></button>
+                  <button type="button" className="icon-button" onClick={() => setSidePanel('')} aria-label="Close panel" title="Close panel"><Icon name="close" size={16} /></button>
                 </div>
                 {sidePanel === 'info' && (
                   <div className="side-panel-body">
@@ -1200,7 +1210,7 @@ export default function ChatsPage() {
                         <div className="note-body">{note.body ?? note.note ?? note.content ?? ''}</div>
                         <div className="note-meta">
                           <span>{note.user?.name || note.author?.name || 'Team'} · {formatDate(note.created_at)}</span>
-                          {!readOnly && (user?.id === note.user_id || user?.role === 'owner') && <button type="button" className="icon-button is-danger" onClick={() => setDeleteNoteId(note.id)} aria-label="Delete note"><Icon name="trash" size={14} /></button>}
+                          {!readOnly && (user?.id === note.user_id || user?.role === 'owner') && <button type="button" className="icon-button is-danger" onClick={() => setDeleteNoteId(note.id)} aria-label="Delete note" title="Delete note"><Icon name="trash" size={14} /></button>}
                         </div>
                       </article>
                     ))}
@@ -1237,7 +1247,7 @@ export default function ChatsPage() {
                   <Fragment key={message.idempotency_key || message.id || index}>
                     {currentDate && currentDate !== previousDate && <div className="message-date">{formatDate(message.provider_timestamp || message.created_at)}</div>}
                     {unreadSeparatorIndex === index && <div className="unread-separator"><span>New messages</span></div>}
-                    {replyTo?.id === message.id && <div className="reply-banner"><span>Replying to {incoming ? 'contact' : 'you'}</span><button type="button" className="icon-button" onClick={() => setReplyTo(null)} aria-label="Cancel reply"><Icon name="close" size={14} /></button></div>}
+                    {replyTo?.id === message.id && <div className="reply-banner"><span>Replying to {incoming ? 'contact' : 'you'}</span><button type="button" className="icon-button" onClick={() => setReplyTo(null)} aria-label="Cancel reply" title="Cancel reply"><Icon name="close" size={14} /></button></div>}
                     <MessageBubble
                       message={message}
                       incoming={incoming}
@@ -1256,7 +1266,7 @@ export default function ChatsPage() {
               })}
             </div>
 
-            {replyTo && <div className="reply-context"><Icon name="reply" size={14} /><span>{messageText(replyTo) || 'Attachment'}</span><button type="button" className="icon-button" onClick={() => setReplyTo(null)} aria-label="Cancel reply"><Icon name="close" size={14} /></button></div>}
+            {replyTo && <div className="reply-context"><Icon name="reply" size={14} /><span>{messageText(replyTo) || 'Attachment'}</span><button type="button" className="icon-button" onClick={() => setReplyTo(null)} aria-label="Cancel reply" title="Cancel reply"><Icon name="close" size={14} /></button></div>}
             <ChatComposer
               draft={draft}
               onDraftChange={setDraft}

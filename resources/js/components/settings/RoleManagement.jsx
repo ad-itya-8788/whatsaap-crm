@@ -23,7 +23,7 @@ export default function RoleManagement({ catalog, onSaved }) {
       else await api.post('/api/app/roles', payload)
       setDraft(null)
       await onSaved()
-      toast.success('Role saved.')
+      toast.success(draft.id ? 'Role updated successfully.' : 'Role created successfully.')
     } catch (failure) {
       setError(errorMessage(failure, 'Unable to save role.'))
     } finally {

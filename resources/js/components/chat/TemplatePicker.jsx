@@ -81,7 +81,7 @@ export default function TemplatePicker({ open, onClose, onSend, sending = false 
             <h2 id="template-picker-title">Send a template</h2>
             <p>Approved templates can be sent outside the 24-hour window.</p>
           </div>
-          <button type="button" className="icon-button" onClick={onClose} disabled={sending} aria-label="Close"><Icon name="close" size={17} /></button>
+          <button type="button" className="icon-button" onClick={onClose} disabled={sending} aria-label="Close" title="Close"><Icon name="close" size={17} /></button>
         </div>
         {localError && <div className="alert alert-error alert-inline">{localError}</div>}
         {loading ? (

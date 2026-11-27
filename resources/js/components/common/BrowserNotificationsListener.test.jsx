@@ -54,7 +54,7 @@ it('starts at the current cursor and only suppresses alerts for a visible thread
   visibility.mockReturnValue('hidden')
   await act(() => vi.advanceTimersByTimeAsync(15000))
   expect(show).toHaveBeenCalledExactlyOnceWith('Maya', expect.objectContaining({
-    body: '📷 Photo · A photo',
+    body: 'Photo · A photo',
     tag: '/inbox?c=15',
   }))
   expect(localStorage.getItem(`${LAST_MESSAGE_STORAGE_KEY}:42`)).toBe('2')

@@ -238,7 +238,7 @@ export default function TeamPage() {
         <section className="team-card team-form">
           <header className="panel-header">
             <h2>New team member</h2>
-            <button type="button" className="icon-button" onClick={() => setShowCreate(false)} aria-label="Close form"><Icon name="close" size={18} /></button>
+            <button type="button" className="icon-button" onClick={() => setShowCreate(false)} aria-label="Close form" title="Close form"><Icon name="close" size={18} /></button>
           </header>
           <form onSubmit={create}>
             <div className="form-grid">

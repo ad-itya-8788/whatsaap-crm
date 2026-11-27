@@ -48,7 +48,8 @@
 .topbar-actions { flex: 0 0 auto; gap: var(--space-1); }
 .topbar-control { position: relative; display: inline-grid; width: 34px; height: 34px; flex: 0 0 34px; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); text-decoration: none; }
 .topbar-control:hover, .topbar-control[aria-expanded='true'] { background: var(--hover); color: var(--ink); }
-.topbar-control .nav-dot { position: absolute; top: 6px; right: 7px; }
+.topbar-control[aria-current='page'] { background: var(--primary-soft); color: var(--accent-ink); }
+.topbar-notification-count { position: absolute; top: 0; right: -4px; display: grid; min-width: 16px; height: 16px; padding-inline: 3px; place-items: center; border: 1px solid var(--surface); border-radius: 999px; background: var(--accent); color: var(--primary-foreground); font-size: 9px; font-weight: 750; line-height: 1; }
 .topbar-whatsapp { display: flex; max-width: 210px; min-height: 28px; align-items: center; gap: 6px; margin-right: var(--space-1); padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--muted); font-size: var(--fs-xs); font-weight: 600; text-decoration: none; }
 .topbar-whatsapp:hover { background: var(--hover); color: var(--ink); }
 .topbar-whatsapp.is-connected { border-color: color-mix(in srgb, var(--success) 28%, var(--line)); color: var(--success); }
