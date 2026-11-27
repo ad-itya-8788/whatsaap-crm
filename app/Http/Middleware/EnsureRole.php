@@ -8,10 +8,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class EnsureRole
 {
-    public function handle(Request $request, Closure $next, string ...$roles): Response
+    public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
-        if (! $user || ! in_array($user->role, $roles, true)) {
+        if (! $user || ! $user->isOwner()) {
             abort(403, 'Forbidden');
         }
 

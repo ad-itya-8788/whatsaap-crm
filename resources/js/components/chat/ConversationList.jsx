@@ -163,7 +163,7 @@ export default function ConversationList({
                       setOpenMenuId((current) => String(current) === String(conversation.id) ? null : conversation.id)
                     }}
                   >
-                    <Icon name="more" size={16} />
+                    <Icon name="moreVertical" size={16} />
                   </button>
                   {String(openMenuId) === String(conversation.id) && (
                     <div className="chat-item-menu" role="menu">

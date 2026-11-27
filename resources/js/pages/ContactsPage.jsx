@@ -1,3 +1,4 @@
+import { hasModuleAccess } from '../lib/moduleAccess.js'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { router } from '@inertiajs/react'
 import api from '../api/client.js'
@@ -34,7 +35,24 @@ function getCount(value) {
 }
 
 function tagStyle(tag) {
-  return tag?.color ? { backgroundColor: tag.color } : undefined
+  const color = tag?.color
+  if (!color) return undefined
+
+  const match = color.match(/^#([a-f\d]{3}|[a-f\d]{6})$/i)
+  if (!match) return { backgroundColor: color }
+
+  const hex = match[1].length === 3
+    ? [...match[1]].map((channel) => channel + channel).join('')
+    : match[1]
+  const channels = [0, 2, 4].map((index) => parseInt(hex.slice(index, index + 2), 16) / 255)
+  const luminance = channels
+    .map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+    .reduce((total, channel, index) => total + channel * [0.2126, 0.7152, 0.0722][index], 0)
+
+  return {
+    backgroundColor: color,
+    color: luminance > 0.179 ? '#111827' : '#ffffff',
+  }
 }
 
 function parseDate(value) {
@@ -88,7 +106,7 @@ function ImportResult({ result }) {
 export default function ContactsPage() {
   const toast = useToast()
   const { user } = useAuth()
-  const readOnly = user?.role === 'viewer'
+  const readOnly = false
   const [contacts, setContacts] = useState([])
   const [summary, setSummary] = useState(emptySummary)
   const [tags, setTags] = useState([])
@@ -793,7 +811,7 @@ export default function ContactsPage() {
                     <td className="col-created"><span className="text-truncate" title={dateTitle(contact.created_at) || undefined}>{displayDate(contact.created_at)}</span></td>
                     <td className="contacts-actions-cell">
                       <div className="actions-cell">
-                        <button type="button" className="icon-button" onClick={() => openChat(contact)} aria-label={`Open conversation with ${contactLabel(contact)}`} title="Open conversation"><Icon name="chat" size={16} /></button>
+                        {hasModuleAccess(user, 'inbox') && <button type="button" className="icon-button" onClick={() => openChat(contact)} aria-label={`Open conversation with ${contactLabel(contact)}`} title="Open conversation"><Icon name="chat" size={16} /></button>}
                         {!readOnly && <button type="button" className="icon-button" onClick={() => startEdit(contact)} aria-label={`Edit ${contactLabel(contact)}`} title="Edit contact"><Icon name="edit" size={16} /></button>}
                         <button type="button" className="icon-button contacts-more-button" onClick={(event) => openActionMenu(event, contact)} aria-haspopup="menu" aria-expanded={actionMenu?.contact?.id === contact.id} aria-label={`More actions for ${contactLabel(contact)}`} title="More actions"><Icon name="more" size={16} /></button>
                       </div>
@@ -848,7 +866,7 @@ export default function ContactsPage() {
           onMouseDown={(event) => event.stopPropagation()}
         >
           <button type="button" role="menuitem" onClick={() => { setDetailContact(actionMenu.contact); setActionMenu(null) }}><Icon name="eye" size={15} /> View details</button>
-          <button type="button" role="menuitem" onClick={() => { const contact = actionMenu.contact; setActionMenu(null); openChat(contact) }}><Icon name="chat" size={15} /> Open conversation</button>
+          {hasModuleAccess(user, 'inbox') && <button type="button" role="menuitem" onClick={() => { const contact = actionMenu.contact; setActionMenu(null); openChat(contact) }}><Icon name="chat" size={15} /> Open conversation</button>}
           {!readOnly && (
             <>
               <div className="contacts-menu-divider" />
@@ -867,7 +885,7 @@ export default function ContactsPage() {
         readOnly={readOnly}
         onClose={() => setDetailContact(null)}
         onEdit={(contact) => { setDetailContact(null); startEdit(contact) }}
-        onOpenChat={openChat}
+        onOpenChat={hasModuleAccess(user, 'inbox') ? openChat : null}
       />}
       <ConfirmDialog
         open={Boolean(deleteTarget)}

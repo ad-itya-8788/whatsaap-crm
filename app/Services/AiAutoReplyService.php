@@ -87,7 +87,7 @@ class AiAutoReplyService
 
     private function handoff(AiConfig $config, Conversation $conversation, Message $inbound): void
     {
-        $agent = User::query()->where('is_active', true)->whereIn('role', ['agent', 'admin', 'owner'])->find($config->handoff_agent_id);
+        $agent = User::query()->where('is_active', true)->whereHas('assignedRole', fn ($role) => $role->where('slug', 'owner')->orWhereJsonContains('module_access', 'inbox'))->find($config->handoff_agent_id);
         $summary = 'The AI assistant requested human follow-up.';
         if ($inbound->content_text) {
             $summary .= ' Latest customer message: '.Str::limit($inbound->content_text, 200);

@@ -30,6 +30,33 @@ class NotificationController extends Controller
         ]);
     }
 
+    public function popupEvents(Request $request): JsonResponse
+    {
+        $query = Notification::query()->where('user_id', $request->user()->id);
+
+        if (! $request->has('after')) {
+            return response()->json(['latest_id' => (int) $query->max('id'), 'events' => []]);
+        }
+
+        $after = max(0, $request->integer('after'));
+        $notifications = $query->where('id', '>', $after)
+            ->orderBy('id')
+            ->limit(20)
+            ->get(['id', 'type', 'title', 'body', 'data', 'created_at']);
+
+        return response()->json([
+            'latest_id' => $notifications->last()?->id ?: $after,
+            'events' => $notifications->map(fn (Notification $notification) => [
+                'id' => $notification->id,
+                'type' => $notification->type,
+                'title' => $notification->title,
+                'body' => $notification->body,
+                'data' => $notification->data,
+                'created_at' => $notification->created_at,
+            ]),
+        ]);
+    }
+
     public function markRead(Request $request, Notification $notification): JsonResponse
     {
         if ($notification->user_id !== $request->user()->id) {
@@ -44,10 +71,13 @@ class NotificationController extends Controller
     public function browserEvents(Request $request): JsonResponse
     {
         $user = $request->user();
+        if (! $user->hasModuleAccess('inbox')) {
+            return response()->json(['latest_id' => 0, 'events' => []]);
+        }
         $query = Message::query()
             ->where('sender_type', 'customer')
             ->whereHas('conversation', function ($query) use ($user) {
-                if (in_array($user->role, ['admin', 'owner'], true)) {
+                if ($user->isOwner()) {
                     return;
                 }
 

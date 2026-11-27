@@ -15,3 +15,7 @@
 @media (max-width: 900px) {
   .team-grid { grid-template-columns: 1fr; }
 }
+.team-module-options { display: grid; gap: 6px; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.team-module-options legend { padding-inline: 5px; font-weight: 600; }
+.team-module-option { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px; background: var(--surface-soft); }
+.team-module-option input { accent-color: var(--primary); }

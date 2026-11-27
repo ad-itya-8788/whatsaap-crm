@@ -24,15 +24,16 @@ class QuickReplyController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $this->authorizeWrite($request);
         $data = $this->replyData($request);
         if (! $request->has('kind') && ($data['is_global'] ?? false)) {
-            abort_unless($request->user()->isAdmin(), 403, 'Only administrators may create global quick replies.');
+            abort_unless($request->user()->hasModuleAccess('workspace'), 403);
         }
+
+        if (! $request->user()->hasModuleAccess('workspace')) unset($data['is_global']);
 
         $reply = QuickReply::create($data + [
             'user_id' => $request->user()->id,
-            'is_global' => $request->has('kind'),
+            'is_global' => $request->user()->hasModuleAccess('workspace') && $request->has('kind'),
         ]);
 
         return response()->json($reply, 201);
@@ -84,18 +85,12 @@ class QuickReplyController extends Controller
         return $data;
     }
 
-    private function authorizeWrite(Request $request): void
-    {
-        abort_unless(in_array($request->user()->role, ['owner', 'admin', 'agent'], true), 403);
-    }
-
     private function authorizeQuickReply(Request $request, QuickReply $quickReply): void
     {
-        $this->authorizeWrite($request);
         abort_unless(
             $quickReply->is_global
                 || (int) $quickReply->user_id === (int) $request->user()->id
-                || $request->user()->isAdmin(),
+                || $request->user()->isOwner(),
             403,
             'You may only manage your own private quick replies.',
         );

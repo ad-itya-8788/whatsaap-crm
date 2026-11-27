@@ -17,7 +17,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
-        'role',
+        'role_id',
         'avatar_url',
         'is_active',
     ];
@@ -37,8 +37,27 @@ class User extends Authenticatable
         ];
     }
 
-    public function isAdmin(): bool
+    public function assignedRole(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
-        return in_array($this->role, ['admin', 'owner'], true);
+        return $this->belongsTo(Role::class, 'role_id');
+    }
+
+    public function isOwner(): bool
+    {
+        return $this->assignedRole?->slug === 'owner';
+    }
+
+    public function allowedModules(): array
+    {
+        if (! $this->is_active) {
+            return [];
+        }
+
+        return $this->isOwner() ? array_keys(Role::MODULES) : ($this->assignedRole?->module_access ?? []);
+    }
+
+    public function hasModuleAccess(string $module): bool
+    {
+        return $this->is_active && ($this->isOwner() || in_array($module, $this->allowedModules(), true));
     }
 }

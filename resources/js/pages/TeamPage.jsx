@@ -6,24 +6,29 @@ import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { PresenceDot, useMemberPresence } from '../components/common/MemberPresence.jsx'
+import RoleManagement from '../components/settings/RoleManagement.jsx'
 import TeamInvitations from '../components/settings/TeamInvitations.jsx'
-import { errorMessage, extractList, extractPaginator, isAdmin } from '../lib/utils.js'
+import { errorMessage, extractList, extractPaginator } from '../lib/utils.js'
 
-const blankCreate = { name: '', email: '', password: '', password_confirmation: '', role: 'agent' }
-const blankEdit = { name: '', email: '', role: 'agent', password: '', password_confirmation: '', is_active: true }
-
-function roleLabel(role) {
-  const value = String(role || 'agent')
-  return value.charAt(0).toUpperCase() + value.slice(1)
-}
+const blankCreate = { name: '', email: '', password: '', password_confirmation: '', role_id: '' }
+const blankEdit = { name: '', email: '', role_id: '', password: '', password_confirmation: '', is_active: true }
 
 export default function TeamPage() {
   const { user, refresh } = useAuth()
   const presence = useMemberPresence()
   const toast = useToast()
   const isOwner = String(user?.role || '').toLowerCase() === 'owner'
-  const canManage = isAdmin(user)
-  const roles = isOwner ? ['agent', 'admin', 'viewer'] : ['agent', 'viewer']
+  const canManage = Boolean(user)
+  const [catalog, setCatalog] = useState(null)
+  const [tab, setTab] = useState('members')
+  const roles = (catalog?.roles ?? []).filter((role) => role.slug !== 'owner')
+  const loadRoles = useCallback(async () => {
+    const { data } = await api.get('/api/app/roles')
+    setCatalog(data)
+  }, [])
+  useEffect(() => {
+    if (isOwner) loadRoles().catch(() => toast.error('Unable to load roles.'))
+  }, [isOwner, loadRoles, toast])
   const [users, setUsers] = useState([])
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -34,7 +39,7 @@ export default function TeamPage() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [showCreate, setShowCreate] = useState(false)
-  const [createForm, setCreateForm] = useState({ ...blankCreate, role: roles[0] })
+  const [createForm, setCreateForm] = useState({ ...blankCreate, role_id: roles.find((role) => role.slug === 'agent')?.id ?? '' })
   const [editId, setEditId] = useState(null)
   const [editForm, setEditForm] = useState(blankEdit)
   const [deactivationTarget, setDeactivationTarget] = useState(null)
@@ -70,7 +75,7 @@ export default function TeamPage() {
   const startCreate = () => {
     setShowCreate(true)
     setEditId(null)
-    setCreateForm({ ...blankCreate, role: roles[0] })
+    setCreateForm({ ...blankCreate, role_id: roles.find((role) => role.slug === 'agent')?.id ?? '' })
     setError('')
     setNotice('')
   }
@@ -94,12 +99,12 @@ export default function TeamPage() {
         email: createForm.email.trim(),
         password: createForm.password,
         password_confirmation: createForm.password_confirmation,
-        role: createForm.role,
+        role_id: createForm.role_id,
       })
       setNotice('Team member created.')
       toast.success('Team member created.')
       setShowCreate(false)
-      setCreateForm({ ...blankCreate, role: roles[0] })
+      setCreateForm({ ...blankCreate, role_id: roles.find((role) => role.slug === 'agent')?.id ?? '' })
       await loadUsers()
     } catch (requestError) {
       const message = errorMessage(requestError, 'Unable to create the team member.')
@@ -116,7 +121,7 @@ export default function TeamPage() {
     setEditForm({
       name: member.name || '',
       email: member.email || '',
-      role: member.role,
+      role_id: member.role_id,
       password: '',
       password_confirmation: '',
       is_active: member.is_active !== false,
@@ -169,7 +174,7 @@ export default function TeamPage() {
     const payload = {
       name: editForm.name.trim(),
       email: editForm.email.trim(),
-      role: editForm.role,
+      role_id: editForm.role_id,
       is_active: editForm.is_active,
     }
     if (editForm.password) {
@@ -210,11 +215,16 @@ export default function TeamPage() {
       <PageHeader
         title="Team"
         subtitle="Manage team members, roles and access."
-        actions={<div className="team-actions">
+        actions={isOwner && tab === 'members' && <div className="team-actions">
           <button type="button" className="button button-secondary" onClick={startCreate}><Icon name="plus" size={16} /> Add member</button>
           <button type="button" className="button button-primary" onClick={() => setShowInvite(true)}><Icon name="plus" size={16} /> Invite member</button>
         </div>}
       />
+      {isOwner && <nav className="team-actions" aria-label="Team sections">
+        <button type="button" className="button button-secondary" aria-pressed={tab === 'members'} onClick={() => setTab('members')}>Members</button>
+        <button type="button" className="button button-secondary" aria-pressed={tab === 'roles'} onClick={() => setTab('roles')}>Role management</button>
+      </nav>}
+      {isOwner && tab === 'roles' ? <RoleManagement catalog={catalog} onSaved={async () => { await loadRoles(); await loadUsers() }} /> : <>
       {error && <div className="alert alert-error">{error}</div>}
       {notice && <div className="alert alert-success">{notice}</div>}
 
@@ -236,8 +246,8 @@ export default function TeamPage() {
               </div>
               <div className="field">
                 <label className="field-label" htmlFor="team-create-role">Role</label>
-                <select id="team-create-role" className="select" value={createForm.role} onChange={(event) => setCreateForm({ ...createForm, role: event.target.value })}>
-                  {roles.map((role) => <option key={role} value={role}>{roleLabel(role)}</option>)}
+                <select id="team-create-role" className="select" required value={createForm.role_id} onChange={(event) => setCreateForm({ ...createForm, role_id: event.target.value })}>
+                  <option value="">Select a role</option>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
                 </select>
               </div>
               <div className="field">
@@ -295,8 +305,8 @@ export default function TeamPage() {
                             </div>
                             <div className="field">
                               <label className="field-label" htmlFor={`team-edit-role-${member.id}`}>Role</label>
-                              <select id={`team-edit-role-${member.id}`} className="select" value={editForm.role} disabled={Number(user?.id) === Number(member.id)} onChange={(event) => setEditForm({ ...editForm, role: event.target.value })}>
-                                {Array.from(new Set([...roles, member.role])).map((role) => <option key={role} value={role}>{roleLabel(role)}</option>)}
+                              <select id={`team-edit-role-${member.id}`} className="select" value={editForm.role_id} disabled={Number(user?.id) === Number(member.id)} onChange={(event) => setEditForm({ ...editForm, role_id: event.target.value })}>
+                                {member.assigned_role?.slug === 'owner' && <option value={member.role_id}>Owner</option>}{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
                               </select>
                             </div>
                             <div className="field">
@@ -323,14 +333,14 @@ export default function TeamPage() {
                     <tr key={member.id} className={member.is_active === false ? 'is-inactive' : ''}>
                       <td><PresenceDot member={presence[member.id]} /> <strong>{member.name || 'Unnamed member'}</strong>{Number(user?.id) === Number(member.id) && <span className="muted"> (you)</span>}</td>
                       <td>{member.email}</td>
-                      <td><span className={`role-badge role-${String(member.role || 'agent').toLowerCase()}`}>{roleLabel(member.role)}</span></td>
+                      <td><span className={`role-badge role-${String(member.assigned_role?.slug || '').toLowerCase()}`}>{member.assigned_role?.name}</span></td>
                       <td><span className={`status-dot ${member.is_active === false ? 'is-offline' : 'is-online'}`} /> {member.is_active === false ? 'Inactive' : 'Active'}</td>
                       <td>
                         <div className="team-actions">
-                          {(member.id === user.id || (member.role !== 'owner' && (isOwner || member.role !== 'admin'))) && (
+                          {isOwner && (member.id === user.id || member.assigned_role?.slug !== 'owner') && (
                             <button type="button" className="button button-sm button-secondary" onClick={() => startEdit(member)}><Icon name="edit" size={14} /> Edit</button>
                           )}
-                          {isOwner && member.role !== 'owner' && member.is_active && (
+                          {isOwner && member.assigned_role?.slug !== 'owner' && member.is_active && (
                             <button type="button" className="button button-sm button-secondary" onClick={() => setTransferTarget(member)}>Transfer ownership</button>
                           )}
                         </div>
@@ -352,11 +362,11 @@ export default function TeamPage() {
           </div>
         </section>
       </div>
-      <TeamInvitations showForm={showInvite} onClose={() => setShowInvite(false)} />
+      {isOwner && <TeamInvitations roles={roles} showForm={showInvite} onClose={() => setShowInvite(false)} />}
       <ConfirmDialog
         open={Boolean(transferTarget)}
         title="Transfer ownership?"
-        message={transferTarget ? `${transferTarget.name} will become the owner of this workspace, and your role will change to Admin.` : ''}
+        message={transferTarget ? `${transferTarget.name} will become the owner of this workspace, and your role will change to Agent.` : ''}
         confirmLabel="Transfer ownership"
         busy={saving}
         onConfirm={transferOwnership}
@@ -371,6 +381,7 @@ export default function TeamPage() {
         onConfirm={confirmDeactivation}
         onCancel={() => setDeactivationTarget(null)}
       />
+      </>}
     </>
   )
 }

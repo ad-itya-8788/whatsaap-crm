@@ -26,9 +26,13 @@ class AiController extends Controller
         private AiService $ai,
     ) {}
 
-    public function config(): JsonResponse
+    public function config(Request $request): JsonResponse
     {
-        return response()->json($this->configs->publicConfig());
+        $config = $this->configs->publicConfig();
+
+        return response()->json($request->user()->hasModuleAccess('ai_agents')
+            ? $config
+            : array_intersect_key($config, array_flip(['is_active', 'auto_reply_enabled'])));
     }
 
     public function saveConfig(Request $request): JsonResponse
@@ -44,7 +48,7 @@ class AiController extends Controller
             'auto_reply_enabled' => ['sometimes', 'boolean'],
             'auto_reply_max_per_conversation' => ['sometimes', 'integer', 'min:1', 'max:50'],
             'handoff_agent_id' => ['sometimes', 'nullable', 'integer', Rule::exists('users', 'id')->where(fn ($query) => $query
-                ->where('is_active', true)->whereIn('role', ['agent', 'admin', 'owner']))],
+                ->where('is_active', true))],
         ]);
 
         if ($data['api_key'] === AiConfigService::MASK && ! $this->configs->current()?->api_key) {
@@ -110,9 +114,12 @@ class AiController extends Controller
             'conversation_id' => ['required', 'exists:conversations,id'],
         ]);
 
+        $conversation = Conversation::findOrFail($data['conversation_id']);
+        abort_unless($request->user()->isOwner() || (int) $conversation->assigned_agent_id === $request->user()->id, 404);
+
         try {
             return response()->json($this->ai->draft(
-                Conversation::findOrFail($data['conversation_id']),
+                $conversation,
                 $request->user()->id,
             ));
         } catch (AiException $exception) {

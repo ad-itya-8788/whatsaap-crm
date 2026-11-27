@@ -39,6 +39,21 @@
 .toast > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .toast .icon-button { width: 24px; height: 24px; flex-basis: 24px; margin: -2px -3px 0 0; }
 
+.toast-notice { align-items: center; gap: 10px; padding: 12px; border-left-width: 1px; border-radius: 16px; background: linear-gradient(135deg, var(--surface), var(--primary-soft)); box-shadow: var(--shadow-lg), 0 8px 24px color-mix(in srgb, var(--primary) 12%, transparent); }
+.toast-notice-icon { display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; border-radius: 12px; background: var(--accent); color: var(--primary-foreground); box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 30%, transparent); animation: toast-pop .28s cubic-bezier(.2, 1.5, .4, 1) both; }
+.toast-notice-copy { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.toast-notice-copy strong { font-size: var(--fs-body); font-weight: 700; }
+.toast-notice-copy > span { color: var(--muted); font-size: var(--fs-sm); line-height: 1.35; overflow-wrap: anywhere; }
+.toast-notice-action { display: inline-flex; align-items: center; gap: 4px; width: max-content; margin-top: 2px; color: var(--accent-ink); font-size: var(--fs-xs); font-weight: 700; text-decoration: none; }
+.toast-notice-action:hover { text-decoration: underline; }
+.toast-notice .icon-button { align-self: flex-start; margin: -2px -3px 0 0; }
+
+@keyframes toast-pop {
+  from { opacity: 0; transform: scale(.6) rotate(-8deg); }
+  70% { opacity: 1; transform: scale(1.12) rotate(3deg); }
+  to { opacity: 1; transform: scale(1) rotate(0); }
+}
+
 @keyframes toast-enter {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }

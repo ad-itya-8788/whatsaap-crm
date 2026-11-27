@@ -34,7 +34,7 @@ export function LoginPage() {
     setError('')
     try {
       await login(values)
-      router.visit('/dashboard', { replace: true })
+      router.visit('/', { replace: true })
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to sign in.'))
     } finally {
@@ -114,7 +114,7 @@ export function InviteJoinPage() {
       await csrf()
       const { data } = await api.post(`/api/invitations/${encodeURIComponent(token)}/redeem`, values)
       setUser(data.user)
-      router.visit('/dashboard', { replace: true })
+      router.visit('/', { replace: true })
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to accept the invitation.'))
     } finally {
@@ -136,7 +136,7 @@ export function InviteJoinPage() {
     <AuthShell
       title="Join your workspace"
       subtitle={invitation ? `You’ve been invited to join as ${invitation.role}.` : 'Accept your team invitation.'}
-      footer={<Link href={user ? '/dashboard' : '/login'}>{user ? 'Go to dashboard' : 'Back to sign in'}</Link>}
+      footer={<Link href={user ? '/' : '/login'}>{user ? 'Go to dashboard' : 'Back to sign in'}</Link>}
     >
       {error && <div className="alert alert-error" role="alert">{error}</div>}
       {loadingPage && <div className="app-loading"><span className="spinner" /> Checking the invitation…</div>}

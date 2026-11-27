@@ -4,7 +4,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ToastProvider } from './components/common/ToastProvider.jsx'
 import { startPrivateSession } from './api/client.js'
-import { AuthProvider } from './context/AuthContext.jsx'
+import { AuthProvider, useAuth } from './context/AuthContext.jsx'
 import * as authPages from './pages/AuthPages.jsx'
 import './styles/index.css'
 
@@ -17,7 +17,12 @@ async function loadWorkspaceLayout() {
       import('./components/common/ProtectedRoute.jsx'),
       import('./components/layout/AppLayout.jsx'),
     ])
-    workspaceLayout ??= (page) => <ProtectedRoute><AppLayout>{page}</AppLayout></ProtectedRoute>
+    function Workspace({ children }) {
+      const { user } = useAuth()
+      const accessKey = JSON.stringify([user?.role_id, user?.module_access])
+      return <ProtectedRoute>{({ denied }) => <AppLayout key={accessKey}>{denied || children}</AppLayout>}</ProtectedRoute>
+    }
+    workspaceLayout ??= (page) => <Workspace>{page}</Workspace>
   }
   return workspaceLayout
 }

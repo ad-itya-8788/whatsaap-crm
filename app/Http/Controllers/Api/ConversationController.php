@@ -33,7 +33,7 @@ class ConversationController extends Controller
             ->with(['contact.tags', 'assignedAgent:id,name,avatar_url'])
             ->withCount('notes');
 
-        if (! $request->user()->isAdmin()) {
+        if (! $request->user()->isOwner()) {
             $query->where('assigned_agent_id', $request->user()->id);
         }
 
@@ -117,7 +117,7 @@ class ConversationController extends Controller
     public function unreadCount(Request $request): JsonResponse
     {
         $query = Conversation::query()->where('unread_count', '>', 0);
-        if (! $request->user()->isAdmin()) {
+        if (! $request->user()->isOwner()) {
             $query->where('assigned_agent_id', $request->user()->id);
         }
 
@@ -144,7 +144,7 @@ class ConversationController extends Controller
             [
                 'user_id' => $request->user()->id,
                 'status' => 'open',
-                'assigned_agent_id' => $request->user()->isAdmin() ? null : $request->user()->id,
+                'assigned_agent_id' => $request->user()->isOwner() ? null : $request->user()->id,
             ],
         );
 
@@ -155,7 +155,7 @@ class ConversationController extends Controller
     {
         $agents = User::query()
             ->where('is_active', true)
-            ->whereIn('role', ['agent', 'admin', 'owner'])
+            ->whereHas('assignedRole', fn ($role) => $role->where('slug', 'owner')->orWhereJsonContains('module_access', 'inbox'))
             ->orderBy('name')
             ->get(['id', 'name']);
 
@@ -168,19 +168,28 @@ class ConversationController extends Controller
             'assignee_id' => ['nullable', 'integer', 'exists:users,id'],
         ]);
 
+        if (! empty($data['assignee_id'])) {
+            abort_unless(User::find($data['assignee_id'])?->hasModuleAccess('inbox'), 422, 'Select an active member with Inbox access.');
+        }
+
         DB::transaction(function () use ($conversation, $data, $request) {
             $conversation->update(['assigned_agent_id' => $data['assignee_id'] ?? null]);
 
             if (! empty($data['assignee_id']) && (int) $data['assignee_id'] !== $request->user()->id) {
                 $contact = $conversation->contact;
                 $label = $contact?->name ?: $contact?->phone ?: 'a contact';
+                $actor = $request->user()->name;
 
                 Notification::create([
                     'user_id' => (int) $data['assignee_id'],
                     'type' => 'conversation_assigned',
-                    'title' => 'Conversation assigned to you',
-                    'body' => "{$label} was assigned to you.",
-                    'data' => ['conversation_id' => $conversation->id],
+                    'title' => 'New chat assigned to you',
+                    'body' => "{$actor} assigned you {$label} chat.",
+                    'data' => [
+                        'conversation_id' => $conversation->id,
+                        'actor_name' => $actor,
+                        'contact_name' => $label,
+                    ],
                 ]);
             }
         });

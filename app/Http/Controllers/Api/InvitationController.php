@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AccountInvitation;
 use App\Models\User;
+use App\Models\Role;
 use App\Support\SessionUser;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -27,20 +28,23 @@ class InvitationController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'role' => ['required', Rule::in(['admin', 'agent', 'viewer'])],
+            'role' => ['required', Rule::exists('roles', 'slug')->whereNot('slug', 'owner')],
             'label' => ['nullable', 'string', 'max:80'],
             'expiresInDays' => ['sometimes', 'integer', 'min:1', 'max:365'],
         ]);
 
         $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
         $days = $data['expiresInDays'] ?? 7;
-        $invitation = AccountInvitation::create([
-            'role' => $data['role'],
-            'label' => $data['label'] ?? null,
-            'expires_at' => now()->addDays($days),
-            'created_by' => $request->user()->id,
-            'token_hash' => hash('sha256', $token),
-        ]);
+        $invitation = DB::transaction(function () use ($data, $days, $request, $token) {
+            abort_unless(Role::where('slug', $data['role'])->where('slug', '!=', 'owner')->lockForUpdate()->first(), 422);
+            return AccountInvitation::create([
+                'role' => $data['role'],
+                'label' => $data['label'] ?? null,
+                'expires_at' => now()->addDays($days),
+                'created_by' => $request->user()->id,
+                'token_hash' => hash('sha256', $token),
+            ]);
+        }, 3);
 
         return response()->json([
             'invitation' => $invitation,
@@ -86,11 +90,13 @@ class InvitationController extends Controller
                 if (User::query()->where('email', $email)->exists()) {
                     throw ValidationException::withMessages(['email' => 'This email address already belongs to a team member.']);
                 }
+                $role = Role::where('slug', $invitation->role)->where('slug', '!=', 'owner')->lockForUpdate()->first();
+                abort_unless($role, 410, 'The invitation role is no longer available.');
                 $user = User::create([
                     'name' => $data['name'],
                     'email' => $email,
                     'password' => Hash::make($data['password']),
-                    'role' => $invitation->role,
+                    'role_id' => $role->id,
                     'is_active' => true,
                 ]);
                 $invitation->update(['accepted_by' => $user->id, 'accepted_at' => now()]);

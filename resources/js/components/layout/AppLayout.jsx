@@ -1,3 +1,4 @@
+import { hasModuleAccess, moduleForPath } from '../../lib/moduleAccess.js'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from '@inertiajs/react'
 import { usePageLocation } from '../../lib/navigation.js'
@@ -5,6 +6,7 @@ import api from '../../api/client.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import BrandLogo from '../common/BrandLogo.jsx'
 import BrowserNotificationsListener from '../common/BrowserNotificationsListener.jsx'
+import NotificationPopupListener from '../common/NotificationPopupListener.jsx'
 import { PresenceHeartbeat } from '../common/MemberPresence.jsx'
 import Icon from '../common/Icon.jsx'
 import { useToast } from '../common/ToastProvider.jsx'
@@ -91,8 +93,8 @@ function AccountMenu({ user, onClose, onLogout, showIdentity = true }) {
           <div className="account-menu-divider" />
         </>
       )}
-      <Link className="account-menu-item" href="/settings?tab=profile" onClick={onClose}><Icon name="user" size={16} /> Profile</Link>
-      <Link className="account-menu-item" href="/settings?tab=whatsapp" onClick={onClose}><Icon name="settings" size={16} /> Settings</Link>
+      {hasModuleAccess(user, 'settings') && <Link className="account-menu-item" href="/settings?tab=profile" onClick={onClose}><Icon name="user" size={16} /> Profile</Link>}
+      {hasModuleAccess(user, 'settings') && <Link className="account-menu-item" href="/settings?tab=whatsapp" onClick={onClose}><Icon name="settings" size={16} /> Settings</Link>}
       <div className="account-menu-divider" />
       <button type="button" className="account-menu-action" onClick={onLogout}><Icon name="logout" size={16} /> Sign out</button>
     </div>
@@ -101,6 +103,8 @@ function AccountMenu({ user, onClose, onLogout, showIdentity = true }) {
 
 export default function AppLayout({ children }) {
   const { user, logout } = useAuth()
+  const allowed = (module) => hasModuleAccess(user, module)
+  const visible = (item) => allowed(moduleForPath(user, item.to))
   const toast = useToast()
   const location = usePageLocation()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -120,9 +124,9 @@ export default function AppLayout({ children }) {
     setNotificationUnread(Number(data?.count || 0))
   }, [])
 
-  usePoll(loadUnread, 60_000, { enabled: Boolean(user), event: 'wacrm:inbox-changed' })
-  usePoll(loadNotificationUnread, 60_000, { enabled: Boolean(user), event: 'wacrm:notifications-changed' })
-  const { data: whatsapp } = useWhatsappConfig({ enabled: Boolean(user) })
+  usePoll(loadUnread, 60_000, { enabled: allowed('inbox'), event: 'wacrm:inbox-changed' })
+  usePoll(loadNotificationUnread, 60_000, { enabled: allowed('notifications'), event: 'wacrm:notifications-changed' })
+  const { data: whatsapp } = useWhatsappConfig({ enabled: allowed('dashboard') || allowed('settings') })
 
   useEffect(() => {
     setDrawerOpen(false)
@@ -222,7 +226,7 @@ export default function AppLayout({ children }) {
 
       <aside className={`app-sidebar${drawerOpen ? ' is-open' : ''}`} aria-label="Main navigation">
         <div className="sidebar-brand">
-          <Link href="/dashboard" aria-label="Aayojan AI CRM home">
+          <Link href="/" aria-label="Aayojan AI CRM home">
             <BrandLogo className="brand-logo sidebar-logo" />
           </Link>
           <button type="button" className="sidebar-close" onClick={() => setDrawerOpen(false)} aria-label="Close navigation">
@@ -233,11 +237,11 @@ export default function AppLayout({ children }) {
         <nav className="sidebar-nav">
           <div className="sidebar-group">
             <p className="sidebar-label">Workspace</p>
-            <ul className="sidebar-section">{mainNav.map(renderLink)}</ul>
+            <ul className="sidebar-section">{mainNav.filter(visible).map(renderLink)}</ul>
           </div>
           <div className="sidebar-group">
             <p className="sidebar-label">Manage</p>
-            <ul className="sidebar-section">{manageNav.map(renderLink)}</ul>
+            <ul className="sidebar-section">{manageNav.filter(visible).map(renderLink)}</ul>
           </div>
         </nav>
 
@@ -272,7 +276,7 @@ export default function AppLayout({ children }) {
               {crumbs.map((crumb, index) => (
                 <span className="topbar-crumb" key={`${crumb.label}-${index}`}>
                   {index > 0 && <Icon name="back" size={13} className="crumb-sep flip-icon" />}
-                  {crumb.to && index < crumbs.length - 1
+                  {crumb.to && visible(crumb) && index < crumbs.length - 1
                     ? <Link href={crumb.to}>{crumb.label}</Link>
                     : <span aria-current={index === crumbs.length - 1 ? 'page' : undefined}>{crumb.label}</span>}
                 </span>
@@ -280,14 +284,14 @@ export default function AppLayout({ children }) {
             </nav>
           </div>
           <div className="topbar-actions">
-            <Link className={`topbar-whatsapp${connected ? ' is-connected' : ''}`} href="/settings?tab=whatsapp" title={accountTitle}>
+            {allowed('settings') && <Link className={`topbar-whatsapp${connected ? ' is-connected' : ''}`} href="/settings?tab=whatsapp" title={accountTitle}>
               <Icon name="whatsapp" size={15} />
               <span className="text-truncate">{whatsapp?.configured || whatsapp ? accountLabel : 'WhatsApp status'}</span>
-            </Link>
-            <Link className="topbar-control" href="/notifications" title="Notifications" aria-label={`Notifications${notificationUnread ? `, ${notificationUnread} unread` : ''}`}>
+            </Link>}
+            {allowed('notifications') && <Link className="topbar-control" href="/notifications" title="Notifications" aria-label={`Notifications${notificationUnread ? `, ${notificationUnread} unread` : ''}`}>
               <Icon name="bell" size={17} />
               {notificationUnread > 0 && <span className="nav-dot" />}
-            </Link>
+            </Link>}
             <button
               type="button"
               className="topbar-control"
@@ -316,8 +320,9 @@ export default function AppLayout({ children }) {
             </div>
           </div>
         </header>
-        <BrowserNotificationsListener />
-        <PresenceHeartbeat userId={user?.id} />
+        {allowed('notifications') && <NotificationPopupListener />}
+        {allowed('notifications') && allowed('inbox') && <BrowserNotificationsListener />}
+        {(allowed('inbox') || allowed('team')) && <PresenceHeartbeat userId={user?.id} />}
         <main className="app-content">
           {children}
         </main>

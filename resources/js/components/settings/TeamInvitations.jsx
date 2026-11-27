@@ -5,7 +5,7 @@ import ConfirmDialog from '../common/ConfirmDialog.jsx'
 import Icon from '../common/Icon.jsx'
 import { useToast } from '../common/ToastProvider.jsx'
 
-export default function TeamInvitations({ showForm, onClose }) {
+export default function TeamInvitations({ roles, showForm, onClose }) {
   const toast = useToast()
   const [list, setList] = useState([])
   const [page, setPage] = useState(1)
@@ -106,7 +106,7 @@ export default function TeamInvitations({ showForm, onClose }) {
                 <p>Create a one-time invitation link for your workspace.</p>
                 {error && <div className="alert alert-error" role="alert">{error}</div>}
                 <div className="form-grid">
-                  <label className="field">Role<select className="select" name="role" defaultValue="agent"><option value="admin">Admin</option><option value="agent">Agent</option><option value="viewer">Viewer</option></select></label>
+                  <label className="field">Role<select className="select" name="role" defaultValue="agent">{roles.map((role) => <option key={role.id} value={role.slug}>{role.name}</option>)}</select></label>
                   <label className="field">Expires after<select className="select" name="expiresInDays" defaultValue="7"><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option></select></label>
                 </div>
                 <label className="field">Label (optional)<input className="input" name="label" maxLength={80} /></label>

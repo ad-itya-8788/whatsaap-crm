@@ -6,6 +6,7 @@ use App\Events\MessageCreated;
 use App\Events\MessageStatusChanged;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\Notification;
 use App\Models\User;
 use App\Models\WhatsappConfig;
 use Illuminate\Foundation\Testing\TestCase;
@@ -52,7 +53,7 @@ class RealtimeMessagingTest extends TestCase
             'name' => 'Test Owner',
             'email' => 'owner@example.test',
             'password' => bcrypt('test-password'),
-            'role' => 'owner',
+            'role_id' => \App\Models\Role::where('slug', 'owner')->value('id'),
             'is_active' => true,
         ]);
         $this->actingAs($user);
@@ -105,14 +106,14 @@ class RealtimeMessagingTest extends TestCase
             'name' => 'Inbox Owner',
             'email' => 'inbox-owner@example.test',
             'password' => bcrypt('test-password'),
-            'role' => 'owner',
+            'role_id' => \App\Models\Role::where('slug', 'owner')->value('id'),
             'is_active' => true,
         ]);
         $agent = User::forceCreate([
             'name' => 'Inbox Agent',
             'email' => 'inbox-agent@example.test',
             'password' => bcrypt('test-password'),
-            'role' => 'agent',
+            'role_id' => \App\Models\Role::where('slug', 'agent')->value('id'),
             'is_active' => true,
         ]);
 
@@ -122,6 +123,11 @@ class RealtimeMessagingTest extends TestCase
             ->assertOk()->assertJsonCount(0, 'data');
         $this->actingAs($owner)->patchJson("/api/app/conversations/{$mine->id}/assign", ['assignee_id' => $agent->id])
             ->assertOk();
+        $notification = Notification::where('user_id', $agent->id)->sole();
+        $this->assertSame('New chat assigned to you', $notification->title);
+        $this->assertStringContainsString('Inbox Owner assigned you', $notification->body);
+        $this->actingAs($agent)->getJson('/api/app/notifications/popup-events?after=0')
+            ->assertOk()->assertJsonPath('events.0.title', 'New chat assigned to you');
         $this->actingAs($agent)->getJson('/api/app/conversations')
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $mine->id);
         $this->getJson("/api/app/conversations/{$other->id}")->assertNotFound();

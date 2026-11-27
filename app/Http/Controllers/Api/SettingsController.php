@@ -123,7 +123,11 @@ class SettingsController extends Controller
             'name' => $user->name,
             'full_name' => $user->name,
             'email' => $user->email,
-            'role' => $user->role,
+            'role' => $user->assignedRole?->slug,
+            'role_id' => $user->role_id,
+            'role_name' => $user->assignedRole?->name,
+            'module_access' => $user->allowedModules(),
+            'modules' => \App\Models\Role::MODULES,
             'avatar_url' => $user->avatar_url,
         ];
     }

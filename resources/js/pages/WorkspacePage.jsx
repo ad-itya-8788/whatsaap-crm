@@ -7,8 +7,7 @@ import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
 import InteractiveBuilder from '../components/chat/InteractiveBuilder.jsx'
 import InteractivePreview from '../components/chat/InteractivePreview.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
-import { useAuth } from '../context/AuthContext.jsx'
-import { errorMessage, extractList, isAdmin } from '../lib/utils.js'
+import { errorMessage, extractList } from '../lib/utils.js'
 
 const tabs = [
   { key: 'tags', label: 'Tags', icon: 'tag' },
@@ -48,10 +47,9 @@ function FieldRow({ label, children, full = false }) {
 }
 
 export default function WorkspacePage() {
-  const { user } = useAuth()
   const toast = useToast()
-  const canManage = isAdmin(user)
-  const canManageReplies = ['owner', 'admin', 'agent'].includes(user?.role)
+  const canManage = true
+  const canManageReplies = true
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')
   const tab = tabs.some((item) => item.key === requestedTab) ? requestedTab : 'tags'

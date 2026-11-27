@@ -1,3 +1,5 @@
+import { hasModuleAccess } from '../../lib/moduleAccess.js'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { useEffect, useRef, useState } from 'react'
 import api from '../../api/client.js'
 import { useToast } from '../common/ToastProvider.jsx'
@@ -30,6 +32,8 @@ function tagStyle(tag) {
 }
 
 export default function ContactDetail({ initialContact, customFields, onClose, onEdit, onOpenChat, readOnly }) {
+  const { user } = useAuth()
+  const canOpenInbox = hasModuleAccess(user, 'inbox')
   const toast = useToast()
   const dialog = useRef(null)
   const attempt = useRef(null)
@@ -149,11 +153,11 @@ export default function ContactDetail({ initialContact, customFields, onClose, o
         </div>
         {!readOnly && <div className="contact-sheet-actions">
           <button type="button" className="button button-sm button-secondary" onClick={() => onEdit(contact)}><Icon name="edit" size={15} /> Edit</button>
-          <button type="button" className="button button-sm button-secondary" onClick={() => setPickerOpen(true)}><Icon name="template" size={15} /> Send template</button>
-          <button type="button" className="button button-sm button-primary" disabled={openingChat} onClick={async () => {
+          {canOpenInbox && <button type="button" className="button button-sm button-secondary" onClick={() => setPickerOpen(true)}><Icon name="template" size={15} /> Send template</button>}
+          {canOpenInbox && <button type="button" className="button button-sm button-primary" disabled={openingChat} onClick={async () => {
             setOpeningChat(true)
-            try { await onOpenChat(contact) } finally { setOpeningChat(false) }
-          }}><Icon name="chat" size={15} /> Open inbox</button>
+            try { await onOpenChat?.(contact) } finally { setOpeningChat(false) }
+          }}><Icon name="chat" size={15} /> Open inbox</button>}
         </div>}
       </header>
       <nav className="contact-sheet-tabs" aria-label="Contact information">

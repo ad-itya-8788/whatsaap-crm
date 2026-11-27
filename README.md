@@ -45,9 +45,21 @@ php artisan queue:work
 php artisan schedule:work
 ```
 
+## Team roles and module access
+
+Sign in as Owner and open **Team ? Role management**. A role has one checkbox per sidebar module. Assign roles from **Team ? Members**. Role and module changes are checked on every API request. Signed-in browsers refresh access on focus and every five seconds.
+
+The module migration creates Owner, Agent, and Viewer and converts the user role string to the required `users.role_id` foreign key. Back up the database and deploy the code and built assets together before running `php artisan migrate`.
+
+- Owner retains all modules. The new Agent default grants Inbox, Contacts, and Notifications. Viewer starts with Dashboard and Reports and can use all permitted module actions.
+- Existing legacy agents keep Contacts and Notifications in an Agent (legacy) role. The Owner can explicitly grant Inbox or assign the new Agent role, because Inbox now includes previously restricted message actions.
+- Existing Admin accounts retain a custom legacy role with workspace modules. Owner-only actions and unrestricted conversation access remain exclusive to Owner.
+- Unknown roles start with no access. If the earlier granular `crm_roles` schema exists, non-owner legacy assignments are converted to named roles with no modules. The Owner must regrant module access to avoid translating a partial permission set into a wider binary grant. Earlier granular tables stay in the database as archives.
+- Existing invitations follow the converted role. Back up before migration and restore the backup for a database rollback.
+
 ## Real-time messaging
 
-The inbox uses Laravel Reverb over WebSockets. Laravel broadcasts only after a message or conversation change is saved successfully; the browser listens on the authenticated private `account.default` channel. If Reverb is not configured, the inbox keeps its slower polling fallback.
+The inbox uses Laravel Reverb over WebSockets. Laravel broadcasts only after a message or conversation change is saved successfully; the browser listens for change signals on the authenticated private `account.default` channel and reloads conversation data through the scoped HTTP API. If Reverb is not configured, the inbox keeps its slower polling fallback.
 
 For local development, copy the Reverb variables from [.env.example](.env.example) into `.env`, use the same `REVERB_APP_ID`, `REVERB_APP_KEY`, and `REVERB_APP_SECRET` values, and set `REVERB_ALLOWED_ORIGINS` to the origins you open in the browser. If you use `http://localhost:8000`, `http://127.0.0.1:8000`, `http://localhost:5173`, or `http://127.0.0.1:5173`, list all four exactly as shown above. Then start one extra terminal:
 

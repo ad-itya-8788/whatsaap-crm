@@ -1,11 +1,18 @@
+import { hasModuleAccess, moduleForPath } from '../lib/moduleAccess.js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from '@inertiajs/react'
+import { Link as InertiaLink } from '@inertiajs/react'
 import { useSearchParams } from '../lib/navigation.js'
 import api from '../api/client.js'
 import Icon from '../components/common/Icon.jsx'
 import { errorMessage, friendlyProviderMessage } from '../lib/utils.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useWhatsappConfig } from '../lib/whatsappConfig.js'
+
+function Link({ href, children, preserveContent = false, ...props }) {
+  const { user } = useAuth()
+  if (!hasModuleAccess(user, moduleForPath(user, href))) return preserveContent ? <span>{children}</span> : null
+  return <InertiaLink href={href} {...props}>{children}</InertiaLink>
+}
 
 const RANGES = [
   { days: 1, label: 'Today' },
@@ -127,7 +134,7 @@ function AttentionTile({ icon, tone, value, label, meta, to, onClick }) {
     return <button type="button" className="dash-attention-tile" onClick={onClick}>{body}</button>
   }
 
-  return <Link className="dash-attention-tile" href={to}>{body}</Link>
+  return <Link preserveContent className="dash-attention-tile" href={to}>{body}</Link>
 }
 
 function FailedMessagesDialog({ open, messages, total, onClose }) {
@@ -159,7 +166,7 @@ function FailedMessagesDialog({ open, messages, total, onClose }) {
               const technical = [message.errorTitle, message.errorCode ? `Code ${message.errorCode}` : null].filter(Boolean).join(' · ')
               return (
                 <li key={message.id}>
-                  <Link href={`/inbox?c=${message.conversationId}`} onClick={onClose} title={technical || undefined}>
+                  <Link preserveContent href={`/inbox?c=${message.conversationId}`} onClick={onClose} title={technical || undefined}>
                     <span className="dash-failed-contact">{message.contactName || message.contactPhone || 'Unknown contact'}</span>
                     <time dateTime={message.at}>{message.at ? new Date(message.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</time>
                     <span className="dash-failed-reason">{reason}</span>
@@ -423,7 +430,7 @@ function RecentActivity({ items, loading }) {
             const technical = [item.errorTitle, item.errorCode ? `Code ${item.errorCode}` : null].filter(Boolean).join(' · ')
             return (
               <li key={item.id}>
-                <Link href={`/inbox?c=${item.conversationId}`} title={technical || preview}>
+                <Link preserveContent href={`/inbox?c=${item.conversationId}`} title={technical || preview}>
                   <span className={`dash-activity-icon dash-activity-${tone}`}><Icon name={messageIcon(item)} size={14} /></span>
                   <span className="dash-activity-avatar">{String(item.title || '?').charAt(0).toUpperCase()}</span>
                   <span className="dash-activity-text">
@@ -511,7 +518,7 @@ function ReplyQueue({ items, team, replyTargetMinutes }) {
         <ul className="dash-queue-list">
           {items.slice(0, 5).map((item) => (
             <li key={item.conversationId}>
-              <Link href={`/inbox?c=${item.conversationId}`}>
+              <Link preserveContent href={`/inbox?c=${item.conversationId}`}>
                 <span className="avatar">{String(item.contactName || item.contactPhone || '?').charAt(0).toUpperCase()}</span>
                 <span className="dash-queue-text">
                   <strong>{item.contactName || item.contactPhone || 'Unknown contact'}</strong>

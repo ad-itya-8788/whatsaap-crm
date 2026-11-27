@@ -63,17 +63,17 @@ class ContactController extends Controller
         }
 
         $paginator = $query->orderByDesc('updated_at')->orderByDesc('id')->paginate($perPage);
-        $paginator->additional(['summary' => [
+        $summary = [
             'total' => Contact::count(),
             'with_conversation' => Contact::has('conversations')->count(),
             'recently_added' => Contact::where('created_at', '>=', now()->subDays(7))->count(),
             'tags' => Tag::count(),
-        ]]);
+        ];
         $paginator->setCollection(
             $paginator->getCollection()->map(fn (Contact $contact) => $this->contactPayload($contact))
         );
 
-        return response()->json($paginator);
+        return response()->json($paginator->toArray() + ['summary' => $summary]);
     }
 
     public function store(ContactRequest $request): JsonResponse
@@ -168,9 +168,20 @@ class ContactController extends Controller
 
     public function destroy(Contact $contact): Response
     {
-        $contact->delete();
+        $user = request()->user();
+        DB::transaction(function () use ($contact, $user) {
+            $contact = Contact::lockForUpdate()->findOrFail($contact->id);
+            $conversation = $contact->conversations()->lockForUpdate()->first();
+            abort_if($conversation && ! $user->isOwner() && (int) $conversation->assigned_agent_id !== $user->id, 404);
+            $contact->delete();
+        }, 3);
 
         return response()->noContent();
+    }
+
+    public function syncConversationTags(Request $request, Conversation $conversation): JsonResponse
+    {
+        return $this->syncTags($request, $conversation->contact);
     }
 
     public function syncTags(Request $request, Contact $contact): JsonResponse

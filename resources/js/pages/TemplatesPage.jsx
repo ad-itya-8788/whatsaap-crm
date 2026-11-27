@@ -6,8 +6,7 @@ import PageHeader from '../components/common/PageHeader.jsx'
 import Icon from '../components/common/Icon.jsx'
 import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
-import { useAuth } from '../context/AuthContext.jsx'
-import { createIdempotencyKey, errorMessage, extractList, isAdmin, placeholders, relativeTime } from '../lib/utils.js'
+import { createIdempotencyKey, errorMessage, extractList, placeholders, relativeTime } from '../lib/utils.js'
 import TemplateCard from '../components/templates/TemplateCard.jsx'
 import TemplatePreview from '../components/templates/TemplatePreview.jsx'
 import TemplatePreviewModal from '../components/templates/TemplatePreviewModal.jsx'
@@ -121,14 +120,13 @@ function revisionTemplateName(name, templates) {
 const visitTemplates = (url, options) => router.visit(url, { preserveState: true, ...options })
 
 export default function TemplatesPage() {
-  const { user } = useAuth()
   const { pathname, search } = usePageLocation()
   const { templateId } = usePage().props
   const revisionId = new URLSearchParams(search).get('revision')
   const isEditor = pathname === '/templates/create' || Boolean(templateId)
   const editorRoute = templateId ? `edit:${templateId}` : `create:${revisionId || ''}`
   const toast = useToast()
-  const canManage = isAdmin(user)
+  const canManage = true
   const [templates, setTemplates] = useState([])
   const [contacts, setContacts] = useState([])
   const revisionSource = revisionId ? templates.find((item) => String(item.id) === revisionId) : null
@@ -159,7 +157,7 @@ export default function TemplatesPage() {
     try {
       const [templateResult, contactResult] = await Promise.all([
         api.get('/api/app/whatsapp/templates'),
-        api.get('/api/app/contacts', { params: { per_page: 100 } }).catch(() => ({ data: {} })),
+        api.get('/api/app/whatsapp/template-contacts').catch(() => ({ data: {} })),
       ])
       setTemplates(extractList(templateResult.data))
       setContacts(extractList(contactResult.data))

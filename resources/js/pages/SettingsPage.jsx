@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from '@inertiajs/react'
+import { hasModuleAccess, moduleForPath } from '../lib/moduleAccess.js'
 import { useSearchParams } from '../lib/navigation.js'
 import api from '../api/client.js'
 import PageHeader from '../components/common/PageHeader.jsx'
@@ -67,12 +68,13 @@ function resolveTab(value) {
 }
 
 function SettingsRail({ active }) {
+  const { user } = useAuth()
   return (
     <nav className="settings-rail" aria-label="Settings sections">
       {['Account', 'Workspace'].map((group) => (
         <div className="settings-rail-group" key={group}>
           <span className="settings-rail-label">{group}</span>
-          {SECTIONS.filter((section) => section.group === group).map((section) => (
+          {SECTIONS.filter((section) => section.group === group && (!section.to || hasModuleAccess(user, moduleForPath(user, section.to)))).map((section) => (
             <Link
               key={section.id}
               className={`settings-rail-item${active === section.id ? ' is-active' : ''}`}
@@ -151,10 +153,10 @@ function OverviewPanel({ user }) {
           <strong>{user?.name || 'Team member'}</strong>
           <span>{user?.email}</span>
         </div>
-        <span className={`badge badge-${isAdmin(user) ? 'approved' : 'pending'}`}>{user?.role || 'agent'}</span>
+        <span className={`badge badge-${isAdmin(user) ? 'approved' : 'pending'}`}>{user?.role_name || user?.role}</span>
       </div>
       <div className="settings-overview-grid">
-        {tiles.map((tile) => (
+        {tiles.filter((tile) => hasModuleAccess(user, ({ 'Team members': 'team', Templates: 'templates', Tags: 'workspace', 'Custom fields': 'workspace' })[tile.label] ?? 'settings')).map((tile) => (
           <Link className="settings-overview-tile" href={tile.to} key={tile.label}>
             <strong>{counts ? (tile.value ?? 0) : '—'}</strong>
             <span>{tile.label}</span>
@@ -322,7 +324,6 @@ function SecurityPanel() {
 function InboxPanel() {
   const { user } = useAuth()
   const toast = useToast()
-  const canManage = isAdmin(user)
   const [target, setTarget] = useState('5')
   const [saving, setSaving] = useState(false)
 
@@ -350,11 +351,11 @@ function InboxPanel() {
       <form className="form-grid" onSubmit={save}>
         <div className="field field-full">
           <label className="field-label" htmlFor="reply-target">First reply target (minutes)</label>
-          <input id="reply-target" className="input" type="number" min="1" max="1440" required disabled={!canManage} value={target} onChange={(event) => setTarget(event.target.value)} />
+          <input id="reply-target" className="input" type="number" min="1" max="1440" required value={target} onChange={(event) => setTarget(event.target.value)} />
           <p className="field-hint">Dashboard attention alerts use this target. Between 1 and 1440 minutes.</p>
         </div>
         <div className="field field-full settings-actions">
-          <button className="button button-primary" disabled={!canManage || saving}>{saving ? 'Saving...' : 'Save inbox settings'}</button>
+          <button className="button button-primary" disabled={saving}>{saving ? 'Saving...' : 'Save inbox settings'}</button>
         </div>
       </form>
     </section>
@@ -366,7 +367,7 @@ export default function SettingsPage() {
   const [params] = useSearchParams()
   const tab = resolveTab(TAB_ALIASES[params.get('tab')] || params.get('tab') || 'overview')
   const toast = useToast()
-  const canManage = isAdmin(user)
+  const canManage = user?.role === 'owner'
   const [form, setForm] = useState(blankConfig)
   const [savedConfig, setSavedConfig] = useState(null)
   const [registration, setRegistration] = useState(null)
@@ -556,7 +557,7 @@ export default function SettingsPage() {
           {tab === 'whatsapp' && (
             <>
               {error && <div className="alert alert-error">{error}</div>}
-              {!canManage && <div className="alert alert-info">Only administrators can change WhatsApp connection settings.</div>}
+              {!canManage && <div className="alert alert-info">Only the Owner can change WhatsApp connection settings.</div>}
               <div className="settings-layout">
                 <section className="card connection-card">
                   <header className="panel-header">

@@ -26,6 +26,29 @@ export function AuthProvider({ children, initialUser }) {
     return () => window.removeEventListener('wacrm:unauthorized', handleUnauthorized)
   }, [])
 
+  const memberId = user?.id
+  const refresh = useCallback(async (signal) => {
+    if (!memberId) return
+    const { data } = await api.get('/api/user', { signal, timeout: 5000 })
+    if (!signal?.aborted && data.user?.id === memberId) {
+      setUser((current) => current?.id === memberId && JSON.stringify(current) !== JSON.stringify(data.user)
+        ? normalizeUser(data.user) : current)
+    }
+  }, [memberId])
+
+  useEffect(() => {
+    if (!memberId) return
+    const controller = new AbortController()
+    const sync = () => refresh(controller.signal).catch(() => {})
+    window.addEventListener('focus', sync)
+    const timer = window.setInterval(sync, 5000)
+    return () => {
+      controller.abort()
+      window.removeEventListener('focus', sync)
+      window.clearInterval(timer)
+    }
+  }, [memberId, refresh])
+
   const login = async (payload) => {
     await csrf()
     const { data } = await api.post('/api/login', payload)
@@ -55,7 +78,7 @@ export function AuthProvider({ children, initialUser }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, setUser: setAuthenticatedUser, login, logout }}>
+    <AuthContext.Provider value={{ user, setUser: setAuthenticatedUser, login, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   )

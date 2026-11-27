@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureActiveUser;
 use App\Http\Middleware\EnsureConversationAccess;
+use App\Http\Middleware\EnsureModuleAccess;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\StartStatefulApiSession;
@@ -41,7 +42,9 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             EnsureRole::class,
         );
+        $middleware->prependToPriorityList(\Illuminate\Routing\Middleware\SubstituteBindings::class, EnsureModuleAccess::class);
         $middleware->alias([
+            'module' => EnsureModuleAccess::class,
             'active' => EnsureActiveUser::class,
             'role' => EnsureRole::class,
             'conversation.access' => EnsureConversationAccess::class,

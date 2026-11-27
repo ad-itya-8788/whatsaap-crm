@@ -22,7 +22,7 @@ export default function AgentsPage() {
   const [config, setConfig] = useState({ configured: false, provider: 'openai', model: 'gpt-4o-mini', base_url: '', api_key: '', embeddings_api_key: '', system_prompt: '', is_active: false })
   const [tab, setTab] = useState('playground')
   const [loading, setLoading] = useState(true)
-  const canManage = ['admin', 'owner'].includes(user?.role)
+  const canManage = user?.role === 'owner'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -44,7 +44,7 @@ export default function AgentsPage() {
     })
   }, [load])
 
-  const tabs = TABS.filter((item) => item.id !== 'usage' || canManage)
+  const tabs = TABS
 
   return (
     <div className="agents-page">
@@ -73,8 +73,8 @@ export default function AgentsPage() {
         <div className="agents-tab-content">
           {tab === 'playground' && <AiPlayground configured={Boolean(config.configured && config.is_active)} />}
           {tab === 'setup' && <AiConfigPanel config={config} onSaved={load} canManage={canManage} />}
-          {tab === 'knowledge' && <AiKnowledgePanel canManage={canManage} />}
-          {tab === 'usage' && canManage && <AiUsagePanel />}
+          {tab === 'knowledge' && <AiKnowledgePanel canManage />}
+          {tab === 'usage' && <AiUsagePanel />}
         </div>
       )}
     </div>

@@ -4,8 +4,7 @@ import api from '../api/client.js'
 import ConfirmDialog from '../components/common/ConfirmDialog.jsx'
 import Icon from '../components/common/Icon.jsx'
 import { useToast } from '../components/common/ToastProvider.jsx'
-import { useAuth } from '../context/AuthContext.jsx'
-import { errorMessage, extractList, extractPaginator, isAdmin, relativeTime } from '../lib/utils.js'
+import { errorMessage, extractList, extractPaginator, relativeTime } from '../lib/utils.js'
 
 const STATS = [
   ['Total', 'total', 'users'],
@@ -39,7 +38,6 @@ function DeliveryFunnel({ broadcast }) {
 export default function BroadcastDetailPage() {
   const { id } = usePage().props
   const toast = useToast()
-  const { user } = useAuth()
   const [broadcast, setBroadcast] = useState(null)
   const [recipients, setRecipients] = useState([])
   const [pagination, setPagination] = useState({ currentPage: 1, lastPage: 1, total: 0 })
@@ -49,7 +47,7 @@ export default function BroadcastDetailPage() {
   const [busy, setBusy] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const request = useRef(null)
-  const canSend = user?.role !== 'viewer'
+  const canSend = true
 
   const load = useCallback(async (page = 1, background = false) => {
     if (background && request.current) return
@@ -149,7 +147,7 @@ export default function BroadcastDetailPage() {
         </div>
         <div className="bc-detail-actions">
           {canSend && broadcast?.status === 'draft' && <button type="button" className="button button-primary" disabled={Boolean(busy)} onClick={() => action('send')}>Send now</button>}
-          {broadcast && isAdmin(user) && (
+          {broadcast && (
             <button type="button" className="button button-danger" disabled={Boolean(busy) || broadcast.status === 'sending'} onClick={() => setConfirmDelete(true)}><Icon name="trash" size={14} /> Delete</button>
           )}
         </div>

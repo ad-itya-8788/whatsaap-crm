@@ -15,6 +15,20 @@ class WhatsappController extends Controller
 {
     public function __construct(private MetaCloudApiService $meta) {}
 
+    public function status(): JsonResponse
+    {
+        $config = WhatsappConfig::query()->latest('id')->first();
+        if (! $config) {
+            return response()->json(['configured' => false, 'status' => 'disconnected']);
+        }
+
+        return response()->json([
+            'configured' => true,
+            'status' => $config->status,
+            'display_phone_number' => $this->cachedDisplayPhoneNumber($config),
+        ]);
+    }
+
     public function getConfig(): JsonResponse
     {
         $config = WhatsappConfig::query()->latest('id')->first();

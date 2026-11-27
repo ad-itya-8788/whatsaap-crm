@@ -15,7 +15,7 @@ class CustomFieldController extends Controller
     {
         $query = CustomField::query()->orderBy('label');
 
-        if (! $request->user()->isAdmin()) {
+        if (! $request->user()->hasModuleAccess('workspace')) {
             $query->where('is_active', true);
         }
 

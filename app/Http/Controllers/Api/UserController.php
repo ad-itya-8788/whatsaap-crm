@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Role;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +18,7 @@ class UserController extends Controller
     public function index(Request $request): JsonResponse
     {
         $perPage = min(max($request->integer('per_page', 25), 1), 100);
-        $query = User::query();
+        $query = User::with('assignedRole:id,name,slug');
 
         if ($search = $request->string('search')->toString()) {
             $query->where(function ($q) use ($search) {
@@ -35,20 +36,14 @@ class UserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'confirmed', PasswordRule::defaults()],
-            'role' => ['required', Rule::in(['admin', 'agent', 'viewer'])],
+            'role_id' => ['required', 'integer', Rule::exists('roles', 'id')->whereNot('slug', 'owner')],
         ]);
-
-        if ($request->user()->role !== 'owner' && $data['role'] === 'admin') {
-            return response()->json([
-                'message' => 'Only the owner may create administrators directly.',
-            ], 403);
-        }
 
         $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
-            'role' => $data['role'],
+            'role_id' => $data['role_id'],
             'is_active' => true,
         ]);
 
@@ -60,7 +55,7 @@ class UserController extends Controller
         $data = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'email' => ['sometimes', 'required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
-            'role' => ['sometimes', 'required', Rule::in(['admin', 'agent', 'viewer', 'owner'])],
+            'role_id' => ['sometimes', 'required', 'integer', Rule::exists('roles', 'id')],
             'password' => ['sometimes', 'required', 'confirmed', PasswordRule::defaults()],
             'is_active' => ['sometimes', 'boolean'],
         ]);
@@ -72,25 +67,21 @@ class UserController extends Controller
             $members = $this->lockMembers($actorId, $memberId);
             $actor = $members->get($actorId);
             $member = $members->get($memberId);
-            abort_unless($actor?->is_active && $actor->isAdmin(), 403);
+            abort_unless($actor?->is_active && $actor->isOwner(), 403);
             abort_unless($member, 404);
 
-            $nextRole = $data['role'] ?? $member->role;
+            $nextRole = (int) ($data['role_id'] ?? $member->role_id);
+            $ownerRole = (int) Role::where('slug', 'owner')->value('id');
             $deactivating = array_key_exists('is_active', $data) && ! $data['is_active'];
-            if ($actorId === $memberId && ($nextRole !== $member->role || $deactivating)) {
+            if ($actorId === $memberId && ($nextRole !== (int) $member->role_id || $deactivating)) {
                 abort(403, 'You cannot change your own role or deactivate your account.');
             }
-            if ($actorId !== $memberId && $member->role === 'owner') {
+            if ($actorId !== $memberId && $member->isOwner()) {
                 abort(403, 'The owner can only be changed through ownership transfer.');
             }
-            if ($member->role !== $nextRole && ($member->role === 'owner' || $nextRole === 'owner')) {
+            if ((int) $member->role_id !== $nextRole && ($member->isOwner() || $nextRole === $ownerRole)) {
                 abort(403, 'Use ownership transfer to change the owner.');
             }
-            if ($actorId !== $memberId && $actor->role !== 'owner'
-                && ($member->role === 'admin' || $nextRole === 'admin')) {
-                abort(403, 'Only the owner may assign or manage administrator accounts.');
-            }
-
             $member->fill($data);
             if ($deactivating || $member->isDirty('password')) {
                 $member->setRememberToken(Str::random(60));
@@ -115,12 +106,13 @@ class UserController extends Controller
             $members = $this->lockMembers($actorId, $memberId);
             $actor = $members->get($actorId);
             $member = $members->get($memberId);
-            abort_unless($actor?->is_active && $actor->role === 'owner', 403);
+            abort_unless($actor?->is_active && $actor->isOwner(), 403);
             abort_unless($member, 404);
-            abort_if(! $member->is_active || $member->role === 'owner', 422, 'Select an active member who is not already an owner.');
+            abort_if(! $member->is_active || $member->isOwner(), 422, 'Select an active member who is not already an owner.');
 
-            $actor->update(['role' => 'admin']);
-            $member->update(['role' => 'owner']);
+            $ownerRole = $actor->role_id;
+            $actor->update(['role_id' => Role::where('slug', 'agent')->value('id')]);
+            $member->update(['role_id' => $ownerRole]);
 
             return response()->json(['user' => $member]);
         }, 3);

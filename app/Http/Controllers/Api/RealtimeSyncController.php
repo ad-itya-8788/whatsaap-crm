@@ -31,7 +31,7 @@ class RealtimeSyncController extends Controller
         $serverTime = isset($data['through']) ? Carbon::parse($data['through']) : now();
         // Include the boundary second because the database timestamps have second precision.
         $since = isset($data['since']) ? Carbon::parse($data['since'])->startOfSecond() : null;
-        $isAdmin = $request->user()->isAdmin();
+        $isAdmin = $request->user()->isOwner();
         $userId = $request->user()->id;
 
         $messages = collect();

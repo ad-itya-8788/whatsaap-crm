@@ -3,25 +3,31 @@
 namespace App\Console\Commands;
 
 use App\Models\User;
+use App\Models\Role;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
 
 class MakeAdminUser extends Command
 {
-    protected $signature = 'app:make-admin {email} {--name=} {--password=} {--role=admin}';
+    protected $signature = 'app:make-admin {email} {--name=} {--password=} {--role=owner}';
     protected $description = 'Create or promote a user to admin/owner (safe first-admin bootstrap).';
 
     public function handle(): int
     {
         $email = $this->argument('email');
         $role = $this->option('role');
-        if (! in_array($role, ['admin', 'owner'], true)) {
-            $this->error('Role must be admin or owner.');
+        if (! in_array($role, ['agent', 'owner'], true)) {
+            $this->error('Role must be agent or owner.');
             return self::FAILURE;
         }
+        $roleId = Role::where('slug', $role)->value('id');
         $user = User::where('email', $email)->first();
         if ($user) {
-            $user->role = $role;
+            if ($user->isOwner() && $role !== 'owner') {
+                $this->error('Transfer ownership through Team before changing an Owner role.');
+                return self::FAILURE;
+            }
+            $user->role_id = $roleId;
             $user->save();
             $this->info("User {$email} promoted to {$role}.");
             return self::SUCCESS;
@@ -33,7 +39,7 @@ class MakeAdminUser extends Command
             'name' => $name,
             'email' => $email,
             'password' => Hash::make($password),
-            'role' => $role,
+            'role_id' => $roleId,
             'email_verified_at' => now(),
         ]);
         $this->info("Admin user {$user->email} created with role {$role}.");

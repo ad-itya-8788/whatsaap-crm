@@ -4,11 +4,16 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-Route::redirect('/', '/dashboard');
+Route::get('/', function (Request $request) {
+    $user = $request->user();
+    $module = $user?->allowedModules()[0] ?? null;
+
+    return redirect($user?->is_active ? (\App\Models\Role::MODULES[$module]['path'] ?? '/dashboard') : '/login');
+});
 
 Route::get('/login', function (Request $request) {
     if ($request->user()?->is_active) {
-        return redirect()->route('dashboard');
+        return redirect('/');
     }
 
     return Inertia::render('LoginPage');
@@ -31,8 +36,8 @@ Route::get('/join/{token}', fn (string $token) => Inertia::render('InviteJoinPag
 ]));
 
 Route::middleware(['auth', 'active'])->group(function () {
-    Route::inertia('/dashboard', 'DashboardPage')->name('dashboard');
-    Route::inertia('/inbox', 'ChatsPage');
+    Route::inertia('/dashboard', 'DashboardPage')->name('dashboard')->middleware('module:dashboard');
+    Route::inertia('/inbox', 'ChatsPage')->middleware('module:inbox');
     Route::get('/chats', function (Request $request) {
         $query = array_filter([
             'filter' => $request->query('filter'),
@@ -40,20 +45,20 @@ Route::middleware(['auth', 'active'])->group(function () {
         ], fn ($value) => is_string($value) && $value !== '');
 
         return redirect()->to('/inbox'.($query ? '?'.http_build_query($query, '', '&', PHP_QUERY_RFC3986) : ''));
-    });
-    Route::inertia('/notifications', 'NotificationsPage');
-    Route::inertia('/broadcasts', 'BroadcastsPage');
-    Route::inertia('/broadcasts/new', 'BroadcastWizardPage');
-    Route::get('/broadcasts/{id}', fn (string $id) => Inertia::render('BroadcastDetailPage', ['id' => $id]));
-    Route::inertia('/agents', 'AgentsPage');
-    Route::inertia('/contacts', 'ContactsPage');
-    Route::inertia('/templates', 'TemplatesPage');
-    Route::inertia('/templates/create', 'TemplatesPage');
+    })->middleware('module:inbox');
+    Route::inertia('/notifications', 'NotificationsPage')->middleware('module:notifications');
+    Route::inertia('/broadcasts', 'BroadcastsPage')->middleware('module:broadcasts');
+    Route::inertia('/broadcasts/new', 'BroadcastWizardPage')->middleware('module:broadcasts');
+    Route::get('/broadcasts/{id}', fn (string $id) => Inertia::render('BroadcastDetailPage', ['id' => $id]))->middleware('module:broadcasts');
+    Route::inertia('/agents', 'AgentsPage')->middleware('module:ai_agents');
+    Route::inertia('/contacts', 'ContactsPage')->middleware('module:contacts');
+    Route::inertia('/templates', 'TemplatesPage')->middleware('module:templates');
+    Route::inertia('/templates/create', 'TemplatesPage')->middleware('module:templates');
     Route::get('/templates/{templateId}/edit', fn (string $templateId) => Inertia::render('TemplatesPage', [
         'templateId' => $templateId,
-    ]));
-    Route::inertia('/workspace', 'WorkspacePage');
-    Route::inertia('/reports', 'ReportsPage');
-    Route::inertia('/team', 'TeamPage');
-    Route::inertia('/settings', 'SettingsPage');
+    ]))->middleware('module:templates');
+    Route::inertia('/workspace', 'WorkspacePage')->middleware('module:workspace');
+    Route::inertia('/reports', 'ReportsPage')->middleware('module:reports');
+    Route::inertia('/team', 'TeamPage')->middleware('module:team');
+    Route::inertia('/settings', 'SettingsPage')->middleware('module:settings');
 });

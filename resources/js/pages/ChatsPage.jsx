@@ -120,8 +120,8 @@ export default function ChatsPage() {
 
   const selected = conversations.find((item) => String(item.id) === String(selectedId))
     || (String(linkedConversation?.id) === selectedId ? linkedConversation : null)
-  const readOnly = user?.role === 'viewer'
-  const canDelete = ['agent', 'admin', 'owner'].includes(user?.role)
+  const readOnly = false
+  const canDelete = true
   const windowOpen = Date.now() - Date.parse(selected?.last_inbound_at) < 24 * 60 * 60 * 1000
   const contactTags = selected?.contact?.tags || []
 
@@ -491,6 +491,7 @@ export default function ChatsPage() {
       setRealtimeConnected(ready)
     },
     onMessageCreated: (payload) => {
+      if (!payload?.message) return void recoverRealtime()
       if (payload?.message) applyMessages(payload.message)
       if (payload?.conversation) {
         applyConversations(payload.conversation)
@@ -500,20 +501,46 @@ export default function ChatsPage() {
       window.dispatchEvent(new Event('wacrm:inbox-changed'))
     },
     onMessageUpdated: (payload) => {
+      if (!payload?.message) return void recoverRealtime()
       if (payload?.message) applyMessages(payload.message, true)
     },
     onMessageStatusChanged: (payload) => {
+      if (!payload?.message) return void recoverRealtime()
       if (payload?.message) applyMessages(payload.message, true)
     },
     onMessageDeleted: (payload) => {
+      if (!payload?.message_id && !payload?.messageId) {
+        if (selectedIdRef.current) void loadMessages(selectedIdRef.current)
+        return
+      }
       if (payload?.message_id || payload?.messageId) removeMessageItems(payload.message_id || payload.messageId)
       if (payload?.conversation) applyConversations(payload.conversation)
     },
     onConversationUpdated: (payload) => {
+      if (!payload?.conversation) {
+        void loadConversations(1, false, true)
+        if (selectedIdRef.current) {
+          const id = selectedIdRef.current
+          api.get(`/api/app/conversations/${id}`).catch((error) => {
+            if (error.response?.status === 404) removeConversationItems(id)
+          })
+        }
+        return
+      }
       if (payload?.conversation) applyConversations(payload.conversation)
       window.dispatchEvent(new Event('wacrm:inbox-changed'))
     },
     onConversationDeleted: (payload) => {
+      if (!payload?.conversation_id && !payload?.conversationId) {
+        void loadConversations(1, false, true)
+        if (selectedIdRef.current) {
+          const id = selectedIdRef.current
+          api.get(`/api/app/conversations/${id}`).catch((error) => {
+            if (error.response?.status === 404) removeConversationItems(id)
+          })
+        }
+        return
+      }
       if (payload?.conversation_id || payload?.conversationId) removeConversationItems(payload.conversation_id || payload.conversationId)
       window.dispatchEvent(new Event('wacrm:inbox-changed'))
     },
@@ -521,7 +548,7 @@ export default function ChatsPage() {
       void recoverRealtime()
       window.dispatchEvent(new Event('wacrm:inbox-changed'))
     },
-  }), [applyConversations, applyMessages, recoverRealtime, removeConversationItems, removeMessageItems, markIncomingRead])
+  }), [applyConversations, applyMessages, recoverRealtime, removeConversationItems, removeMessageItems, markIncomingRead, loadConversations, loadMessages])
 
   useEffect(() => {
     const recoverVisible = () => {
@@ -621,7 +648,7 @@ export default function ChatsPage() {
     try {
       const { data } = await api.patch(`/api/app/conversations/${conversationId}/assign`, { assignee_id: assigneeId })
       const receiverId = data.assigned_agent_id ?? assigneeId
-      const canStillSee = ['admin', 'owner'].includes(user?.role) || String(receiverId) === String(user?.id)
+      const canStillSee = user?.role === 'owner' || String(receiverId) === String(user?.id)
       if (!canStillSee) {
         setConversations((items) => items.filter((item) => String(item.id) !== String(conversationId)))
         if (String(conversationId) === String(selectedIdRef.current)) {
@@ -750,7 +777,7 @@ export default function ChatsPage() {
       ? currentIds.filter((id) => id !== Number(tagId))
       : [...currentIds, Number(tagId)]
     try {
-      const { data } = await api.put(`/api/app/contacts/${selected.contact.id}/tags`, { tags: nextIds })
+      const { data } = await api.put(`/api/app/conversations/${selected.id}/tags`, { tags: nextIds })
       setConversations((items) => items.map((item) => String(item.id) === String(selectedId)
         ? { ...item, contact: { ...item.contact, tags: data.tags || [] } }
         : item))
@@ -1079,7 +1106,7 @@ export default function ChatsPage() {
                 />
               </div>
               <div className="thread-more" ref={threadMoreRef}>
-                <button type="button" className="icon-button" onClick={() => setMoreOpen((value) => !value)} aria-label="More actions" aria-expanded={moreOpen}><Icon name="more" size={20} /></button>
+                <button type="button" className="icon-button" onClick={() => setMoreOpen((value) => !value)} aria-label="More actions" aria-expanded={moreOpen}><Icon name="moreVertical" size={20} /></button>
                 {moreOpen && (
                   <div className="thread-more-menu">
                     <button type="button" onClick={() => { setThreadSearchOpen((value) => !value); setMoreOpen(false) }}><Icon name="search" size={14} /> Search in chat</button>
@@ -1173,7 +1200,7 @@ export default function ChatsPage() {
                         <div className="note-body">{note.body ?? note.note ?? note.content ?? ''}</div>
                         <div className="note-meta">
                           <span>{note.user?.name || note.author?.name || 'Team'} · {formatDate(note.created_at)}</span>
-                          {!readOnly && (user?.id === note.user_id || ['admin', 'owner'].includes(user?.role)) && <button type="button" className="icon-button is-danger" onClick={() => setDeleteNoteId(note.id)} aria-label="Delete note"><Icon name="trash" size={14} /></button>}
+                          {!readOnly && (user?.id === note.user_id || user?.role === 'owner') && <button type="button" className="icon-button is-danger" onClick={() => setDeleteNoteId(note.id)} aria-label="Delete note"><Icon name="trash" size={14} /></button>}
                         </div>
                       </article>
                     ))}

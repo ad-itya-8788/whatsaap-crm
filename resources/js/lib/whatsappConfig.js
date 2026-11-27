@@ -26,7 +26,7 @@ export async function loadWhatsappConfig({ force = false, signal } = {}) {
   snapshot = { ...snapshot, loading: true }
   notify()
 
-  inFlight = api.get('/api/app/whatsapp/config', { signal, timeout: 10000 })
+  inFlight = api.get('/api/app/whatsapp/status', { signal, timeout: 10000 })
     .then(({ data }) => {
       if (signal?.aborted) return snapshot.data
       snapshot = { data, error: null, loading: false }

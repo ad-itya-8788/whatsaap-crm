@@ -28,6 +28,15 @@ class TemplateController extends Controller
         return response()->json(MessageTemplate::orderByDesc('updated_at')->get());
     }
 
+    public function contacts(Request $request): JsonResponse
+    {
+        return response()->json(\App\Models\Contact::query()
+            ->when(! $request->user()->isOwner(), fn ($contacts) => $contacts
+                ->whereDoesntHave('conversations')
+                ->orWhereHas('conversations', fn ($conversation) => $conversation->where('assigned_agent_id', $request->user()->id)))
+            ->orderBy('name')->limit(100)->get(['id', 'name', 'phone']));
+    }
+
     public function uploadMedia(UploadTemplateMediaRequest $request): JsonResponse
     {
         $config = WhatsappConfig::query()->latest('id')->first();
@@ -157,8 +166,9 @@ class TemplateController extends Controller
 
         $conversation = Conversation::firstOrCreate(
             ['contact_id' => $request->integer('contact_id')],
-            ['user_id' => $request->user()->id, 'status' => 'open'],
+            ['user_id' => $request->user()->id, 'assigned_agent_id' => $request->user()->isOwner() ? null : $request->user()->id, 'status' => 'open'],
         );
+        abort_unless($request->user()->isOwner() || (int) $conversation->assigned_agent_id === $request->user()->id, 404);
 
         try {
             $message = $this->messaging->send($conversation, [
