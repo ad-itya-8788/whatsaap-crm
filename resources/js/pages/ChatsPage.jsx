@@ -133,8 +133,12 @@ export default function ChatsPage() {
   currentUserIdRef.current = user?.id
   messagesRef.current = messages
 
-  const selected = conversations.find((item) => String(item.id) === String(selectedId))
+  const selectedConversation = conversations.find((item) => String(item.id) === String(selectedId))
     || (String(linkedConversation?.id) === selectedId ? linkedConversation : null)
+  const selected = selectedConversation && {
+    ...selectedConversation,
+    assignedAgent: selectedConversation.assigned_agent ?? selectedConversation.assignedAgent,
+  }
   const readOnly = false
   const canDelete = true
   const windowOpen = Date.now() - Date.parse(selected?.last_inbound_at) < 24 * 60 * 60 * 1000
@@ -186,18 +190,27 @@ export default function ChatsPage() {
 
   const loadOptions = useCallback(async (signal) => {
     try {
-      const [agentResult, replyResult, tagResult] = await Promise.all([
-        api.get('/api/app/agents', { signal }),
+      const [agentResult, replyResult, tagResult] = await Promise.allSettled([
+        api.get('/api/app/agents', { signal, params: { assignment_picker: 1 } }),
         api.get('/api/app/quick-replies', { signal }),
         api.get('/api/app/tags', { signal }),
       ])
-      setAgents(extractList(agentResult.data))
-      setQuickReplies(extractList(replyResult.data))
-      setTags(extractList(tagResult.data))
+      if (signal?.aborted) return
+      if (agentResult.status === 'fulfilled') setAgents(extractList(agentResult.value.data))
+      if (replyResult.status === 'fulfilled') setQuickReplies(extractList(replyResult.value.data))
+      if (tagResult.status === 'fulfilled') setTags(extractList(tagResult.value.data))
+      const failure = [agentResult, replyResult, tagResult].find((result) => result.status === 'rejected')
+      if (failure) throw failure.reason
     } catch (requestError) {
       if (requestError.code !== 'ERR_CANCELED') toast.error(errorMessage(requestError, 'Unable to load chat options.'))
     }
   }, [toast])
+
+  useEffect(() => {
+    const refresh = () => void loadConversations(1, false, true)
+    window.addEventListener('wacrm:chat-assigned', refresh)
+    return () => window.removeEventListener('wacrm:chat-assigned', refresh)
+  }, [loadConversations])
 
   const loadNotes = useCallback(async (id, signal) => {
     if (!id) return
@@ -677,7 +690,7 @@ export default function ChatsPage() {
     if (!conversation?.id || readOnly) return
     const conversationId = conversation.id
     const agent = agents.find((item) => String(item.id) === String(assigneeId))
-    setBusyAction('transfer')
+    setBusyAction('assignee')
     try {
       const { data } = await api.patch(`/api/app/conversations/${conversationId}/assign`, { assignee_id: assigneeId })
       const receiverId = data.assigned_agent_id ?? assigneeId
@@ -707,7 +720,7 @@ export default function ChatsPage() {
           setLinkedConversation((current) => current ? { ...current, ...data, assignedAgent: data.assignedAgent || agent || null } : current)
         }
       }
-      toast.success(`Conversation assigned to ${data.assignedAgent?.name || agent?.name || 'a teammate'}.`)
+      toast.success(receiverId ? `Conversation assigned to ${data.assigned_agent?.name || data.assignedAgent?.name || agent?.name || 'a teammate'}.` : 'Conversation unassigned.')
     } catch (requestError) {
       toast.error(errorMessage(requestError, 'Unable to transfer the conversation.'))
     } finally {
@@ -1106,7 +1119,7 @@ export default function ChatsPage() {
     >
       <option value="unassigned">Unassigned</option>
       <option value="me">Me</option>
-      {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {presenceStatus(presence[agent.id])}</option>)}
+      {agents.map((agent) => <option key={agent.id} value={agent.id} disabled={Boolean(agent.unavailable_reason)}>{agent.name} · {agent.unavailable_reason || presenceStatus(presence[agent.id])}</option>)}
       {selected.assignedAgent && !agents.some((agent) => String(agent.id) === String(selected.assignedAgent.id)) && (
         <option value={selected.assignedAgent.id}>{selected.assignedAgent.name}</option>
       )}

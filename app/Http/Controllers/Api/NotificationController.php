@@ -32,20 +32,28 @@ class NotificationController extends Controller
 
     public function popupEvents(Request $request): JsonResponse
     {
-        $query = Notification::query()->where('user_id', $request->user()->id);
-
-        if (! $request->has('after')) {
-            return response()->json(['latest_id' => (int) $query->max('id'), 'events' => []]);
+        $user = $request->user();
+        $query = Notification::query()->where('user_id', $user->id);
+        if (! $user->hasModuleAccess('notifications')) {
+            $query->where('type', 'conversation_assigned');
         }
 
-        $after = max(0, $request->integer('after'));
-        $notifications = $query->where('id', '>', $after)
-            ->orderBy('id')
-            ->limit(20)
-            ->get(['id', 'type', 'title', 'body', 'data', 'created_at']);
+        $columns = ['id', 'type', 'title', 'body', 'data', 'created_at'];
+        if ($request->has('after')) {
+            $after = max(0, $request->integer('after'));
+            $notifications = $query->where('id', '>', $after)->orderBy('id')->limit(20)->get($columns);
+            $latestId = $notifications->last()?->id ?? $after;
+            $hasMore = $notifications->count() === 20;
+        } else {
+            $latestId = (int) (clone $query)->max('id');
+            $notifications = $query->unread()->where('id', '<=', $latestId)
+                ->orderByDesc('id')->limit(4)->get($columns)->reverse()->values();
+            $hasMore = false;
+        }
 
         return response()->json([
-            'latest_id' => $notifications->last()?->id ?: $after,
+            'latest_id' => $latestId,
+            'has_more' => $hasMore,
             'events' => $notifications->map(fn (Notification $notification) => [
                 'id' => $notification->id,
                 'type' => $notification->type,

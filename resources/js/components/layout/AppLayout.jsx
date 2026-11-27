@@ -331,7 +331,7 @@ export default function AppLayout({ children }) {
             </div>
           </div>
         </header>
-        {allowed('notifications') && <NotificationPopupListener />}
+        {(allowed('notifications') || allowed('inbox')) && <NotificationPopupListener />}
         {allowed('notifications') && allowed('inbox') && <BrowserNotificationsListener />}
         {(allowed('inbox') || allowed('team')) && <PresenceHeartbeat userId={user?.id} />}
         <main className="app-content">

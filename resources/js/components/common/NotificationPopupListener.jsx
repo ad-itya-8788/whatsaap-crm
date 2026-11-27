@@ -21,11 +21,12 @@ export default function NotificationPopupListener() {
   const toast = useToast()
   const userId = user?.id
   const canOpenInbox = hasModuleAccess(user, 'inbox')
+  const canOpenNotifications = hasModuleAccess(user, 'notifications')
 
   useEffect(() => {
     if (!userId) return undefined
 
-    const storageKey = `wacrm:notification-popup:${userId}`
+    const storageKey = `wacrm:notification-popup:v2:${userId}:${canOpenNotifications ? 'all' : 'inbox'}`
     const controller = new AbortController()
     let inFlight = false
     let latestId = 0
@@ -51,23 +52,21 @@ export default function NotificationPopupListener() {
 
         const storedAfterRequest = localStorage.getItem(storageKey)
         latestId = Math.max(latestId, Number(storedAfterRequest) || 0)
-        if (!cursorReady) {
-          latestId = Math.max(latestId, Number(data?.latest_id) || 0)
-          localStorage.setItem(storageKey, String(latestId))
-          cursorReady = true
-          return
-        }
-
         const previousId = latestId
+        let receivedAssignment = false
         for (const event of data?.events || []) {
           const id = Number(event.id)
           if (id <= latestId) continue
           latestId = id
-          localStorage.setItem(storageKey, String(latestId))
           toast.notify(popupFromEvent(event, canOpenInbox))
+          if (event.type === 'conversation_assigned') receivedAssignment = true
         }
+        latestId = Math.max(latestId, Number(data?.latest_id) || 0)
+        localStorage.setItem(storageKey, String(latestId))
+        cursorReady = true
         if (latestId > previousId) window.dispatchEvent(new Event('wacrm:notifications-changed'))
-        if (data?.events?.length === 20) queueMicrotask(check)
+        if (receivedAssignment) window.dispatchEvent(new Event('wacrm:chat-assigned'))
+        if (data?.has_more) queueMicrotask(check)
       } catch {
         return undefined
       } finally {
@@ -86,7 +85,7 @@ export default function NotificationPopupListener() {
       window.removeEventListener('focus', check)
       window.removeEventListener('wacrm:notification-changed', check)
     }
-  }, [userId, toast, canOpenInbox])
+  }, [userId, toast, canOpenInbox, canOpenNotifications])
 
   return null
 }

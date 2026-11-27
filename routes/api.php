@@ -97,7 +97,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('/notifications', [NotificationController::class, 'index'])->middleware('module:notifications');
         Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount'])->middleware('module:notifications');
         Route::get('/notifications/browser-events', [NotificationController::class, 'browserEvents'])->middleware('module:notifications');
-        Route::get('/notifications/popup-events', [NotificationController::class, 'popupEvents'])->middleware('module:notifications');
+        Route::get('/notifications/popup-events', [NotificationController::class, 'popupEvents'])->middleware('module:notifications,inbox');
         Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead'])->middleware('module:notifications');
         Route::post('/notifications/{notification}/read', [NotificationController::class, 'markRead'])->middleware('module:notifications');
 

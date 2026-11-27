@@ -159,15 +159,24 @@ class ConversationController extends Controller
         return response()->json($conversation->load('contact'));
     }
 
-    public function agents(): JsonResponse
+    public function agents(Request $request): JsonResponse
     {
-        $agents = User::query()
-            ->where('is_active', true)
-            ->whereHas('assignedRole', fn ($role) => $role->where('slug', 'owner')->orWhereJsonContains('module_access', 'inbox'))
-            ->orderBy('name')
-            ->get(['id', 'name']);
+        $query = User::query()->orderBy('name');
+        if ($request->boolean('assignment_picker') && $request->user()->isOwner()) {
+            return response()->json($query->with('assignedRole')->get(['id', 'name', 'is_active', 'role_id'])->map(fn (User $member) => [
+                'id' => $member->id,
+                'name' => $member->name,
+                'unavailable_reason' => match (true) {
+                    ! $member->is_active => 'Inactive',
+                    ! $member->hasModuleAccess('inbox') => 'Needs Inbox access',
+                    default => null,
+                },
+            ]));
+        }
 
-        return response()->json($agents);
+        return response()->json($query->where('is_active', true)
+            ->whereHas('assignedRole', fn ($role) => $role->where('slug', 'owner')->orWhereJsonContains('module_access', 'inbox'))
+            ->get(['id', 'name']));
     }
 
     public function assign(Request $request, Conversation $conversation): JsonResponse

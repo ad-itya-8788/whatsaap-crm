@@ -103,7 +103,7 @@ export default function ConversationList({
                 <option value="all">All assignees</option>
                 <option value="unassigned">Unassigned</option>
                 <option value="me">Assigned to me</option>
-                {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                {agents.filter((agent) => !agent.unavailable_reason).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
               </select></label>
             </div>
           </details>
@@ -158,6 +158,7 @@ export default function ConversationList({
           </div>
         ))}
         {!loading && conversations.map((conversation) => {
+          const assignee = conversation.assigned_agent ?? conversation.assignedAgent
           const unread = Number(conversation.unread_count || 0)
           const active = String(conversation.id) === String(selectedId)
           return (
@@ -181,7 +182,7 @@ export default function ConversationList({
                   <span className="chat-item-meta">
                     {conversation.contact?.phone && <span className="chat-phone">{conversation.contact.phone}</span>}
                     <span className={`conversation-status status-${String(conversation.status || 'open')}`}>{String(conversation.status || 'open')}</span>
-                    {conversation.assignedAgent && <span className="chat-assignee">{conversation.assignedAgent.name}</span>}
+                    {assignee && <span className="chat-assignee">{assignee.name}</span>}
                     {hasWhatsApp(conversation) && <span className="conn-badge" title="Linked to a WhatsApp number"><Icon name="whatsapp" size={12} /> WhatsApp</span>}
                   </span>
                 </span>
@@ -230,9 +231,10 @@ export default function ConversationList({
                             <button
                               type="button"
                               key={agent.id}
+                              disabled={Boolean(agent.unavailable_reason)}
                               onClick={() => { closeMenus(); onTransferConversation(conversation, agent.id) }}
                             >
-                              <Icon name="user" size={13} /> {agent.name}
+                              <Icon name="user" size={13} /> {agent.name}{agent.unavailable_reason ? ` · ${agent.unavailable_reason}` : ''}
                             </button>
                           ))}
                         </div>

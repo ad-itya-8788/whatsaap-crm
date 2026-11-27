@@ -117,9 +117,21 @@ class RealtimeMessagingTest extends TestCase
             'role_id' => \App\Models\Role::where('slug', 'agent')->value('id'),
             'is_active' => true,
         ]);
+        $agent->assignedRole->update(['module_access' => ['inbox', 'dashboard']]);
+        $viewer = User::forceCreate([
+            'name' => 'New Workspace Member',
+            'email' => 'new-member@example.test',
+            'password' => bcrypt('test-password'),
+            'role_id' => \App\Models\Role::where('slug', 'viewer')->value('id'),
+            'is_active' => true,
+        ]);
+        $viewer->assignedRole->update(['module_access' => ['dashboard']]);
 
         $this->actingAs($owner)->getJson('/api/app/conversations')
             ->assertOk()->assertJsonCount(2, 'data');
+        $this->getJson('/api/app/agents?assignment_picker=1')->assertOk()->assertJsonFragment([
+            'name' => $viewer->name, 'unavailable_reason' => 'Needs Inbox access',
+        ])->assertJsonFragment(['name' => $agent->name, 'unavailable_reason' => null]);
         $this->actingAs($agent)->getJson('/api/app/conversations')
             ->assertOk()->assertJsonCount(0, 'data');
         $this->actingAs($owner)->patchJson("/api/app/conversations/{$mine->id}/assign", ['assignee_id' => $agent->id])
@@ -127,10 +139,15 @@ class RealtimeMessagingTest extends TestCase
         $notification = Notification::where('user_id', $agent->id)->sole();
         $this->assertSame('New chat assigned to you', $notification->title);
         $this->assertStringContainsString('Inbox Owner assigned you', $notification->body);
+        Notification::create(['user_id' => $agent->id, 'type' => 'payment_failed', 'title' => 'Restricted alert', 'body' => 'Restricted alert']);
+        $this->actingAs($agent)->getJson('/api/app/notifications/popup-events')
+            ->assertOk()->assertJsonCount(1, 'events')->assertJsonPath('events.0.data.conversation_id', $mine->id);
+        $this->getJson('/api/app/notifications')->assertForbidden();
         $this->actingAs($agent)->getJson('/api/app/notifications/popup-events?after=0')
-            ->assertOk()->assertJsonPath('events.0.title', 'New chat assigned to you');
+            ->assertOk()->assertJsonCount(1, 'events')->assertJsonPath('events.0.title', 'New chat assigned to you');
         $this->actingAs($agent)->getJson('/api/app/conversations')
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $mine->id);
+        $this->getJson("/api/app/conversations/{$mine->id}/messages")->assertOk()->assertJsonFragment(['content_text' => 'Hello']);
         $this->getJson("/api/app/conversations/{$other->id}")->assertNotFound();
         $this->postJson("/api/app/conversations/{$other->id}/typing")->assertNotFound();
         Event::assertNotDispatched(ConversationActivity::class);
