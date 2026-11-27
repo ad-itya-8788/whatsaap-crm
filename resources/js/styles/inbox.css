@@ -111,6 +111,13 @@
 .inbox-workspace .message-file > svg:first-child { flex: none; }
 .inbox-workspace .message-file.is-pdf > svg:first-child { color: #ff6666; }
 .inbox-workspace .composer { padding: 10px; }
+.inbox-workspace .chat-activity { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; padding: 5px 12px; background: var(--inbox-panel); color: var(--ink); font-size: var(--fs-sm); }
+.inbox-workspace .composer > .chat-activity { padding: 0 0 7px; }
+.chat-activity-dots { display: inline-flex; align-items: center; gap: 3px; color: var(--accent-ink); }
+.chat-activity-dots i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: inbox-typing-dot 1.1s ease-in-out infinite alternate; }
+.chat-activity-dots i:nth-child(2) { animation-delay: 140ms; }
+.chat-activity-dots i:nth-child(3) { animation-delay: 280ms; }
+@keyframes inbox-typing-dot { from { opacity: .35; } to { opacity: 1; } }
 .inbox-workspace .composer-row { gap: 6px; align-items: center; }
 .inbox-workspace .composer-row .icon-button { width: 32px; height: 34px; }
 .inbox-workspace .composer-input { min-width: 0; }

@@ -124,6 +124,14 @@ class ConversationController extends Controller
         return response()->json(['count' => $query->count()]);
     }
 
+    public function typing(Request $request, Conversation $conversation): \Illuminate\Http\Response
+    {
+        $user = $request->user();
+        $this->realtime->conversationActivity($conversation, 'typing', 'user:'.$user->id, true, $user);
+
+        return response()->noContent();
+    }
+
     public function markRead(Conversation $conversation): JsonResponse
     {
         $changed = Conversation::query()->whereKey($conversation->id)

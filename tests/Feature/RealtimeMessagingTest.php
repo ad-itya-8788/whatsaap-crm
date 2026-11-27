@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Events\ConversationActivity;
 use App\Events\MessageCreated;
 use App\Events\MessageStatusChanged;
 use App\Models\Conversation;
@@ -131,6 +132,21 @@ class RealtimeMessagingTest extends TestCase
         $this->actingAs($agent)->getJson('/api/app/conversations')
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $mine->id);
         $this->getJson("/api/app/conversations/{$other->id}")->assertNotFound();
+        $this->postJson("/api/app/conversations/{$other->id}/typing")->assertNotFound();
+        Event::assertNotDispatched(ConversationActivity::class);
+
+        config(['broadcasting.default' => 'log']);
+        $this->postJson("/api/app/conversations/{$mine->id}/typing", ['name' => 'Spoofed name'])->assertNoContent();
+        Event::assertDispatched(ConversationActivity::class, function (ConversationActivity $event) use ($owner, $agent, $mine) {
+            return array_map(fn ($channel) => $channel->name, $event->broadcastOn()) === ['private-inbox-activity.'.$owner->id]
+                && $event->broadcastWith() === [
+                    'conversation_id' => $mine->id,
+                    'kind' => 'typing',
+                    'key' => 'user:'.$agent->id,
+                    'active' => true,
+                    'name' => $agent->name,
+                ];
+        });
     }
 
     private function providerStatus(string $status): array

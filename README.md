@@ -1,4 +1,6 @@
-# WhatsApp CRM
+# Aayojan AI Ping
+
+Ping is Aayojan AI's WhatsApp Messenger for Business, combining conversations, broadcasts, contacts, AI-powered replies, and team collaboration.
 
 Run commands from this repository root. Laravel serves the React pages through Inertia and handles the CRM APIs, authentication, WhatsApp webhooks, queues, and scheduling. Vite builds the React assets for the same application URL.
 

@@ -8,6 +8,7 @@ import { errorMessage } from '../../lib/utils.js'
 import { fileSize, fileType } from './chatUtils.js'
 import TemplatePicker from './TemplatePicker.jsx'
 import InteractiveBuilder from './InteractiveBuilder.jsx'
+import ChatActivity from './ChatActivity.jsx'
 
 const ACCEPT = 'image/jpeg,image/png,video/mp4,video/3gpp,audio/aac,audio/amr,audio/mpeg,audio/mp4,audio/ogg,audio/opus,application/pdf,text/plain,text/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation'
 const LIMITS = {
@@ -67,6 +68,7 @@ export default function ChatComposer(props) {
 function ConversationComposer({
   draft,
   onDraftChange,
+  onTyping,
   onSend,
   sending = false,
   file = null,
@@ -87,6 +89,7 @@ function ConversationComposer({
   const popoverRef = useRef(null)
   const recorderRef = useRef(null)
   const timerRef = useRef(null)
+  const draftRequest = useRef(null)
   const [preview, setPreview] = useState('')
   const [openMenu, setOpenMenu] = useState('')
   const [recording, setRecording] = useState(false)
@@ -94,6 +97,7 @@ function ConversationComposer({
   const [localError, setLocalError] = useState('')
   const [drafting, setDrafting] = useState(false)
   const [dialog, setDialog] = useState(null)
+  useEffect(() => () => draftRequest.current?.abort(), [])
   const [savingReply, setSavingReply] = useState(false)
 
   useEffect(() => {
@@ -283,19 +287,23 @@ function ConversationComposer({
   }
 
   const draftWithAi = async () => {
-    if (!conversationId || drafting) return
+    if (!conversationId || draftRequest.current) return
+    const controller = new AbortController()
+    draftRequest.current = controller
     setDrafting(true)
     try {
-      const { data } = await api.post('/api/app/ai/draft', { conversation_id: conversationId })
+      const { data } = await api.post('/api/app/ai/draft', { conversation_id: conversationId }, { signal: controller.signal })
+      if (controller.signal.aborted) return
       const body = String(data.content || '').trim()
       if (!body) throw new Error('The AI returned an empty draft. Please try again.')
-      onDraftChange(draft ? `${draft.trimEnd()}\n${body}` : body)
+      onDraftChange((current) => current.trim() ? `${current.trimEnd()}\n${body}` : body)
       composerRef.current?.focus()
       toast.success('Draft added. Review it before sending.')
     } catch (error) {
-      toast.error(errorMessage(error, 'Unable to create an AI draft.'))
+      if (!controller.signal.aborted) toast.error(errorMessage(error, 'Unable to create an AI draft.'))
     } finally {
-      setDrafting(false)
+      draftRequest.current = null
+      if (!controller.signal.aborted) setDrafting(false)
     }
   }
 
@@ -364,6 +372,7 @@ function ConversationComposer({
           if (selected) chooseFile(selected)
         }}
       />
+      {drafting && <ChatActivity ai>AI assistant is drafting a reply</ChatActivity>}
       <form className="composer-row" onSubmit={(event) => {
         event.preventDefault()
         if ((draft.trim() || file) && !sending) onSend()
@@ -412,7 +421,10 @@ function ConversationComposer({
           aria-label="Message"
           placeholder="Type a message..."
           value={draft}
-          onChange={(event) => onDraftChange(event.target.value)}
+          onChange={(event) => {
+            onDraftChange(event.target.value)
+            onTyping?.(event.target.value)
+          }}
           onKeyDown={onKeyDown}
         />
         {conversationId && (

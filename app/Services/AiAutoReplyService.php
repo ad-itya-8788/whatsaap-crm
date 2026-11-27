@@ -20,6 +20,7 @@ class AiAutoReplyService
         private AiConfigService $configs,
         private AiService $ai,
         private MessagingService $messaging,
+        private RealtimeBroadcaster $realtime,
     ) {}
 
     public function dispatch(Message $inbound): void
@@ -31,7 +32,15 @@ class AiAutoReplyService
                 return;
             }
 
-            $text = RateLimiter::attempt('ai-auto-reply', 30, fn () => $this->ai->autoReply($conversation, $config));
+            $text = RateLimiter::attempt('ai-auto-reply', 30, function () use ($conversation, $config) {
+                $key = 'ai:'.Str::uuid();
+                $this->realtime->conversationActivity($conversation, 'thinking', $key, true);
+                try {
+                    return $this->ai->autoReply($conversation, $config);
+                } finally {
+                    $this->realtime->conversationActivity($conversation, 'thinking', $key, false);
+                }
+            });
             if ($text === false) {
                 return;
             }

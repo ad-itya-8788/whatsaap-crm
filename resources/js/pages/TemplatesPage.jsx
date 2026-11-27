@@ -922,7 +922,7 @@ export default function TemplatesPage() {
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Delete message template?"
-        message={deleteTarget ? `“${deleteTarget.name}” will be removed from Aayojan AI CRM. This does not delete it from Meta.` : ''}
+        message={deleteTarget ? `“${deleteTarget.name}” will be removed from Aayojan AI Ping. This does not delete it from Meta.` : ''}
         confirmLabel="Delete template"
         busy={busy.startsWith('delete-')}
         onConfirm={confirmDelete}

@@ -44,7 +44,7 @@ export default function AiThreadBanner({ conversation, readOnly, onChange }) {
     <div className={`ai-thread-banner${paused ? ' is-paused' : ''}`}>
       <Icon name="bolt" size={15} />
       <div>
-        <strong>{paused ? 'AI auto-reply is paused' : 'AI is replying automatically'}</strong>
+        <strong>{paused ? 'AI auto-reply is paused' : 'AI auto-reply is enabled'}</strong>
         {paused && conversation.ai_handoff_summary && <div>{conversation.ai_handoff_summary}</div>}
       </div>
       {!readOnly && <button type="button" className="button button-sm button-secondary" onClick={change} disabled={busy}>

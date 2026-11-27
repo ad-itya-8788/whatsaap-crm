@@ -51,7 +51,7 @@ export default function BrowserNotificationsCard() {
   }
 
   const sendTest = async () => {
-    const notification = await showNotification('Aayojan AI CRM', 'Browser notifications are working.', '/notifications')
+    const notification = await showNotification('Aayojan AI Ping', 'Browser notifications are working.', '/notifications')
     if (!notification) toast.error('Allow browser notifications first.')
     else toast.success('Test notification sent.')
   }

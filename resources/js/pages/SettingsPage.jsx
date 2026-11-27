@@ -520,7 +520,7 @@ export default function SettingsPage() {
                   <div className="appearance-row">
                     <div>
                       <h3 className="settings-section-title">Mode</h3>
-                      <p className="field-hint">Choose how Aayojan AI CRM looks on this device.</p>
+                      <p className="field-hint">Choose how Aayojan AI Ping looks on this device.</p>
                     </div>
                     <div className="mode-switch" role="group" aria-label="Color mode">
                       <button type="button" aria-pressed={mode === 'light'} className={mode === 'light' ? 'is-active' : ''} onClick={() => changeAppearance({ mode: 'light' })}>

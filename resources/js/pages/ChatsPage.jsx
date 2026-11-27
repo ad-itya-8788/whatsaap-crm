@@ -17,6 +17,8 @@ import MessageBubble from '../components/chat/MessageBubble.jsx'
 import MediaViewer from '../components/chat/MediaViewer.jsx'
 import ChatComposer from '../components/chat/ChatComposer.jsx'
 import AiThreadBanner from '../components/chat/AiThreadBanner.jsx'
+import ChatActivity from '../components/chat/ChatActivity.jsx'
+import useConversationActivity from '../components/chat/useConversationActivity.js'
 import { fileType, hasWhatsApp, isIncoming, mediaItem, messageText } from '../components/chat/chatUtils.js'
 import { subscribeToRealtime } from '../lib/realtime.js'
 import { conversationMatchesFilters, mergeConversations, mergeMessageList, messagePreview, removeConversations, removeMessages } from '../lib/realtimeChat.js'
@@ -99,6 +101,7 @@ export default function ChatsPage() {
   const [threadError, setThreadError] = useState('')
   const [mediaViewer, setMediaViewer] = useState(null)
   const [realtimeConnected, setRealtimeConnected] = useState(false)
+  const { receive: receiveActivity, notifyTyping, thinking, typists } = useConversationActivity(selectedId, realtimeConnected)
 
   const realtimeConnectedRef = useRef(false)
   const hasConnectedRef = useRef(false)
@@ -507,6 +510,8 @@ export default function ChatsPage() {
   }, [sidePanel, selectedId, selected?.notes_count, loadNotes])
 
   useEffect(() => subscribeToRealtime({
+    activityUserId: user?.id,
+    onConversationActivity: receiveActivity,
     onConnectionChange: (ready) => {
       if (ready) hasConnectedRef.current = true
       realtimeConnectedRef.current = ready
@@ -570,7 +575,7 @@ export default function ChatsPage() {
       void recoverRealtime()
       window.dispatchEvent(new Event('wacrm:inbox-changed'))
     },
-  }), [applyConversations, applyMessages, recoverRealtime, removeConversationItems, removeMessageItems, markIncomingRead, loadConversations, loadMessages])
+  }), [user?.id, receiveActivity, applyConversations, applyMessages, recoverRealtime, removeConversationItems, removeMessageItems, markIncomingRead, loadConversations, loadMessages])
 
   useEffect(() => {
     if (realtimeConnected || !hasConnectedRef.current) return undefined
@@ -1263,10 +1268,13 @@ export default function ChatsPage() {
               })}
             </div>
 
+            {typists.length > 0 && <ChatActivity>{typists.length === 1 ? `${typists[0]} is typing` : `${typists.length} teammates are typing`}</ChatActivity>}
+            {thinking && <ChatActivity ai>AI assistant is thinking</ChatActivity>}
             {replyTo && <div className="reply-context"><Icon name="reply" size={14} /><span>{messageText(replyTo) || 'Attachment'}</span><button type="button" className="icon-button" onClick={() => setReplyTo(null)} aria-label="Cancel reply" title="Cancel reply"><Icon name="close" size={14} /></button></div>}
             <ChatComposer
               draft={draft}
               onDraftChange={setDraft}
+              onTyping={notifyTyping}
               onSend={send}
               sending={sending}
               file={selectedFile}
@@ -1377,7 +1385,7 @@ export default function ChatsPage() {
       />
       <ConfirmDialog
         open={Boolean(messageToDelete)}
-        title="Delete this message from the CRM?"
+        title="Delete this message from Ping?"
         message="This permanently removes the message from this CRM only. It will remain in WhatsApp."
         confirmLabel="Delete message"
         busy={deletingMessage}
@@ -1386,7 +1394,7 @@ export default function ChatsPage() {
       />
       <ConfirmDialog
         open={Boolean(conversationToDelete)}
-        title="Delete this chat from the CRM?"
+        title="Delete this chat from Ping?"
         message="This permanently removes the conversation, its CRM messages, notes, and mirrored media. The contact remains, and nothing is deleted from WhatsApp."
         confirmLabel="Delete chat"
         busy={deletingConversation}

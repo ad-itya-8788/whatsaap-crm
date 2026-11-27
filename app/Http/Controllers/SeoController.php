@@ -32,6 +32,7 @@ class SeoController extends Controller
             'Disallow: /reports',
             'Disallow: /team',
             'Disallow: /settings',
+            'Disallow: /up',
             'Sitemap: '.$site.'/sitemap.xml',
             '',
         ];
@@ -42,7 +43,7 @@ class SeoController extends Controller
     public function sitemap(): Response
     {
         $site = rtrim((string) config('app.url'), '/');
-        $paths = config('branding.seo.sitemap_paths', ['/', '/login']);
+        $paths = config('branding.seo.indexable_paths', []);
 
         $xml = '<?xml version="1.0" encoding="UTF-8"?>'."\n";
         $xml .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'."\n";
@@ -50,12 +51,9 @@ class SeoController extends Controller
         foreach ($paths as $path) {
             $path = '/'.ltrim((string) $path, '/');
             $loc = htmlspecialchars($site.$path, ENT_XML1 | ENT_QUOTES, 'UTF-8');
-            $priority = $path === '/' ? '1.0' : '0.8';
 
             $xml .= "  <url>\n";
             $xml .= "    <loc>{$loc}</loc>\n";
-            $xml .= "    <changefreq>weekly</changefreq>\n";
-            $xml .= "    <priority>{$priority}</priority>\n";
             $xml .= "  </url>\n";
         }
 

@@ -97,7 +97,7 @@ export default function TeamInvitations({ roles, showForm, onClose }) {
                 <input className="input" aria-label="Invitation link" readOnly value={url} onFocus={(event) => event.currentTarget.select()} />
                 <div className="team-actions">
                   <button type="button" className="button button-primary" onClick={copy}>Copy link</button>
-                  <a className="button button-secondary" href={`https://wa.me/?text=${encodeURIComponent(`Join our WhatsApp CRM workspace: ${url}`)}`} target="_blank" rel="noreferrer">Send via WhatsApp</a>
+                  <a className="button button-secondary" href={`https://wa.me/?text=${encodeURIComponent(`Join our Aayojan AI Ping workspace: ${url}`)}`} target="_blank" rel="noreferrer">Send via WhatsApp</a>
                   <button type="button" className="button button-secondary" onClick={close}>Done</button>
                 </div>
               </div>

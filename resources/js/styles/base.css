@@ -83,6 +83,12 @@ img, svg { vertical-align: middle; }
 
 .brand-logo { display: block; height: auto; object-fit: contain; }
 
+.developer-attribution { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; color: var(--muted); font-size: var(--fs-xs); line-height: 1.4; }
+.developer-attribution a { color: inherit; font-weight: 650; text-decoration: none; }
+.developer-attribution a:hover { color: var(--accent); text-decoration: underline; }
+.developer-attribution.is-compact { font-size: 10px; }
+.developer-attribution-separator { opacity: 0.55; }
+
 .spinner {
   display: inline-block;
   width: 16px;

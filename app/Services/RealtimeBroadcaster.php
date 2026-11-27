@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\ConversationActivity;
 use App\Events\ConversationDeleted;
 use App\Events\ConversationUpdated;
 use App\Events\MessageCreated;
@@ -10,6 +11,7 @@ use App\Events\MessageStatusChanged;
 use App\Events\MessageUpdated;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\User;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -60,6 +62,34 @@ class RealtimeBroadcaster
     public function conversationDeleted(int $conversationId): void
     {
         $this->dispatch(new ConversationDeleted($conversationId));
+    }
+
+    public function conversationActivity(Conversation $conversation, string $kind, string $key, bool $active, ?User $actor = null): void
+    {
+        if (config('broadcasting.default') === 'null') {
+            return;
+        }
+
+        try {
+            $recipients = User::query()->where('is_active', true)
+                ->where(fn ($query) => $query
+                    ->whereHas('assignedRole', fn ($role) => $role->where('slug', 'owner'))
+                    ->orWhere(fn ($assigned) => $assigned->whereKey($conversation->assigned_agent_id)
+                        ->whereHas('assignedRole', fn ($role) => $role->whereJsonContains('module_access', 'inbox'))))
+                ->pluck('id')->reject(fn ($id) => (int) $id === (int) $actor?->id)->values()->all();
+
+            if ($recipients) {
+                $this->dispatch(new ConversationActivity($recipients, [
+                    'conversation_id' => $conversation->id,
+                    'kind' => $kind,
+                    'key' => $key,
+                    'active' => $active,
+                    'name' => $actor?->name,
+                ]));
+            }
+        } catch (Throwable $error) {
+            Log::warning('realtime.activity_failed', ['error_type' => $error::class]);
+        }
     }
 
     private function conversationFor(Message $message): Conversation

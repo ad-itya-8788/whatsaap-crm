@@ -4,6 +4,7 @@ import { useSearchParams } from '../lib/navigation.js'
 import api, { csrf } from '../api/client.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import AuthShell from '../components/common/AuthShell.jsx'
+import LoginExperience from '../components/auth/LoginExperience.jsx'
 import { errorMessage } from '../lib/utils.js'
 
 export function LoginPage() {
@@ -29,12 +30,12 @@ export function LoginPage() {
   }
 
   return (
-    <AuthShell
-      title="Welcome back"
-      subtitle="Sign in to your WhatsApp CRM workspace."
+    <LoginExperience
+      title="Welcome back to Ping"
+      subtitle="Sign in to your Aayojan AI Ping workspace."
       footer={<>Need access? Ask your workspace administrator for an invitation.</>}
     >
-      <form className="auth-form" onSubmit={submit}>
+      <form className="auth-form ping-login-form" onSubmit={submit}>
         {error && <div className="alert alert-error" role="alert">{error}</div>}
         <div className="field">
           <label className="field-label" htmlFor="login-email">Email address</label>
@@ -52,7 +53,7 @@ export function LoginPage() {
         </div>
         <button className="button button-primary button-block" disabled={saving}>{saving ? 'Signing in...' : 'Sign in'}</button>
       </form>
-    </AuthShell>
+    </LoginExperience>
   )
 }
 

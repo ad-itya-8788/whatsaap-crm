@@ -74,6 +74,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
             Route::get('/conversations/{conversation}', [ConversationController::class, 'show'])->middleware('module:inbox');
             Route::delete('/conversations/{conversation}', [ConversationController::class, 'destroy'])->middleware('module:inbox');
             Route::post('/conversations/{conversation}/read', [ConversationController::class, 'markRead'])->middleware('module:inbox');
+            Route::post('/conversations/{conversation}/typing', [ConversationController::class, 'typing'])->middleware(['module:inbox', 'throttle:30,1,typing']);
             Route::post('/conversations/{conversation}/ai-autoreply', [AiController::class, 'updateAutoreply'])->middleware(['throttle:send'])->middleware('module:inbox');
             Route::patch('/conversations/{conversation}/assign', [ConversationController::class, 'assign'])->middleware('module:inbox');
             Route::patch('/conversations/{conversation}/status', [ConversationController::class, 'updateStatus'])->middleware('module:inbox');

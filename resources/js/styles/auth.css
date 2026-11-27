@@ -92,6 +92,8 @@
 .auth-card .button-block { margin-top: 4px; justify-content: center; }
 .auth-footer { margin-top: 22px; color: var(--muted); font-size: var(--fs-sm); }
 .auth-footer a, .field-link { color: var(--accent); font-weight: 650; }
+.auth-attribution { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+
 .field-label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .field-link, .password-toggle { font-size: var(--fs-sm); }
 .password-field { display: flex; align-items: center; position: relative; }
@@ -105,7 +107,7 @@
   .auth-frame { grid-template-columns: minmax(0, 1fr); width: min(100%, 490px); border-radius: 20px; min-height: 0; }
   .auth-visual { display: none; }
   .auth-mobile-brand { display: inline-flex; padding: 8px 12px; background: #102a22; border-radius: 10px; margin-bottom: 18px; }
-  .auth-mobile-brand .auth-logo { width: 132px; }
+  .auth-mobile-brand .auth-logo { width: 84px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .auth-card, .auth-art-node, .auth-signal { animation: none; }

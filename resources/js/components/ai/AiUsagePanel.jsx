@@ -38,7 +38,7 @@ export default function AiUsagePanel() {
             <div className="agents-stat"><span>Total tokens</span><strong>{usage.total_tokens.toLocaleString()}</strong></div>
             <div className="agents-stat"><span>LLM calls</span><strong>{usage.llm_calls.toLocaleString()}</strong></div>
             <div className="agents-stat"><span>Drafts created</span><strong>{usage.drafts.toLocaleString()}</strong></div>
-            <div className="agents-stat agents-stat-muted"><span>Auto replies</span><strong>{usage.auto_reply.toLocaleString()}</strong><small>Disabled in this CRM</small></div>
+            <div className="agents-stat agents-stat-muted"><span>Auto replies</span><strong>{usage.auto_reply.toLocaleString()}</strong><small>Disabled in Ping</small></div>
           </div>
           <div className="agents-card agents-chart-card">
             <h3>Daily tokens</h3>

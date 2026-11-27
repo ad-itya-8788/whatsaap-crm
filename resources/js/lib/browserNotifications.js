@@ -46,7 +46,7 @@ export async function requestPermission() {
 export async function showNotification(title, body, url) {
   if (!notificationsSupported() || Notification.permission !== 'granted') return null
 
-  const options = { body, tag: url || 'wacrm-message', icon: '/img/logo.png', data: { url } }
+  const options = { body, tag: url || 'wacrm-message', icon: '/assets/android-chrome-192x192.png', data: { url } }
   const worker = await notificationWorker()
   if (worker) {
     try {

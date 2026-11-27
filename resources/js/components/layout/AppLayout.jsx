@@ -5,6 +5,7 @@ import { usePageLocation } from '../../lib/navigation.js'
 import api from '../../api/client.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import BrandLogo from '../common/BrandLogo.jsx'
+import DeveloperAttribution from '../common/DeveloperAttribution.jsx'
 import BrowserNotificationsListener from '../common/BrowserNotificationsListener.jsx'
 import NotificationPopupListener from '../common/NotificationPopupListener.jsx'
 import { PresenceHeartbeat } from '../common/MemberPresence.jsx'
@@ -15,6 +16,7 @@ import { changeAppearance, useColorMode } from '../../lib/appearance.js'
 import { usePoll } from '../../lib/usePoll.js'
 import { useWhatsappConfig } from '../../lib/whatsappConfig.js'
 import { errorMessage } from '../../lib/utils.js'
+import { useBranding } from '../../lib/branding.js'
 
 const mainNav = [
   { to: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
@@ -104,6 +106,7 @@ function AccountMenu({ user, onClose, onLogout, showIdentity = true }) {
 
 export default function AppLayout({ children }) {
   const { user, logout } = useAuth()
+  const brand = useBranding()
   const allowed = (module) => hasModuleAccess(user, module)
   const visible = (item) => allowed(moduleForPath(user, item.to))
   const toast = useToast()
@@ -228,7 +231,7 @@ export default function AppLayout({ children }) {
 
       <aside className={`app-sidebar${drawerOpen ? ' is-open' : ''}`} aria-label="Main navigation">
         <div className="sidebar-brand">
-          <Link href="/" aria-label="Aayojan AI CRM home">
+          <Link href="/" aria-label={`${brand.name} home`}>
             <picture className="sidebar-logo">
               <source media="(768px <= width < 1180px)" srcSet="/assets/favicon-48x48.png" />
               <BrandLogo />
@@ -252,6 +255,7 @@ export default function AppLayout({ children }) {
         </nav>
 
         <div className="sidebar-footer">
+          <div className="sidebar-attribution"><DeveloperAttribution compact /></div>
           <button type="button" className="sidebar-user" aria-expanded={footerMenuOpen} onClick={() => { setFooterMenuOpen((open) => !open); setHeaderMenuOpen(false) }}>
             <AccountAvatar user={user} />
             <span className="sidebar-user-text">
@@ -290,6 +294,7 @@ export default function AppLayout({ children }) {
             </nav>
           </div>
           <div className="topbar-actions">
+            <div className="topbar-attribution"><DeveloperAttribution compact /></div>
             {allowed('settings') && <Link className={`topbar-whatsapp${connected ? ' is-connected' : ''}`} href="/settings?tab=whatsapp" title={accountTitle} aria-label={accountTitle}>
               <Icon name="whatsapp" size={15} />
               <span className="text-truncate">{whatsapp?.configured || whatsapp ? accountLabel : 'WhatsApp status'}</span>

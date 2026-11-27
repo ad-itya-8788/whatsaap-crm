@@ -81,6 +81,10 @@ export function subscribeToRealtime(handlers = {}) {
   }
 
   const channel = echo.private('account.default')
+  const activityChannelName = handlers.activityUserId ? `inbox-activity.${handlers.activityUserId}` : null
+  const activityChannel = activityChannelName ? echo.private(activityChannelName) : null
+  const onActivity = (payload) => handlers.onConversationActivity?.(payload)
+  activityChannel?.listen('.conversation.activity', onActivity)
   const subscription = channel.subscription
   subscribers += 1
   const listeners = {
@@ -111,6 +115,10 @@ export function subscribeToRealtime(handlers = {}) {
   else handlers.onConnectionChange?.(false)
 
   return () => {
+    if (activityChannel) {
+      activityChannel.stopListening('.conversation.activity', onActivity)
+      echo.leave(activityChannelName)
+    }
     Object.entries(listeners).forEach(([event, listener]) => channel.stopListening(`.${event}`, listener))
     subscription.unbind('pusher:subscription_succeeded', onSubscribed)
     subscription.unbind('pusher:subscription_error', onSubscriptionError)
