@@ -120,7 +120,8 @@ class AiProviderService
             'anthropic' => 'https://api.anthropic.com',
         ];
 
-        $base = rtrim((string) ($settings['base_url'] ?: ($defaults[$provider] ?? '')), '/');
+        $base = rtrim(trim((string) ($settings['base_url'] ?? '')), '/');
+        $base = $base ?: ($defaults[$provider] ?? '');
         $parts = parse_url($base);
 
         if (! $parts || ! in_array($parts['scheme'] ?? null, ['http', 'https'], true) || empty($parts['host'])) {
@@ -133,6 +134,11 @@ class AiProviderService
 
         if (($parts['scheme'] === 'http') && ! in_array($parts['host'], config('ai.allowed_private_hosts', []), true)) {
             throw new AiException('Plain HTTP is only allowed for configured local AI providers.', 422);
+        }
+
+        $version = '/v1';
+        if (str_ends_with($parts['path'] ?? '', $version) && str_starts_with($path, $version.'/')) {
+            $path = substr($path, strlen($version));
         }
 
         return $base.$path;

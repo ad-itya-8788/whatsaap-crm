@@ -27,6 +27,8 @@ export default function ConversationList({
   onSelect,
   onLoadMore,
   onRetry,
+  canDeleteConversations = false,
+  onDeleteConversation,
 }) {
   return (
     <section className="chat-list-panel" aria-label="Conversations">
@@ -91,30 +93,42 @@ export default function ConversationList({
           const unread = Number(conversation.unread_count || 0)
           const active = String(conversation.id) === String(selectedId)
           return (
-            <button
-              type="button"
-              key={conversation.id}
-              className={`chat-item${active ? ' is-active' : ''}`}
-              onClick={() => onSelect(conversation.id)}
-            >
-              <ChatAvatar contact={conversation.contact} />
-              <span className="chat-item-main">
-                <span className="chat-item-top">
-                  <span className="chat-name">{conversation.contact?.name || conversation.contact?.phone || 'Unknown contact'}</span>
-                  <span className="chat-time">{relativeTime(conversation.last_message_at)}</span>
+            <div className="chat-item-row" key={conversation.id}>
+              <button
+                type="button"
+                className={`chat-item${active ? ' is-active' : ''}`}
+                onClick={() => onSelect(conversation.id)}
+              >
+                <ChatAvatar contact={conversation.contact} />
+                <span className="chat-item-main">
+                  <span className="chat-item-top">
+                    <span className="chat-name">{conversation.contact?.name || conversation.contact?.phone || 'Unknown contact'}</span>
+                    <span className="chat-time">{relativeTime(conversation.last_message_at)}</span>
+                  </span>
+                  <span className="chat-item-bottom">
+                    <span className="chat-preview">{conversation.last_message_text || 'No messages yet'}</span>
+                    {unread > 0 && <span className="unread-badge">{unread > 99 ? '99+' : unread}</span>}
+                  </span>
+                  <span className="chat-item-meta">
+                    {conversation.contact?.phone && <span className="chat-phone">{conversation.contact.phone}</span>}
+                    <span className={`conversation-status status-${String(conversation.status || 'open')}`}>{String(conversation.status || 'open')}</span>
+                    {conversation.assignedAgent && <span className="chat-assignee">{conversation.assignedAgent.name}</span>}
+                    {hasWhatsApp(conversation) && <span className="conn-badge" title="Linked to a WhatsApp number"><Icon name="whatsapp" size={12} /> WhatsApp</span>}
+                  </span>
                 </span>
-                <span className="chat-item-bottom">
-                  <span className="chat-preview">{conversation.last_message_text || 'No messages yet'}</span>
-                  {unread > 0 && <span className="unread-badge">{unread > 99 ? '99+' : unread}</span>}
-                </span>
-                <span className="chat-item-meta">
-                  {conversation.contact?.phone && <span className="chat-phone">{conversation.contact.phone}</span>}
-                  <span className={`conversation-status status-${String(conversation.status || 'open')}`}>{String(conversation.status || 'open')}</span>
-                  {conversation.assignedAgent && <span className="chat-assignee">{conversation.assignedAgent.name}</span>}
-                  {hasWhatsApp(conversation) && <span className="conn-badge" title="Linked to a WhatsApp number"><Icon name="whatsapp" size={12} /> WhatsApp</span>}
-                </span>
-              </span>
-            </button>
+              </button>
+              {canDeleteConversations && onDeleteConversation && (
+                <button
+                  type="button"
+                  className="chat-item-delete"
+                  aria-label={`Delete chat with ${conversation.contact?.name || conversation.contact?.phone || 'this contact'}`}
+                  title="Delete chat from CRM"
+                  onClick={() => onDeleteConversation(conversation)}
+                >
+                  <Icon name="trash" size={15} />
+                </button>
+              )}
+            </div>
           )
         })}
         {!loading && !error && !conversations.length && (

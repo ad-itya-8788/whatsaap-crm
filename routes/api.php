@@ -68,7 +68,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('/inbox/unread-count', [ConversationController::class, 'unreadCount']);
         Route::post('/conversations/start', [ConversationController::class, 'start'])->middleware('role:agent,admin,owner')->middleware('throttle:send');
         Route::get('/conversations/{conversation}', [ConversationController::class, 'show']);
-        Route::delete('/conversations/{conversation}', [ConversationController::class, 'destroy'])->middleware('role:admin,owner');
+        Route::delete('/conversations/{conversation}', [ConversationController::class, 'destroy'])->middleware('role:agent,admin,owner');
         Route::post('/conversations/{conversation}/read', [ConversationController::class, 'markRead'])->middleware('role:agent,admin,owner');
         Route::post('/conversations/{conversation}/ai-autoreply', [AiController::class, 'updateAutoreply'])->middleware(['role:agent,admin,owner', 'throttle:send']);
         Route::patch('/conversations/{conversation}/assign', [ConversationController::class, 'assign'])->middleware('role:agent,admin,owner');

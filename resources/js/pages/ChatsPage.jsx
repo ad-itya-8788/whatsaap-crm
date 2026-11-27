@@ -66,7 +66,7 @@ export default function ChatsPage() {
   const [deletingNote, setDeletingNote] = useState(false)
   const [messageToDelete, setMessageToDelete] = useState(null)
   const [deletingMessage, setDeletingMessage] = useState(false)
-  const [deleteConversationOpen, setDeleteConversationOpen] = useState(false)
+  const [conversationToDelete, setConversationToDelete] = useState(null)
   const [deletingConversation, setDeletingConversation] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [threadSearchOpen, setThreadSearchOpen] = useState(false)
@@ -121,7 +121,7 @@ export default function ChatsPage() {
   const selected = conversations.find((item) => String(item.id) === String(selectedId))
     || (String(linkedConversation?.id) === selectedId ? linkedConversation : null)
   const readOnly = user?.role === 'viewer'
-  const canDelete = ['admin', 'owner'].includes(user?.role)
+  const canDelete = ['agent', 'admin', 'owner'].includes(user?.role)
   const windowOpen = Date.now() - Date.parse(selected?.last_inbound_at) < 24 * 60 * 60 * 1000
   const contactTags = selected?.contact?.tags || []
 
@@ -664,28 +664,36 @@ export default function ChatsPage() {
     }
   }
 
+  const openDeleteConversation = (conversation = selected) => {
+    if (!conversation?.id || readOnly) return
+    setMoreOpen(false)
+    setConversationToDelete(conversation)
+  }
+
   const confirmDeleteConversation = async () => {
-    if (!selectedId) return
-    const conversationId = selectedId
+    const conversationId = conversationToDelete?.id
+    if (!conversationId) return
+    const wasSelected = String(conversationId) === String(selectedIdRef.current)
     setDeletingConversation(true)
     try {
       await api.delete(`/api/app/conversations/${conversationId}`)
       setConversations((items) => items.filter((item) => String(item.id) !== String(conversationId)))
-      setLinkedConversation(null)
-      setSelectedId('')
-      setMessages([])
-      setMessageCursor({ next: null, hasMore: false })
-      setReplyTo(null)
-      setSidePanel('')
-      setMoreOpen(false)
-      setMobileView('list')
-      setParams((current) => {
-        const next = new URLSearchParams(current)
-        next.delete('conversation')
-        next.delete('c')
-        return next
-      }, { replace: true })
-      setDeleteConversationOpen(false)
+      setConversationToDelete(null)
+      if (wasSelected) {
+        setLinkedConversation(null)
+        setSelectedId('')
+        setMessages([])
+        setMessageCursor({ next: null, hasMore: false })
+        setReplyTo(null)
+        setSidePanel('')
+        setMobileView('list')
+        setParams((current) => {
+          const next = new URLSearchParams(current)
+          next.delete('conversation')
+          next.delete('c')
+          return next
+        }, { replace: true })
+      }
       window.dispatchEvent(new Event('wacrm:inbox-changed'))
     } catch (requestError) {
       toast.error(errorMessage(requestError, 'Unable to delete the conversation.'))
@@ -999,6 +1007,8 @@ export default function ChatsPage() {
         onSelect={openConversation}
         onLoadMore={() => loadConversations(pagination.currentPage + 1, true)}
         onRetry={() => loadConversations()}
+        canDeleteConversations={canDelete}
+        onDeleteConversation={openDeleteConversation}
       />
 
       <section className="chat-thread" aria-label="Conversation">
@@ -1064,7 +1074,7 @@ export default function ChatsPage() {
                     </label>
                     <button type="button" onClick={copyPhone}><Icon name="copy" size={14} /> Copy phone number</button>
                     <button type="button" onClick={refreshConversation}><Icon name="sync" size={14} /> Refresh conversation</button>
-                    {canDelete && <button type="button" onClick={() => { setMoreOpen(false); setDeleteConversationOpen(true) }}><Icon name="trash" size={14} /> Delete chat from CRM</button>}
+                    {canDelete && <button type="button" onClick={() => openDeleteConversation(selected)}><Icon name="trash" size={14} /> Delete chat from CRM</button>}
                   </div>
                 )}
               </div>
@@ -1227,13 +1237,13 @@ export default function ChatsPage() {
         onCancel={() => setMessageToDelete(null)}
       />
       <ConfirmDialog
-        open={deleteConversationOpen}
+        open={Boolean(conversationToDelete)}
         title="Delete this chat from the CRM?"
         message="This permanently removes the conversation, its CRM messages, notes, and mirrored media. The contact remains, and nothing is deleted from WhatsApp."
         confirmLabel="Delete chat"
         busy={deletingConversation}
         onConfirm={confirmDeleteConversation}
-        onCancel={() => setDeleteConversationOpen(false)}
+        onCancel={() => setConversationToDelete(null)}
       />
     </div>
   )
