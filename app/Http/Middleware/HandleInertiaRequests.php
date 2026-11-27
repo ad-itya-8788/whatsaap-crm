@@ -12,6 +12,24 @@ class HandleInertiaRequests extends Middleware
     {
         return [
             ...parent::share($request),
+            'branding' => fn () => [
+                'name' => config('branding.name'),
+                'product' => config('branding.product'),
+                'tagline' => config('branding.tagline'),
+                'logo' => config('branding.logo'),
+                'logoVertical' => config('branding.logo_vertical'),
+                'icon' => config('branding.icon'),
+                'developer' => config('branding.developer'),
+                'colors' => config('branding.colors'),
+            ],
+            'seo' => fn () => [
+                'title' => config('branding.seo.title'),
+                'description' => config('branding.seo.description'),
+                'canonical' => rtrim((string) config('app.url'), '/').'/'.ltrim($request->path(), '/'),
+                'robots' => in_array(trim($request->path(), '/'), config('branding.seo.indexable_paths', []), true)
+                    ? 'index, follow, max-image-preview:large'
+                    : 'noindex, nofollow, noarchive, nosnippet',
+            ],
             'auth' => fn () => [
                 'user' => $request->user()?->is_active ? SessionUser::payload($request->user()) : null,
             ],

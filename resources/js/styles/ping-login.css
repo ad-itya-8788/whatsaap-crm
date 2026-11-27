@@ -1,0 +1,185 @@
+.ping-login-page {
+  --ping-black: #050505;
+  --ping-white: #ffffff;
+  --ping-yellow: #ffd23f;
+  --ping-green: #25d366;
+  position: relative;
+  display: flex;
+  min-height: 100svh;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 22px clamp(18px, 4vw, 58px) 20px;
+  background:
+    radial-gradient(circle at 10% 12%, rgba(37, 211, 102, 0.18), transparent 30%),
+    radial-gradient(circle at 88% 15%, rgba(255, 210, 63, 0.14), transparent 26%),
+    radial-gradient(circle at 78% 88%, rgba(37, 211, 102, 0.11), transparent 35%),
+    var(--ping-black);
+  color: var(--ping-white);
+}
+
+.ping-login-page::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  background-image: linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: radial-gradient(circle at 42% 40%, #000 0%, transparent 78%);
+}
+
+.ping-login-orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(14px);
+  opacity: 0.75;
+  animation: ping-login-float 9s ease-in-out infinite;
+}
+
+.ping-login-orb-one { top: 15%; left: -110px; width: 260px; height: 260px; background: rgba(37, 211, 102, 0.16); }
+.ping-login-orb-two { right: -90px; bottom: 18%; width: 230px; height: 230px; background: rgba(255, 210, 63, 0.12); animation-delay: -3s; }
+.ping-login-orb-three { top: 48%; left: 47%; width: 150px; height: 150px; background: rgba(37, 211, 102, 0.09); animation-delay: -6s; }
+
+.ping-login-header,
+.ping-login-page-footer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.ping-login-brand { display: flex; min-width: 0; align-items: center; gap: 12px; }
+.ping-login-logo-wrap { display: inline-flex; align-items: center; padding: 8px 14px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 999px; background: rgba(255, 255, 255, 0.94); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); }
+.ping-login-logo { width: clamp(130px, 15vw, 188px); }
+.ping-login-brand-divider { width: 1px; height: 22px; background: rgba(255, 255, 255, 0.18); }
+.ping-login-tagline { color: rgba(255, 255, 255, 0.66); font-size: 12px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
+.ping-login-header-attribution { justify-content: flex-end; color: rgba(255, 255, 255, 0.58); }
+
+.ping-login-main {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: min(100%, 1280px);
+  flex: 1;
+  grid-template-columns: minmax(0, 1.18fr) minmax(330px, 460px);
+  align-items: center;
+  gap: clamp(32px, 6vw, 92px);
+  margin: 0 auto;
+  padding: clamp(30px, 5vh, 66px) 0;
+}
+
+.ping-login-hero { min-width: 0; animation: ping-login-enter 0.5s ease-out both; }
+.ping-login-eyebrow { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 18px; padding: 7px 12px; border: 1px solid rgba(37, 211, 102, 0.28); border-radius: 999px; background: rgba(37, 211, 102, 0.09); color: #b9f7d1; font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
+.ping-login-pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--ping-green); box-shadow: 0 0 14px var(--ping-green); animation: ping-login-pulse 2s ease-in-out infinite; }
+.ping-login-title { max-width: 680px; margin: 0 0 16px; font-size: clamp(2.4rem, 5.3vw, 4.45rem); font-weight: 780; letter-spacing: -0.055em; line-height: 0.98; }
+.ping-login-copy { max-width: 620px; margin: 0; color: rgba(255, 255, 255, 0.68); font-size: clamp(0.96rem, 1.4vw, 1.08rem); line-height: 1.65; }
+
+.ping-login-feature-grid { display: grid; max-width: 660px; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 24px; }
+.ping-login-feature { display: grid; min-width: 0; gap: 4px; padding: 13px 14px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px; background: rgba(255, 255, 255, 0.045); backdrop-filter: blur(12px); }
+.ping-login-feature-icon { display: grid; width: 28px; height: 28px; margin-bottom: 3px; place-items: center; border-radius: 9px; background: rgba(37, 211, 102, 0.14); color: #6ff0a7; }
+.ping-login-feature strong { font-size: 13px; }
+.ping-login-feature > span:last-child { overflow: hidden; color: rgba(255, 255, 255, 0.52); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+
+.ping-preview { position: relative; width: min(100%, 620px); margin-top: 32px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 22px; background: linear-gradient(145deg, rgba(20, 27, 25, 0.96), rgba(8, 11, 10, 0.94)); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06); transform: perspective(1000px) rotateY(-7deg) rotateX(2deg); transform-origin: center left; }
+.ping-preview-top { display: flex; min-height: 36px; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.ping-preview-window-dots { display: flex; gap: 5px; }
+.ping-preview-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255, 255, 255, 0.2); }
+.ping-preview-dot:first-child { background: var(--ping-yellow); }
+.ping-preview-dot:nth-child(2) { background: var(--ping-green); }
+.ping-preview-title { flex: 1; overflow: hidden; color: rgba(255, 255, 255, 0.62); font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.ping-preview-status { display: inline-flex; align-items: center; gap: 4px; color: #7ee6a9; font-size: 10px; font-weight: 700; }
+.ping-preview-body { display: grid; grid-template-columns: 190px minmax(0, 1fr); min-height: 238px; }
+.ping-preview-sidebar { padding: 12px; border-right: 1px solid rgba(255, 255, 255, 0.08); }
+.ping-preview-search { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; padding: 7px 9px; border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 8px; color: rgba(255, 255, 255, 0.38); font-size: 10px; }
+.ping-preview-chat { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px; border-radius: 9px; }
+.ping-preview-chat.is-selected { background: rgba(37, 211, 102, 0.1); }
+.ping-preview-avatar { display: grid; width: 28px; height: 28px; flex: 0 0 28px; place-items: center; border-radius: 50%; background: #1f7a55; color: #eafff2; font-size: 9px; font-weight: 800; }
+.ping-preview-avatar.is-yellow { background: #9a7612; color: #fff9dd; }
+.ping-preview-chat-copy { display: grid; min-width: 0; }
+.ping-preview-chat-copy strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.ping-preview-chat-copy span { overflow: hidden; color: rgba(255, 255, 255, 0.45); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.ping-preview-chat small { color: rgba(255, 255, 255, 0.35); font-size: 9px; }
+.ping-preview-thread { display: flex; min-width: 0; flex-direction: column; }
+.ping-preview-thread-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.42); }
+.ping-preview-thread-user { display: grid; flex: 1; }
+.ping-preview-thread-user strong { font-size: 11px; color: rgba(255, 255, 255, 0.9); }
+.ping-preview-thread-user small { font-size: 9px; color: #6fdda0; }
+.ping-preview-messages { display: grid; flex: 1; align-content: start; gap: 8px; padding: 16px; background: radial-gradient(circle at 70% 20%, rgba(37, 211, 102, 0.06), transparent 50%); }
+.ping-preview-message { width: fit-content; max-width: 82%; padding: 9px 11px; border-radius: 12px; font-size: 10px; line-height: 1.45; }
+.ping-preview-message.is-incoming { border-bottom-left-radius: 4px; background: rgba(255, 255, 255, 0.09); color: rgba(255, 255, 255, 0.8); }
+.ping-preview-message.is-outgoing { justify-self: end; border-bottom-right-radius: 4px; background: rgba(37, 211, 102, 0.22); color: #d9ffe8; }
+.ping-preview-message.is-ai { display: inline-flex; align-items: center; gap: 6px; justify-self: end; border: 1px solid rgba(255, 210, 63, 0.28); background: rgba(255, 210, 63, 0.1); color: #ffe58a; }
+.ping-preview-composer { display: flex; align-items: center; justify-content: space-between; margin: 0 14px 14px; padding: 9px 11px; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 9px; color: rgba(255, 255, 255, 0.32); font-size: 10px; }
+.ping-preview-composer svg { color: var(--ping-green); }
+.ping-preview-badge { position: absolute; display: inline-flex; align-items: center; gap: 6px; padding: 8px 11px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 999px; background: rgba(9, 13, 11, 0.92); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4); font-size: 10px; font-weight: 700; animation: ping-login-float 5s ease-in-out infinite; }
+.ping-preview-badge-green { right: -20px; bottom: 44px; color: #87f2b2; }
+.ping-preview-badge-yellow { left: -28px; top: 46%; color: #ffe08a; animation-delay: -2.4s; }
+
+.ping-login-panel-wrap { min-width: 0; animation: ping-login-enter 0.55s 0.08s ease-out both; }
+.ping-login-panel { position: relative; padding: clamp(24px, 3vw, 38px); border: 1px solid rgba(255, 255, 255, 0.13); border-radius: 28px; background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.045)); box-shadow: 0 34px 90px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08); backdrop-filter: blur(18px); }
+.ping-login-panel-head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 24px; }
+.ping-login-panel-icon { display: grid; width: 44px; height: 44px; flex: 0 0 44px; place-items: center; border: 1px solid rgba(37, 211, 102, 0.28); border-radius: 14px; background: rgba(37, 211, 102, 0.12); color: #7ef2ad; }
+.ping-login-panel h2 { margin: 1px 0 6px; font-size: clamp(1.65rem, 2.8vw, 2.1rem); letter-spacing: -0.035em; line-height: 1.1; }
+.ping-login-panel-subtitle { margin: 0; color: rgba(255, 255, 255, 0.58); font-size: 13px; line-height: 1.5; }
+.ping-login-form { display: grid; gap: 16px; }
+.ping-login-panel .field-label { color: #d7e5de; }
+.ping-login-panel .input { min-height: 50px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 13px; background: rgba(5, 5, 5, 0.5); color: var(--ping-white); padding: 0 14px; }
+.ping-login-panel .input::placeholder { color: rgba(255, 255, 255, 0.35); }
+.ping-login-panel .input:focus { border-color: rgba(37, 211, 102, 0.75); box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.14); }
+.ping-login-panel .password-field .input { padding-inline-end: 68px; }
+.ping-login-panel .password-toggle { color: var(--ping-yellow); }
+.ping-login-panel .button-primary { min-height: 50px; justify-content: center; border: 0; border-radius: 13px; background: linear-gradient(135deg, var(--ping-yellow), #ffe894); color: #15120a; font-weight: 780; box-shadow: 0 16px 34px rgba(255, 210, 63, 0.2); }
+.ping-login-panel .button-primary:hover:not(:disabled) { background: linear-gradient(135deg, #ffe27a, #fff1b0); }
+.ping-login-panel .button-primary:disabled { opacity: 0.7; }
+.ping-login-panel .alert { border-radius: 11px; }
+.ping-login-panel-footer { margin-top: 22px; color: rgba(255, 255, 255, 0.58); font-size: 12px; line-height: 1.55; }
+.ping-login-panel-footer a { color: #8deeb4; font-weight: 650; }
+.ping-login-attribution { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.09); color: rgba(255, 255, 255, 0.46); }
+.ping-login-attribution a { color: rgba(255, 255, 255, 0.68); }
+
+.ping-login-page-footer { color: rgba(255, 255, 255, 0.38); font-size: 10px; }
+
+@keyframes ping-login-float { 50% { transform: translateY(-9px); } }
+@keyframes ping-login-pulse { 50% { opacity: 0.5; transform: scale(0.78); } }
+@keyframes ping-login-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+@media (max-width: 1080px) {
+  .ping-login-main { grid-template-columns: minmax(0, 1fr) minmax(320px, 410px); gap: 34px; }
+  .ping-preview { transform: none; }
+  .ping-preview-badge-green { right: 10px; }
+  .ping-preview-badge-yellow { left: 10px; }
+}
+
+@media (max-width: 900px) {
+  .ping-login-main { grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 28px; }
+  .ping-login-hero { width: min(100%, 680px); }
+  .ping-login-panel-wrap { width: min(100%, 500px); }
+  .ping-login-title { font-size: clamp(2.25rem, 7vw, 3.6rem); }
+  .ping-login-copy { margin-inline: auto; text-align: center; }
+  .ping-login-feature-grid { margin-inline: auto; }
+  .ping-preview { margin-inline: auto; }
+}
+
+@media (max-width: 620px) {
+  .ping-login-page { padding: 16px 14px; }
+  .ping-login-brand-divider,
+  .ping-login-tagline,
+  .ping-login-header-attribution { display: none; }
+  .ping-login-logo { width: 126px; }
+  .ping-login-main { padding: 24px 0; }
+  .ping-login-title { font-size: clamp(2.05rem, 10vw, 2.8rem); }
+  .ping-login-feature-grid { grid-template-columns: 1fr; }
+  .ping-preview { display: none; }
+  .ping-login-panel { padding: 22px; border-radius: 22px; }
+  .ping-login-page-footer { flex-direction: column; gap: 4px; text-align: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ping-login-orb,
+  .ping-login-pulse,
+  .ping-preview-badge,
+  .ping-login-hero,
+  .ping-login-panel-wrap { animation: none; }
+}

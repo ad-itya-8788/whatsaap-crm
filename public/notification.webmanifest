@@ -1,7 +1,25 @@
 {
   "id": "/",
-  "name": "Aayojan AI CRM",
-  "short_name": "Aayojan CRM",
-  "start_url": "/inbox",
-  "display": "standalone"
+  "name": "Aayojan AI Ping",
+  "short_name": "Ping",
+  "description": "WhatsApp Messenger for Business",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#25D366",
+  "icons": [
+    {
+      "src": "/assets/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
 }

@@ -6,9 +6,10 @@
 .sidebar-backdrop, .sidebar-close, .topbar-menu-btn { display: none; }
 .sidebar-close { width: 32px; height: 32px; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; }
 .sidebar-close:hover { background: var(--hover); }
-.sidebar-brand { display: flex; height: var(--topbar-h); flex: 0 0 var(--topbar-h); align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 var(--space-3); border-bottom: 1px solid var(--sidebar-border); }
+.sidebar-brand { display: flex; min-height: 68px; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 var(--space-3); border-bottom: 1px solid var(--sidebar-border); }
 .sidebar-brand a { display: flex; flex: 1; min-width: 0; align-items: center; gap: var(--space-2); overflow: hidden; color: var(--sidebar-foreground); font-size: 13px; font-weight: 650; text-decoration: none; white-space: nowrap; }
-.sidebar-logo { width: auto; height: 42px; max-width: 100%; object-fit: contain; }
+.sidebar-logo { display: block; width: min(204px, 100%); }
+.sidebar-logo img { width: 100%; }
 .sidebar-brand-name { overflow: hidden; text-overflow: ellipsis; }
 .sidebar-nav { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: var(--space-3) var(--space-2); }
 .sidebar-group + .sidebar-group { margin-top: var(--space-4); }
@@ -69,7 +70,9 @@
 
 @media (768px <= width < 1180px) {
   .app-sidebar { flex-basis: var(--rail-w); }
-  .sidebar-brand { justify-content: center; padding: 0; }
+  .sidebar-brand { min-height: var(--topbar-h); justify-content: center; padding: 0; }
+  .sidebar-brand a { justify-content: center; }
+  .sidebar-logo { width: 34px; overflow: hidden; border-radius: var(--radius-sm); }
   .sidebar-brand-name, .sidebar-link-label, .sidebar-label, .sidebar-user-text, .sidebar-user > svg { display: none; }
   .sidebar-link, .sidebar-user { justify-content: center; }
   .sidebar-link .nav-dot, .sidebar-link .nav-count { position: absolute; top: 2px; right: 2px; }

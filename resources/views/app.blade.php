@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/png" href="/img/logo.png" />
+    <link rel="icon" href="{{ asset('assets/favicon.ico') }}" sizes="16x16 32x32" />
+    <link rel="icon" href="{{ asset('assets/favicon-48x48.png') }}" type="image/png" sizes="48x48" />
     <link rel="manifest" href="/notification.webmanifest" />
     <title>Aayojan AI CRM</title>
     <script>

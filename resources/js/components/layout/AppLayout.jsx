@@ -229,7 +229,10 @@ export default function AppLayout({ children }) {
       <aside className={`app-sidebar${drawerOpen ? ' is-open' : ''}`} aria-label="Main navigation">
         <div className="sidebar-brand">
           <Link href="/" aria-label="Aayojan AI CRM home">
-            <BrandLogo className="brand-logo sidebar-logo" />
+            <picture className="sidebar-logo">
+              <source media="(768px <= width < 1180px)" srcSet="/assets/favicon-48x48.png" />
+              <BrandLogo />
+            </picture>
           </Link>
           <button type="button" className="sidebar-close" onClick={() => setDrawerOpen(false)} aria-label="Close navigation" title="Close navigation">
             <Icon name="close" size={20} />

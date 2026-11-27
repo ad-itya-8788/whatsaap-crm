@@ -1,8 +1,12 @@
 <?php
 
+use App\Http\Controllers\SeoController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+
+Route::get('/robots.txt', [SeoController::class, 'robots'])->name('robots.txt');
+Route::get('/sitemap.xml', [SeoController::class, 'sitemap'])->name('sitemap.xml');
 
 Route::get('/', function (Request $request) {
     $user = $request->user();

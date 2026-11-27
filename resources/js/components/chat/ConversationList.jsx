@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { ListFilter } from 'lucide-react'
 import Icon from '../common/Icon.jsx'
 import ChatAvatar from './ChatAvatar.jsx'
 import { hasWhatsApp } from './chatUtils.js'
@@ -16,6 +17,7 @@ const statusTabs = [
 ]
 
 export default function ConversationList({
+  total = 0,
   conversations = [],
   agents = [],
   selectedId,
@@ -34,6 +36,7 @@ export default function ConversationList({
 }) {
   const [openMenuId, setOpenMenuId] = useState(null)
   const [transferId, setTransferId] = useState(null)
+  const searchRef = useRef(null)
   const canManage = canDeleteConversations && (onDeleteConversation || onTransferConversation)
 
   useEffect(() => {
@@ -63,49 +66,81 @@ export default function ConversationList({
     setTransferId(null)
   }
 
+  useEffect(() => {
+    const focusSearch = (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'k') return
+      if (!searchRef.current?.getClientRects().length) return
+      event.preventDefault()
+      searchRef.current.focus()
+    }
+    window.addEventListener('keydown', focusSearch)
+    return () => window.removeEventListener('keydown', focusSearch)
+  }, [])
+
+  const quickFilters = [
+    { label: 'All', status: 'all', assigned: 'all' },
+    { label: 'Unread', status: 'unread', assigned: 'all' },
+    { label: 'Assigned', status: 'all', assigned: 'me' },
+    { label: 'Closed', status: 'closed', assigned: 'all' },
+  ]
+  const unreadCount = filters.status === 'unread' && filters.assignee === 'all' ? total
+    : filters.status === 'all' && filters.assignee === 'all' && !hasMore
+      ? conversations.filter((conversation) => Number(conversation.unread_count) > 0).length
+      : 0
+
   return (
     <section className="chat-list-panel" aria-label="Conversations">
       <header className="chat-list-head">
         <div className="chat-list-title-row">
-          <h1>Chats</h1>
-          <span className="chat-list-count">{conversations.length}</span>
+          <h2>Conversations <span>({total})</span></h2>
+          <details className="inbox-list-filters">
+            <summary className="icon-button" aria-label="More conversation filters" title="More conversation filters"><ListFilter size={19} strokeWidth={1.8} aria-hidden="true" /></summary>
+            <div className="inbox-filter-menu">
+              <label>Status<select className="select" value={filters.status} onChange={(event) => onFilterChange('status', event.target.value)}>
+                {statusTabs.map((tab) => <option key={tab.value} value={tab.value}>{tab.label}</option>)}
+              </select></label>
+              <label>Assignee<select className="select" value={filters.assignee} onChange={(event) => onFilterChange('assignee', event.target.value)}>
+                <option value="all">All assignees</option>
+                <option value="unassigned">Unassigned</option>
+                <option value="me">Assigned to me</option>
+                {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+              </select></label>
+            </div>
+          </details>
         </div>
         <div className="search-wrap">
           <Icon name="search" size={16} />
           <input
             className="input search-input"
+            ref={searchRef}
             type="search"
             aria-label="Search conversations"
-            placeholder="Search name, phone or message..."
+            placeholder="Search conversations…"
             value={filters.query}
             onChange={(event) => onFilterChange('query', event.target.value)}
           />
         </div>
-        <div className="chat-status-tabs" role="tablist" aria-label="Conversation status">
-          {statusTabs.map((tab) => (
+        <div className="chat-status-tabs" role="group" aria-label="Quick conversation filters">
+          {quickFilters.map((tab) => {
+            const active = filters.status === tab.status && filters.assignee === tab.assigned
+            return (
             <button
               type="button"
-              role="tab"
-              aria-selected={filters.status === tab.value}
-              key={tab.value}
-              className={`chat-status-tab${filters.status === tab.value ? ' is-active' : ''}`}
-              onClick={() => onFilterChange('status', tab.value)}
+              aria-pressed={active}
+              key={tab.label}
+              title={tab.assigned === 'me' ? 'Assigned to me' : undefined}
+              className={`chat-status-tab${active ? ' is-active' : ''}`}
+              onClick={() => {
+                onFilterChange('assignee', tab.assigned)
+                if (filters.status !== tab.status) onFilterChange('status', tab.status)
+              }}
             >
               {tab.label}
+              {tab.status === 'unread' && unreadCount > 0 && <span className="unread-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
             </button>
-          ))}
+            )
+          })}
         </div>
-        <select
-          className="select select-sm"
-          aria-label="Filter by assignee"
-          value={filters.assignee}
-          onChange={(event) => onFilterChange('assignee', event.target.value)}
-        >
-          <option value="all">All assignees</option>
-          <option value="unassigned">Unassigned</option>
-          <option value="me">Assigned to me</option>
-          {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-        </select>
       </header>
 
       {error && (
@@ -126,13 +161,14 @@ export default function ConversationList({
           const unread = Number(conversation.unread_count || 0)
           const active = String(conversation.id) === String(selectedId)
           return (
-            <div className="chat-item-row" key={conversation.id}>
+            <div className={`chat-item-row${active ? ' is-active' : ''}`} key={conversation.id}>
               <button
                 type="button"
                 className={`chat-item${active ? ' is-active' : ''}`}
+                aria-current={active || undefined}
                 onClick={() => onSelect(conversation.id)}
               >
-                <ChatAvatar contact={conversation.contact} />
+                <ChatAvatar contact={conversation.contact} channel={hasWhatsApp(conversation)} />
                 <span className="chat-item-main">
                   <span className="chat-item-top">
                     <span className="chat-name">{conversation.contact?.name || conversation.contact?.phone || 'Unknown contact'}</span>

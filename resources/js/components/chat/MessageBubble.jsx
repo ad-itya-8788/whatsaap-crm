@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import Icon from '../common/Icon.jsx'
 import { useToast } from '../common/ToastProvider.jsx'
 import { formatDuration, formatTime, friendlyProviderMessage } from '../../lib/utils.js'
-import { isIncoming, locationFromMessage, mediaItem, messageMediaType, messageText } from './chatUtils.js'
+import { fileSize, isIncoming, locationFromMessage, mediaItem, messageMediaType, messageText } from './chatUtils.js'
 import InteractivePreview from './InteractivePreview.jsx'
 import MessageReactions from './MessageReactions.jsx'
 
@@ -173,11 +173,11 @@ export default function MessageBubble({ message, incoming, mediaItems = [], onOp
       )}
       {item && mediaType === 'audio' && <AudioMessage src={item.src} name={item.name} mediaId={item.id} onOpenMedia={onOpenMedia} />}
       {item && mediaType === 'document' && (
-        <div className="message-file">
+        <div className={`message-file${item.mime === 'application/pdf' || /\.pdf$/i.test(item.name) ? ' is-pdf' : ''}`}>
           <Icon name="file" size={20} />
           <div className="message-file-info">
             <span>{item.name}</span>
-            <small>{String(item.mime || 'Document').split('/').pop()}</small>
+            <small>{Number(message.meta?.file_size) > 0 ? fileSize(message.meta.file_size) : String(item.mime || 'Document').split('/').pop()}</small>
           </div>
           <button type="button" className="icon-button" onClick={openMedia} aria-label="Open document" title="Open document"><Icon name="eye" size={16} /></button>
           <a className="icon-button" href={item.src} download={item.name} aria-label="Download document" title="Download document"><Icon name="download" size={16} /></a>

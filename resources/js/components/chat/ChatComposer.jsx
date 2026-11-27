@@ -368,6 +368,9 @@ function ConversationComposer({
         event.preventDefault()
         if ((draft.trim() || file) && !sending) onSend()
       }}>
+        <button type="button" className={`icon-button${openMenu === 'emoji' ? ' is-open' : ''}`} onClick={() => setOpenMenu((value) => value === 'emoji' ? '' : 'emoji')} aria-label="Emoji picker" title="Emoji picker" aria-expanded={openMenu === 'emoji'}>
+          <Icon name="emoji" size={19} />
+        </button>
         <div className="composer-attach-wrap">
           <button
             type="button"
@@ -399,14 +402,9 @@ function ConversationComposer({
             </div>
           )}
         </div>
-        <button type="button" className={`icon-button${openMenu === 'emoji' ? ' is-open' : ''}`} onClick={() => setOpenMenu((value) => value === 'emoji' ? '' : 'emoji')} aria-label="Emoji picker" title="Emoji picker" aria-expanded={openMenu === 'emoji'}>
-          <Icon name="emoji" size={20} />
+        <button type="button" className={`icon-button${openMenu === 'replies' ? ' is-open' : ''}`} onClick={() => setOpenMenu((value) => value === 'replies' ? '' : 'replies')} aria-label="Templates and quick replies" title="Templates and quick replies" aria-expanded={openMenu === 'replies'}>
+          <Icon name="template" size={17} />
         </button>
-        {conversationId && (
-          <button type="button" className="icon-button composer-ai" onClick={draftWithAi} disabled={drafting} aria-label="Draft with AI" title={drafting ? 'Drafting...' : 'Draft a reply with AI'}>
-            <Icon name="bot" size={19} />
-          </button>
-        )}
         <textarea
           ref={composerRef}
           className="composer-input"
@@ -417,6 +415,11 @@ function ConversationComposer({
           onChange={(event) => onDraftChange(event.target.value)}
           onKeyDown={onKeyDown}
         />
+        {conversationId && (
+          <button type="button" className="icon-button composer-ai" onClick={draftWithAi} disabled={drafting} aria-label="Draft with AI" title={drafting ? 'Drafting...' : 'Draft a reply with AI'}>
+            <Icon name="zap" size={18} />
+          </button>
+        )}
         {openMenu === 'emoji' && (
           <div className="emoji-picker">
             {EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => insertEmoji(emoji)}>{emoji}</button>)}

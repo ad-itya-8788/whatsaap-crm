@@ -1,4 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { CircleHelp, MessageCircle, UserRoundPlus } from 'lucide-react'
+import '../styles/inbox.css'
 import { useSearchParams } from '../lib/navigation.js'
 import api from '../api/client.js'
 import Icon from '../components/common/Icon.jsx'
@@ -26,6 +29,10 @@ function messageDate(message) {
 
 function chronological(messages) {
   return [...messages].sort((left, right) => Number(left.id) - Number(right.id))
+}
+
+function formatInboxDate(value) {
+  return value ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : ''
 }
 
 const INBOX_FILTERS = ['all', 'waiting', 'unassigned', 'expiring', 'unread', 'open', 'pending', 'closed']
@@ -59,6 +66,10 @@ export default function ChatsPage() {
   const [notes, setNotes] = useState([])
 
   const [sidePanel, setSidePanel] = useState('')
+  const [tagPickerOpen, setTagPickerOpen] = useState(false)
+  const [noteEditorOpen, setNoteEditorOpen] = useState(false)
+  const [header, setHeader] = useState(null)
+  const inboxRef = useRef(null)
   const [notesLoading, setNotesLoading] = useState(false)
   const [savingNote, setSavingNote] = useState(false)
   const [noteDraft, setNoteDraft] = useState('')
@@ -454,6 +465,10 @@ export default function ChatsPage() {
     }
   }, [urlConversation])
 
+  useLayoutEffect(() => {
+    setHeader(inboxRef.current?.closest('.app-main')?.querySelector('.topbar-start') ?? null)
+  }, [])
+
   useEffect(() => {
     messagesConversationRef.current = selectedId
     scrollRestoreRef.current = null
@@ -463,6 +478,11 @@ export default function ChatsPage() {
     setReplyTo(null)
     setMessageCursor({ next: null, hasMore: false })
     setSidePanel('')
+    setTagPickerOpen(false)
+    setNoteEditorOpen(false)
+    setNotes([])
+    setNotesLoading(false)
+    setNoteDraft('')
     setMediaViewer(null)
     setThreadSearchOpen(false)
   }, [selectedId])
@@ -480,11 +500,11 @@ export default function ChatsPage() {
   }, [debouncedMessageSearch, loadMessages, readOnly, selectedId])
 
   useEffect(() => {
-    if (sidePanel !== 'notes' || !selectedId) return
+    if (!selectedId || (sidePanel !== 'notes' && sidePanel !== 'info' && !selected?.notes_count)) return
     const controller = new AbortController()
     loadNotes(selectedId, controller.signal)
     return () => controller.abort()
-  }, [sidePanel, selectedId, loadNotes])
+  }, [sidePanel, selectedId, selected?.notes_count, loadNotes])
 
   useEffect(() => subscribeToRealtime({
     onConnectionChange: (ready) => {
@@ -1070,9 +1090,53 @@ export default function ChatsPage() {
   const selectedName = selected?.contact?.name || selected?.contact?.phone || 'Conversation'
   const selectedTagIds = contactTags.map((tag) => Number(tag.id))
 
+  const activePanel = sidePanel || 'info'
+  const assigneeSelect = selected && (
+    <select
+      aria-label="Assigned to"
+      className="select select-sm"
+      value={selected.assignedAgent?.id ? String(selected.assignedAgent.id) : 'unassigned'}
+      disabled={readOnly || busyAction === 'assignee'}
+      onChange={(event) => { changeAssignee(event.target.value); setMoreOpen(false) }}
+    >
+      <option value="unassigned">Unassigned</option>
+      <option value="me">Me</option>
+      {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {presenceStatus(presence[agent.id])}</option>)}
+      {selected.assignedAgent && !agents.some((agent) => String(agent.id) === String(selected.assignedAgent.id)) && (
+        <option value={selected.assignedAgent.id}>{selected.assignedAgent.name}</option>
+      )}
+    </select>
+  )
+  const activity = [
+    { label: 'Conversation started', at: selected?.created_at },
+    { label: 'Customer message received', at: selected?.last_inbound_at },
+    { label: 'Last reply sent', at: selected?.last_reply_at },
+  ].filter(({ at }) => at).sort((a, b) => new Date(b.at) - new Date(a.at))
+  const noteCards = notesLoading ? <p role="status" className="muted">Loading notes…</p> : notes.slice(0, activePanel === 'info' ? 2 : notes.length).map((note) => (
+    <article className="note-item" key={note.id}>
+      <Icon name="note" size={16} />
+      <div>
+        <div className="note-body">{note.body ?? note.note ?? note.content ?? ''}</div>
+        <div className="note-meta">{formatInboxDate(note.created_at)} · {note.user?.name || note.author?.name || 'Team'}</div>
+      </div>
+      {!readOnly && (user?.id === note.user_id || user?.role === 'owner') && <button type="button" className="icon-button is-danger" onClick={() => setDeleteNoteId(note.id)} aria-label="Delete note" title="Delete note"><Icon name="trash" size={14} /></button>}
+    </article>
+  ))
+
   return (
-    <div className={`chats-shell${mobileView === 'thread' ? ' is-thread' : ''}`}>
+    <div ref={inboxRef} className={`chats-shell inbox-workspace${selected ? ' has-contact' : ''}${mobileView === 'thread' ? ' is-thread' : ''}`}>
+      {header && createPortal(
+        <div className="inbox-heading">
+          <MessageCircle size={30} strokeWidth={1.8} aria-hidden="true" />
+          <div><h1>Inbox</h1><p>Manage your customer conversations in real time.</p></div>
+          <details className="inbox-help">
+            <summary className="icon-button" aria-label="Inbox help" title="Inbox help"><CircleHelp size={19} aria-hidden="true" /></summary>
+            <div>Use the filters to find conversations. Press Enter to send a message or Shift + Enter to start a new line.</div>
+          </details>
+        </div>, header,
+      )}
       <ConversationList
+        total={pagination.total}
         conversations={conversations}
         agents={agents}
         selectedId={selectedId}
@@ -1095,15 +1159,19 @@ export default function ChatsPage() {
           <>
             <header className={`thread-head${threadSearchOpen ? ' is-search-open' : ''}`}>
               <button type="button" className="icon-button thread-back" onClick={backToList} aria-label="Back to conversations" title="Back to conversations"><Icon name="back" size={20} /></button>
-              <ChatAvatar contact={selected.contact} name={selectedName} />
+              <ChatAvatar contact={selected.contact} name={selectedName} channel={hasWhatsApp(selected)} />
               <div className="thread-head-info">
                 <div className="thread-title">{selectedName}</div>
                 <div className="thread-subtitle">
                   {selected.contact?.phone || 'No phone number'}
-                  {selected.assignedAgent ? ` · ${selected.assignedAgent.name}` : ''}
+                  {selected.assignedAgent && presence[selected.assignedAgent.id] && <span className="inbox-presence" title={selected.assignedAgent.name}><PresenceDot member={presence[selected.assignedAgent.id]} />Agent {presenceStatus(presence[selected.assignedAgent.id])}</span>}
                 </div>
               </div>
-              {hasWhatsApp(selected) && <span className="thread-channel" title="Linked to a WhatsApp number"><Icon name="whatsapp" size={15} /> WhatsApp</span>}
+              <div className="inbox-thread-actions">
+                <button type="button" className="icon-button" aria-label="Manage tags" title="Manage tags" onClick={() => { setSidePanel('info'); setTagPickerOpen(true) }}><Icon name="tag" size={17} /></button>
+                <button type="button" className="icon-button" aria-label="Assign conversation" title="Assign conversation" onClick={() => { setMoreOpen(true); requestAnimationFrame(() => threadMoreRef.current?.querySelector('[aria-label="Assigned to"]')?.focus()) }}><UserRoundPlus size={17} strokeWidth={1.8} aria-hidden="true" /></button>
+                <button type="button" className="icon-button" aria-label="Change conversation status" title="Change conversation status" onClick={() => { setMoreOpen(true); requestAnimationFrame(() => threadMoreRef.current?.querySelector('[aria-label="Conversation status"]')?.focus()) }}><Icon name="checkCircle" size={17} /></button>
+              </div>
               <div className="thread-search search-wrap">
                 <Icon name="search" size={14} />
                 <input
@@ -1126,6 +1194,7 @@ export default function ChatsPage() {
                       <span>Status</span>
                       <select
                         className="select select-sm"
+                        aria-label="Conversation status"
                         value={selected.status || 'open'}
                         disabled={readOnly || busyAction === 'status'}
                         onChange={(event) => { changeStatus(event.target.value); setMoreOpen(false) }}
@@ -1137,19 +1206,7 @@ export default function ChatsPage() {
                     </label>
                     <label className="thread-menu-field">
                       <span>Transfer to</span>
-                      <select
-                        className="select select-sm"
-                        value={selected.assignedAgent?.id ? String(selected.assignedAgent.id) : 'unassigned'}
-                        disabled={readOnly || busyAction === 'assignee'}
-                        onChange={(event) => { changeAssignee(event.target.value); setMoreOpen(false) }}
-                      >
-                        <option value="unassigned">Unassigned</option>
-                        <option value="me">Me</option>
-                        {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {presenceStatus(presence[agent.id])}</option>)}
-                        {selected.assignedAgent && !agents.some((agent) => String(agent.id) === String(selected.assignedAgent.id)) && (
-                          <option value={selected.assignedAgent.id}>{selected.assignedAgent.name}</option>
-                        )}
-                      </select>
+                      {assigneeSelect}
                     </label>
                     <button type="button" onClick={copyPhone}><Icon name="copy" size={14} /> Copy phone number</button>
                     <button type="button" onClick={refreshConversation}><Icon name="sync" size={14} /> Refresh conversation</button>
@@ -1162,66 +1219,6 @@ export default function ChatsPage() {
             <AiThreadBanner conversation={selected} readOnly={readOnly} onChange={(data) => {
               setConversations((items) => items.map((item) => item.id === data.id ? { ...item, ...data } : item))
             }} />
-
-            {sidePanel && (
-              <aside className="thread-side-panel" aria-label={sidePanel === 'notes' ? 'Conversation notes' : 'Contact information'}>
-                <div className="side-panel-tabs">
-                  <button type="button" className={sidePanel === 'info' ? 'is-active' : ''} onClick={() => setSidePanel('info')}>Contact</button>
-                  <button type="button" className={sidePanel === 'notes' ? 'is-active' : ''} onClick={() => setSidePanel('notes')}>Notes</button>
-                  <button type="button" className="icon-button" onClick={() => setSidePanel('')} aria-label="Close panel" title="Close panel"><Icon name="close" size={16} /></button>
-                </div>
-                {sidePanel === 'info' && (
-                  <div className="side-panel-body">
-                    <div className="contact-detail-card">
-                      <ChatAvatar contact={selected.contact} name={selectedName} className="avatar-lg" />
-                      <strong>{selectedName}</strong>
-                      <span>{selected.contact?.phone || 'No phone number'}</span>
-                    </div>
-                    <dl className="contact-detail-list">
-                      <div><dt>WhatsApp ID</dt><dd>{selected.contact?.wa_user_id || 'Not linked'}</dd></div>
-                      <div><dt>Status</dt><dd>{String(selected.status || 'open')}</dd></div>
-                      <div><dt>Assignee</dt><dd>{selected.assignedAgent ? <><PresenceDot member={presence[selected.assignedAgent.id]} />{selected.assignedAgent.name}</> : 'Unassigned'}</dd></div>
-                    </dl>
-                    <h3>Labels</h3>
-                    <div className="tag-picker">
-                      {tags.map((tag) => (
-                        <button
-                          type="button"
-                          key={tag.id}
-                          className={`tag-chip${selectedTagIds.includes(Number(tag.id)) ? ' is-selected' : ''}`}
-                          style={{ backgroundColor: tag.color || '#2563eb' }}
-                          onClick={() => toggleTag(tag.id)}
-                          disabled={readOnly}
-                          aria-pressed={selectedTagIds.includes(Number(tag.id))}
-                        >
-                          {tag.name}
-                        </button>
-                      ))}
-                      {!tags.length && <span className="muted">No labels have been created.</span>}
-                    </div>
-                  </div>
-                )}
-                {sidePanel === 'notes' && (
-                  <div className="side-panel-body notes-body">
-                    {notesLoading && <div className="list-placeholder"><span className="spinner" /> Loading notes...</div>}
-                    {!notesLoading && !notes.length && <div className="list-placeholder">No notes yet.</div>}
-                    {notes.map((note) => (
-                      <article className="note-item" key={note.id}>
-                        <div className="note-body">{note.body ?? note.note ?? note.content ?? ''}</div>
-                        <div className="note-meta">
-                          <span>{note.user?.name || note.author?.name || 'Team'} · {formatDate(note.created_at)}</span>
-                          {!readOnly && (user?.id === note.user_id || user?.role === 'owner') && <button type="button" className="icon-button is-danger" onClick={() => setDeleteNoteId(note.id)} aria-label="Delete note" title="Delete note"><Icon name="trash" size={14} /></button>}
-                        </div>
-                      </article>
-                    ))}
-                    {!readOnly && <form className="notes-compose" onSubmit={addNote}>
-                      <textarea className="textarea" rows="2" aria-label="New note" placeholder="Write a note..." value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} />
-                      <button type="submit" className="button button-sm button-primary" disabled={savingNote || !noteDraft.trim()}>{savingNote ? 'Adding...' : 'Add note'}</button>
-                    </form>}
-                  </div>
-                )}
-              </aside>
-            )}
 
             <div className="thread-scroll" ref={threadRef}>
               {messageCursor.hasMore && (
@@ -1245,7 +1242,7 @@ export default function ChatsPage() {
                   && Math.abs(new Date(message.provider_timestamp || message.created_at).getTime() - new Date(previous.provider_timestamp || previous.created_at).getTime()) < 5 * 60 * 1000
                 return (
                   <Fragment key={message.idempotency_key || message.id || index}>
-                    {currentDate && currentDate !== previousDate && <div className="message-date">{formatDate(message.provider_timestamp || message.created_at)}</div>}
+                    {currentDate && currentDate !== previousDate && <div className="message-date">{currentDate === new Date().toDateString() ? 'Today' : formatDate(message.provider_timestamp || message.created_at)}</div>}
                     {unreadSeparatorIndex === index && <div className="unread-separator"><span>New messages</span></div>}
                     {replyTo?.id === message.id && <div className="reply-banner"><span>Replying to {incoming ? 'contact' : 'you'}</span><button type="button" className="icon-button" onClick={() => setReplyTo(null)} aria-label="Cancel reply" title="Cancel reply"><Icon name="close" size={14} /></button></div>}
                     <MessageBubble
@@ -1288,6 +1285,78 @@ export default function ChatsPage() {
           <div className="thread-placeholder"><Icon name="chat" size={36} /><p>Select a conversation to start chatting.</p></div>
         )}
       </section>
+
+      {selected && (
+        <aside className={`thread-side-panel${sidePanel ? ' is-open' : ''}`} aria-label="Conversation details">
+          <div className="side-panel-tabs" role="group" aria-label="Conversation details sections">
+            {[['info', 'user', 'Contact Details'], ['notes', 'note', 'Notes'], ['activity', 'clock', 'Activity']].map(([tab, icon, label]) => (
+              <button key={tab} type="button" className={activePanel === tab ? 'is-active' : ''} aria-pressed={activePanel === tab} onClick={() => setSidePanel(tab)}><Icon name={icon} size={16} /> {label}</button>
+            ))}
+            <button type="button" className="icon-button inbox-panel-close" onClick={() => setSidePanel('')} aria-label="Close details" title="Close details"><Icon name="close" size={16} /></button>
+          </div>
+          <div className="side-panel-body">
+            {activePanel === 'info' && (
+              <>
+                <div className="contact-detail-card">
+                  <ChatAvatar contact={selected.contact} name={selectedName} className="avatar-lg" channel={hasWhatsApp(selected)} />
+                  <div>
+                    <strong>{selectedName}</strong>
+                    <div className="inbox-contact-phone">{selected.contact?.phone || 'No phone number'}{selected.contact?.phone && <button type="button" className="icon-button" aria-label="Copy phone number" title="Copy phone number" onClick={copyPhone}><Icon name="copy" size={14} /></button>}</div>
+                  </div>
+                  <details className="inbox-list-filters inbox-contact-menu">
+                    <summary className="icon-button" aria-label="Contact actions" title="Contact actions"><Icon name="moreVertical" size={17} /></summary>
+                    <div className="inbox-filter-menu" onClick={(event) => { if (event.target.closest('button')) event.currentTarget.parentElement.open = false }}>
+                      <button type="button" className="button button-sm button-secondary" onClick={refreshConversation}><Icon name="refresh" size={15} /> Refresh conversation</button>
+                      <button type="button" className="button button-sm button-secondary" onClick={() => setSidePanel('notes')}><Icon name="note" size={15} /> View all notes</button>
+                    </div>
+                  </details>
+                </div>
+                <dl className="contact-detail-list">
+                  <div><dt><Icon name="user" size={15} /> Status</dt><dd><span className={`conversation-status status-${selected.status || 'open'}`}>{selected.status || 'open'}</span></dd></div>
+                  <div><dt><Icon name="users" size={15} /> Assigned to</dt><dd>{assigneeSelect}</dd></div>
+                  {hasWhatsApp(selected) && <div><dt><Icon name="whatsapp" size={15} /> Source</dt><dd>WhatsApp</dd></div>}
+                  {selected.contact?.created_at && <div><dt><Icon name="clock" size={15} /> Created</dt><dd>{formatInboxDate(selected.contact.created_at)}</dd></div>}
+                </dl>
+                <section className="inbox-detail-section">
+                  <h3><Icon name="tag" size={17} /> Tags</h3>
+                  <div className="tag-picker">
+                    {selectedTagIds.map((id) => {
+                      const tag = tags.find((item) => Number(item.id) === id) || selected.contact?.tags?.find((item) => Number(item.id) === id)
+                      if (!tag) return null
+                      return <button type="button" key={id} className="tag-chip is-selected" style={{ '--tag-color': tag.color || '#3177ba' }} onClick={() => toggleTag(id)} disabled={readOnly} aria-label={`Remove tag ${tag.name}`}>{tag.name} <Icon name="close" size={12} /></button>
+                    })}
+                    {!readOnly && <button type="button" className="button button-sm button-secondary" aria-expanded={tagPickerOpen} onClick={() => setTagPickerOpen((open) => !open)}><Icon name="plus" size={14} /> Add Tag</button>}
+                  </div>
+                  {tagPickerOpen && <div className="tag-picker inbox-tag-options">
+                    {tags.filter((tag) => !selectedTagIds.includes(Number(tag.id))).map((tag) => <button type="button" key={tag.id} className="button button-sm button-secondary" onClick={() => { toggleTag(tag.id); setTagPickerOpen(false) }}>{tag.name}</button>)}
+                    {tags.every((tag) => selectedTagIds.includes(Number(tag.id))) && <span className="muted">No available tags.</span>}
+                  </div>}
+                </section>
+              </>
+            )}
+            {activePanel !== 'activity' && (
+              <section className="inbox-detail-section">
+                <div className="inbox-section-head">
+                  <h3><Icon name="note" size={17} /> Notes</h3>
+                  {!readOnly && <button type="button" className="button button-sm button-secondary" aria-expanded={noteEditorOpen} onClick={() => setNoteEditorOpen((open) => !open)}><Icon name="plus" size={14} /> Add Note</button>}
+                </div>
+                {noteCards}
+                {!notesLoading && !notes.length && <p className="muted">No notes yet.</p>}
+                {noteEditorOpen && !readOnly && <form className="notes-compose" onSubmit={addNote}>
+                  <textarea className="textarea" rows="2" aria-label="New note" placeholder="Write a note…" value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} />
+                  <button type="submit" className="button button-sm button-primary" disabled={savingNote || !noteDraft.trim()}>{savingNote ? 'Adding…' : 'Save note'}</button>
+                </form>}
+              </section>
+            )}
+            {activePanel !== 'notes' && (
+              <section className="inbox-detail-section">
+                <h3><Icon name="clock" size={17} /> Recent Activity</h3>
+                {activity.length ? <ol className="inbox-timeline">{activity.map(({ label, at }) => <li key={label}><strong>{label}</strong><time dateTime={at}>{formatInboxDate(at)}</time></li>)}</ol> : <p className="muted">No activity available.</p>}
+              </section>
+            )}
+          </div>
+        </aside>
+      )}
 
       {mediaViewer && (
         <MediaViewer
